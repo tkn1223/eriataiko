@@ -20,6 +20,7 @@
     "test:related": "vitest related --run",
     "test:e2e": "playwright test",
     "test:env": "supabase status -o env > .env.test.raw && node scripts/write-test-env.mjs",
+    "release:status": "node scripts/release-status.mjs",
     "db:start": "supabase start",
     "db:stop": "supabase stop",
     "db:reset": "supabase db reset",

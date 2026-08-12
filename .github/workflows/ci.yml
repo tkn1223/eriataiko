@@ -2,14 +2,19 @@ name: テスト
 
 # いつ動くか:
 #   - develop / main に向けて PR を作ったとき
-#   - deploy.yml から呼ばれたとき（= develop / main にマージされた直後）
+#   - develop / main にマージされたとき
 #
-# ここが緑にならないと公開されない。deploy.yml がこの結果を待つ仕組みになっている。
+# **公開はしない。** 公開は「公開する」ワークフロー（deploy.yml）を
+# 人が手で動かしたときだけ走る。
+#
+# マージのたびに公開まで走るのは無駄なので分けた。
+# ただし公開側はこのワークフローの結果を見て、緑でなければ止まる。
 
 on:
   pull_request:
     branches: [develop, main]
-  workflow_call:
+  push:
+    branches: [develop, main]
 
 # 同じブランチに続けて push したら、古い実行は打ち切る。
 # 最新のコードだけ確かめれば十分なので、待ち時間を無駄にしない。

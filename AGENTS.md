@@ -137,6 +137,7 @@ npm run test:e2e                       # 画面
 - **枝は `develop` から切る。PR の宛先も `develop`。** `main` は本番なので直接触らない
 - **マージしても公開されない。** テストだけ走る
 - 公開は Actions の「公開する」を人が押したときだけ。**勝手に公開しない**
+- 出し忘れは `npm run release:status` で見る（コミットの並びではなく**中身**を見る）
 - 公開の前に「そのコミットのテストが緑か」を見る。赤い／未実行なら止まる
 - `本番` は `main` からしか選べない
 - スキーマ変更は自動反映されない。**先に `npm run db:push`、あとからコード**
@@ -192,4 +193,6 @@ npm run db:start   # ローカル DB
 npm test           # テスト
 npm run test:e2e   # 画面テスト
 npm run check      # 型・lint・整形（コミット前に必ず）
+
+npm run release:status  # main に出し忘れが無いか
 ```

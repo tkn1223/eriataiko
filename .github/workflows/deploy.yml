@@ -2,14 +2,20 @@ name: 公開する
 
 # **マージしても公開されません。** ここを人が手で動かしたときだけ公開します。
 #
-#   Actions の画面 → 左の「公開する」→ Run workflow
-#     Use workflow from … どの枝の中身を出すか（main = 本番のコード）
-#     どこに出す？       … 確認用 / 本番
+#   Actions の画面 → 左の「公開する」→ Run workflow → 押すだけ
 #
-# 「本番」は main からしか選べません（確認していないコードが本番に出る事故を防ぐため）。
+# 選ぶものはありません。**出す先は枝で決まります。**
 #
-# 公開する前に「そのコミットのテストが緑か」だけ見ます（数秒）。
+#   main       → 本番（main には PR とテストを通ったものしか入らない）
+#   それ以外   → 確認用
+#
+# 「どこに出すか」を別に選べるようにすると、「作業中の枝を本番に出す」が
+# 指定できてしまう。選べなくすれば、その間違いは起こりようがない。
+#
+# 公開する前に「そのコミットのテストが緑か」を必ず見ます（数秒）。
 # テストを走らせ直しはしません。赤いまま／未実行なら日本語で止まります。
+# **この確認を飛ばす手段は用意しません。** 逃げ道があると、いつか「とりあえず飛ばす」
+# が習慣になります。
 #
 # Vercel の自動デプロイは vercel.json で切ってあります（切らないと二重に公開される）。
 #
@@ -26,20 +32,6 @@ name: 公開する
 
 on:
   workflow_dispatch:
-    inputs:
-      target:
-        description: どこに出す？
-        type: choice
-        required: true
-        default: 確認用
-        options:
-          - 確認用
-          - 本番
-      skip_test_check:
-        description: テストが緑かの確認を飛ばす（ふだんは触らない）
-        type: boolean
-        required: false
-        default: false
 
 # 公開の途中で打ち切ると中途半端な状態になるので、キャンセルしない。
 concurrency:
@@ -58,27 +50,30 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      TARGET_ENV: ${{ inputs.target == '本番' && 'production' || 'preview' }}
+      # 出す先は枝で決まる。main だけが本番。
+      TARGET_ENV: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
       # 本番のときだけ --prod を足す。確認用のときは空文字になる。
-      PROD_FLAG: ${{ inputs.target == '本番' && '--prod' || '' }}
+      PROD_FLAG: ${{ github.ref_name == 'main' && '--prod' || '' }}
 
     steps:
-      - name: 本番は main からだけ許す
-        # 確認していない枝の中身が本番に出るのを防ぐ。
-        # 「どこに出す？」と「どの枝から出す？」は別の選択なので、取り違えが起きうる。
-        if: inputs.target == '本番' && github.ref_name != 'main'
-        run: |
-          echo "::error::本番に出せるのは main だけです。いまは ${{ github.ref_name }} が選ばれています。"
-          echo "Run workflow の「Use workflow from」を main にしてから、もう一度やり直してください。"
-          echo "この枝の中身を確かめたいだけなら「確認用」を選んでください。"
-          exit 1
-
       - uses: actions/checkout@v4
+
+      - name: どこに出すか知らせる
+        # 押した人が「本番に出そうとしている」と気づけるように、最初にログへ出す。
+        run: |
+          if [ "$TARGET_ENV" = production ]; then
+            echo "### 本番に公開します（枝: ${{ github.ref_name }}）" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### 確認用に公開します（枝: ${{ github.ref_name }}）" >> "$GITHUB_STEP_SUMMARY"
+            echo "本番に出したいときは Use workflow from を main にしてください。" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: このコミットのテストが緑か確かめる
         # テストは走らせ直さない（マージのときに走っている）。結果だけ見る。
         # 「テスト」ワークフローのこのコミットぶんの結論を GitHub に問い合わせる。
-        if: ${{ !inputs.skip_test_check }}
+        #
+        # ここを飛ばす手段は用意しない。逃げ道があると、いつか「とりあえず飛ばす」が
+        # 習慣になり、赤いまま本番に出る。
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
@@ -93,7 +88,7 @@ jobs:
             なし)
               echo "::error::このコミットのテストがまだ終わっていません（または一度も走っていません）。"
               echo "Actions の「テスト」が緑になるのを待ってから、もう一度やり直してください。"
-              echo "どうしても急ぐときだけ skip_test_check を on にできます。"
+              echo "ふつうはマージの数分後に緑になります。"
               exit 1 ;;
             *)
               echo "::error::このコミットのテストが ${result} です。赤いものを公開しないで止めました。"
@@ -144,7 +139,7 @@ jobs:
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "## 公開しました（${{ inputs.target }}）" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 公開しました" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET_ENV" = production ]; then
             echo "**本番**: https://eriataiko.vercel.app" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"

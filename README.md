@@ -264,21 +264,46 @@ docs/           specs/ 仕様   security.md セキュリティ方針
 
 ---
 
-## デプロイ（Vercel）
+## 公開の流れ
 
-1. GitHub にプッシュ → Vercel で Import
-2. 環境変数を設定（Production / Preview 両方）
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SESSION_SECRET`
-   - `TOURNAMENT_PASSCODE`
-3. `vercel.json` でリージョンを `hnd1`（東京）に固定済み。Supabase も Tokyo にすると往復が短い。
+```
+feature/なにか
+   │  PR を作る ──► テストが自動で走る（約5分）
+   ▼
+develop ──────────► テスト ──► 確認用URL に公開
+   │  PR を作る
+   ▼
+main ─────────────► テスト ──► 本番URL に公開
+```
+
+覚えることは 2 つ。**作業は `develop` から枝を切って `develop` に戻す。本番に出すときだけ
+`develop` → `main` の PR を作る。**
+
+テストが赤いときは公開されません。`main` は本番なので、ここに直接コミットしないこと。
+
+自動で確かめているのは、型・lint・整形 → テスト 11 件 → DB の権限テスト → スマホ幅で
+画面が崩れていないか（実ブラウザ）。
+
+**Vercel の自動デプロイは切ってあります**（`vercel.json` の `git.deploymentEnabled`）。
+そのままだとテストが落ちていても公開されてしまうためです。戻さないこと。
+
+初回の準備（Vercel プロジェクト作成・環境変数・GitHub Secrets）は **`docs/deploy.md`**。
+
+リージョンは `vercel.json` で `hnd1`（東京）に固定済み。Supabase も Tokyo にすると往復が短い。
+
+### スキーマ（表のつくり）を変えたとき
+
+コードの公開と DB の変更は別です。**先に DB、あとからコード**の順で。
+
+```bash
+npm run db:push
+```
 
 ---
 
 ## 大会当日までの残タスク
 
+- [ ] Vercel プロジェクト作成 → GitHub Secrets を 3 つ登録（`docs/deploy.md`）
 - [ ] Supabase プロジェクト作成 → `.env.local` と Vercel に環境変数を設定
 - [ ] `operators` に実際の運営者名を登録
 - [ ] `TOURNAMENT_PASSCODE` を決めて設定（本番では必須）

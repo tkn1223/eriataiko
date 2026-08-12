@@ -1,0 +1,72 @@
+name: テスト
+
+# いつ動くか:
+#   - develop / main に向けて PR を作ったとき
+#   - deploy.yml から呼ばれたとき（= develop / main にマージされた直後）
+#
+# ここが緑にならないと公開されない。deploy.yml がこの結果を待つ仕組みになっている。
+
+on:
+  pull_request:
+    branches: [develop, main]
+  workflow_call:
+
+# 同じブランチに続けて push したら、古い実行は打ち切る。
+# 最新のコードだけ確かめれば十分なので、待ち時間を無駄にしない。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 型・lint・テスト・画面
+    runs-on: ubuntu-latest
+    # DB の起動とブラウザの取得を含めて 5 分前後。
+    # 20 分を超えたら何かが固まっているので落とす。
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node を用意する
+        uses: actions/setup-node@v4
+        with:
+          # 手元と同じ版を使う（.node-version は 1 箇所で管理する）
+          node-version-file: .node-version
+          cache: npm
+
+      - name: パッケージを入れる
+        run: npm ci
+
+      - name: 型・lint・整形
+        run: npm run check
+
+      - name: DB を起動する
+        # tests/rls.test.ts が本物の DB に対して「他人に書き換えられないか」を確かめる。
+        # 本番が壊れる設定ミスを実際にここで捕まえたので、CI でも必ず起動する。
+        run: npx supabase start
+
+      - name: DB の接続情報を .env.test に書き直す
+        # Supabase の CLI が上がると鍵が変わることがある。
+        # 毎回いま動いている DB から作り直せば、鍵ずれで落ちなくなる。
+        run: npm run test:env
+
+      - name: テスト
+        run: npm test
+
+      - name: ブラウザを入れる
+        run: npx playwright install --with-deps chromium
+
+      - name: 画面テスト
+        # スマホ幅（390px）で崩れていないかを実際に測る。
+        # 見た目の判断は当てにならないので、必ずここで数値を取る。
+        run: npm run test:e2e
+
+      - name: 失敗したときの記録を残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

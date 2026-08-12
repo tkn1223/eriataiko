@@ -150,6 +150,14 @@ npm run test:e2e                       # 画面
 
 詳しくは `docs/database.md`。
 
+## 当日バックアップ
+
+大会当日だけ、GitHub Actions が 15 分おきに `/api/backup` を叩いて全データを
+Google スプレッドシートへ書き出す（`src/app/api/backup/route.ts`）。
+Supabase には書き込まない（読むだけ）ので、上の「書き込みは `requireOperator()` から」は
+当てはまらない。代わりに秘密のヘッダー（`x-backup-secret`）で守っている。
+準備の手順は `docs/backup.md`。
+
 ## スキーマ変更の手順
 
 1. `supabase/migrations/<日付時刻>_<名前>.sql` を追加（既存ファイルは編集しない）

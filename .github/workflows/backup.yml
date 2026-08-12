@@ -1,0 +1,75 @@
+name: 当日バックアップ（スプレッドシート）
+
+# 大会当日（2027-01-22）の 10:00〜15:00、日本時間で 15 分おきに全データを
+# Google スプレッドシートへ書き出す（21 回）。経緯は docs/specs/2026-08-13-backup-to-sheets.md、
+# 準備の手順は docs/backup.md。
+#
+# 必要な Secrets（リポジトリの Settings > Secrets and variables > Actions）:
+#   BACKUP_SECRET  … src/app/api/backup/route.ts が確かめる秘密の値（docs/backup.md で作る）
+#
+# GitHub の定期実行は「年」を指定できない。このままだと cron の条件（1月22日）に
+# 一致する 2028-01-22 にも動いてしまうため、最初のステップで日本時間の日付を確かめ、
+# 2027-01-22 でなければ何もせず成功で終わる。
+
+on:
+  schedule:
+    # 10:00, 10:15, ..., 14:45（日本時間）
+    - cron: '0,15,30,45 10-14 22 1 *'
+      timezone: 'Asia/Tokyo'
+    # 15:00（日本時間）ちょうど。最後の 1 回
+    - cron: '0 15 22 1 *'
+      timezone: 'Asia/Tokyo'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    # API を叩くだけの処理。固まっていたら早めに諦める。
+    timeout-minutes: 5
+    steps:
+      - name: 大会当日（2027-01-22）かどうか確かめる
+        id: check-date
+        env:
+          TZ: Asia/Tokyo
+        run: |
+          set -euo pipefail
+          today=$(date +%F)
+          echo "日本時間の今日: ${today}"
+          if [ "${today}" != "2027-01-22" ]; then
+            echo "大会当日ではないので、何もせず終了します。"
+            echo "is-tournament-day=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "is-tournament-day=true" >> "$GITHUB_OUTPUT"
+
+      - name: バックアップ API を叩く
+        if: steps.check-date.outputs.is-tournament-day == 'true'
+        env:
+          TZ: Asia/Tokyo
+          BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}
+        run: |
+          set -euo pipefail
+          # Secrets の登録漏れは 401 になるが、それだけでは「値が違う」のか
+          # 「入れ忘れ」なのか分からないので、先に名指しで止める（deploy.yml と同じ考え方）。
+          if [ -z "${BACKUP_SECRET}" ]; then
+            echo "BACKUP_SECRET が登録されていません。docs/backup.md の手順 5 を実施してください。" >&2
+            exit 1
+          fi
+
+          # 本番 URL はここに直接書いている。公開されている固定の URL で（docs/deploy.md）、
+          # 秘密でもなく変わらない。GitHub の変数にすると「登録を忘れると当日だけ静かに
+          # 失敗する」設定項目が 1 つ増えるので、一発勝負のこの用途では直書きを選んだ。
+          #
+          # 秘密は curl の引数に書かない。引数に書くと実行中のプロセス一覧（ps）から
+          # 平文で見えてしまう（deploy.yml で --token を外したのと同じ理由）。
+          # curl は `-H @-` で標準入力からヘッダーを読める。printf はシェル組み込みなので
+          # 別プロセスにならず、ここにも秘密は現れない。
+          status=$(printf 'x-backup-secret: %s\n' "${BACKUP_SECRET}" \
+            | curl -sS -o /tmp/backup-response.json -w '%{http_code}' \
+              -X POST 'https://eriataiko.vercel.app/api/backup' \
+              -H @-)
+          echo "HTTP ${status}"
+          cat /tmp/backup-response.json
+          echo
+          # 失敗を見逃さないよう、200 以外はここでジョブごと落とす（GitHub からメールが届く）。
+          test "${status}" = "200"

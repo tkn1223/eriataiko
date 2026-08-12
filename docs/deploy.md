@@ -71,7 +71,7 @@ Vercel の Project Settings > Environment Variables で、**Production と Previ
 
 | 名前 | 中身 |
 | --- | --- |
-| `VERCEL_TOKEN` | Vercel の Account Settings > Tokens で作ったトークン |
+| `VERCEL_TOKEN` | Vercel の Account Settings > Tokens で作ったトークン（**Scope は `Full Account`**） |
 | `VERCEL_ORG_ID` | `.vercel/project.json` の `orgId` |
 | `VERCEL_PROJECT_ID` | `.vercel/project.json` の `projectId` |
 
@@ -83,8 +83,14 @@ jq -r .projectId .vercel/project.json | tr -d '\n' | gh secret set VERCEL_PROJEC
 ```
 
 `VERCEL_TOKEN` は**ブラウザで作るしかありません**（CLI からは作れず、`403 Cannot create
-tokens for this app.` になる）。https://vercel.com/account/tokens で作ってコピーし、
-**値を画面に出さずに**登録します。
+tokens for this app.` になる）。https://vercel.com/account/tokens で作ります。
+
+**Scope は必ず `Full Account` にしてください。** 権限を絞ってチーム（`catachi`）を選ぶと、
+プロジェクト設定は読めるのに `vercel pull` が
+`Could not retrieve Project Settings` で失敗します。CLI が内部でアカウント情報を
+照会するため、チーム限定のトークンでは動きません（実際にこれで詰まった）。
+
+作ったらコピーして、**値を画面に出さずに**登録します。
 
 ```bash
 pbpaste | gh secret set VERCEL_TOKEN
@@ -117,6 +123,28 @@ gh variable set PREVIEW_ALIAS --body eriataiko-dev.vercel.app
 ```bash
 gh repo edit --default-branch develop
 ```
+
+---
+
+---
+
+## URL が 2 種類あることに注意
+
+Vercel は公開のたびに**その回だけの URL**（`eriataiko-xxxxxxx-catachi.vercel.app`）を作ります。
+これには**ログインの壁がかかっていて、関係者は開けません。** Actions の実行画面に出るのはこれです。
+
+関係者に配るのは、**固定の URL** のほうです。こちらは誰でも開けます。
+
+| 用途 | URL |
+| --- | --- |
+| 本番（関係者に配る） | https://eriataiko.vercel.app |
+| 確認用（`PREVIEW_ALIAS` を設定した場合） | そこで決めた URL |
+| その回だけ（ログインが必要。開発者が中を見る用） | Actions の実行画面に出るもの |
+
+「公開したのに開けない」ときは、その回だけの URL を踏んでいないか確認してください。
+
+なお**プロジェクトの一番最初の公開だけは、`develop` から出しても本番になります**（Vercel の仕様）。
+2 回目以降は指定どおり本番／確認用に分かれます。
 
 ---
 

@@ -82,12 +82,19 @@ jobs:
 
       - name: 公開する
         id: deploy
-        # vercel deploy は URL を標準出力に、進捗を標準エラーに出す。
-        # だから $() で受けると URL だけが取れる。
+        # 出力の形は --json で固定する。付けないと、画面から実行したときと
+        # CI で実行したときで「URL 1 行」と「JSON」に分かれ、URL が取れない
+        # （実際にこれで壊れていた）。
         # shellcheck disable=SC2086
         run: |
           set -euo pipefail
-          url=$(vercel deploy --prebuilt $PROD_FLAG)
+          out=$(vercel deploy --prebuilt $PROD_FLAG --json)
+          url=$(jq -r '.deployment.url // empty' <<<"$out")
+          if [ -z "$url" ]; then
+            echo "::error::公開できましたが URL が取れませんでした。出力の形が変わった可能性があります。"
+            echo "$out"
+            exit 1
+          fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "## 公開しました" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET_ENV" = production ]; then

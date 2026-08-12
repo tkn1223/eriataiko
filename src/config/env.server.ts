@@ -14,16 +14,37 @@ const serverSchema = z.object({
   }),
   // 大会共通の合言葉。空文字なら合言葉チェックなしで入場できる（身内テスト用）。
   TOURNAMENT_PASSCODE: z.string().default(''),
+
+  // ここから下 4 つは大会当日だけ動く「スプレッドシートへのバックアップ」用（docs/backup.md）。
+  // 開発中は Google の実物に繋がないため、他の値と違って未設定でもビルド・テストを通す
+  // 必要があり、TOURNAMENT_PASSCODE と同じく空文字をデフォルトにしてある。
+  // 実際に使うとき（src/app/api/backup/route.ts）は、空ならその場で日本語のエラーにする。
+
+  // このバックアップ API を叩くための秘密のヘッダー値。GitHub Actions の secrets.BACKUP_SECRET と同じ値。
+  BACKUP_SECRET: z.string().default(''),
+  // サービスアカウントのメールアドレス（Google Cloud で発行した JSON の client_email）。
+  GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().default(''),
+  // サービスアカウントの秘密鍵（同じ JSON の private_key）。
+  GOOGLE_PRIVATE_KEY: z.string().default(''),
+  // バックアップ先のスプレッドシート ID（URL の /d/ と /edit の間の文字列）。
+  // 名前は Vercel に登録済みのものに合わせている（docs/backup.md）。
+  BACKUP_SPREADSHEET_ID: z.string().default(''),
 });
 
 let cached: z.infer<typeof serverSchema> | null = null;
 
 export function serverEnv() {
   if (!cached) {
+    // スキーマに足した変数は、必ずここにも書き足すこと。
+    // 書き忘れると（未設定ではなく）常に既定値になり、本番でだけ静かに動かなくなる。
     cached = parseEnv(serverSchema, {
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
       SESSION_SECRET: process.env.SESSION_SECRET,
       TOURNAMENT_PASSCODE: process.env.TOURNAMENT_PASSCODE ?? '',
+      BACKUP_SECRET: process.env.BACKUP_SECRET ?? '',
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? '',
+      GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY ?? '',
+      BACKUP_SPREADSHEET_ID: process.env.BACKUP_SPREADSHEET_ID ?? '',
     });
   }
   return cached;

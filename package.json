@@ -2,25 +2,59 @@
   "name": "eriataiko",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "lint:fix": "eslint --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:related": "vitest related --run",
+    "test:e2e": "playwright test",
+    "test:env": "supabase status -o env > .env.test.raw && node scripts/write-test-env.mjs",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:link": "supabase link",
+    "db:push": "supabase db push",
+    "db:diff": "supabase db diff --linked",
+    "db:types": "supabase gen types typescript --local --schema public > src/types/database.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
+    "jose": "^6.2.8",
+    "konsta": "^5.3.0",
     "next": "16.3.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "jsdom": "^30.0.1",
+    "prettier": "^3.9.6",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "supabase": "^2.113.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

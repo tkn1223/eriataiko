@@ -1,26 +1,53 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@import 'konsta/react/theme.css';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  /* テーマ色。Konsta は iOS / Material 両方の配色パレット（背景・サーフェス含む）を
+     この 1 色から生成するので、変えると画面全体の色味が動く。
+     いまは Konsta 標準（#007aff）のまま。デザインが決まったらここだけ差し替える。 */
+  /* --color-brand-primary: #007aff; */
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  /* 部（クラス）別の色。1部＝上級、3部＝初級 のイメージ */
+  --color-class-1: #c2410c;
+  --color-class-1-bg: #fdede6;
+  --color-class-2: #2563eb;
+  --color-class-2-bg: #e8effc;
+  --color-class-3: #1b8a4c;
+  --color-class-3-bg: #e6f4ec;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --color-live: #e11d2e;
+
+  /* Web フォントは読み込まない。体育館の電波が細いことがあるのと、
+     日本語は端末標準（iOS: ヒラギノ / Android: Noto Sans CJK）で十分きれいに出るため。 */
+  --font-ios:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Hiragino Sans', 'Hiragino Kaku Gothic ProN',
+    system-ui, sans-serif;
+  --font-material:
+    Roboto, 'Noto Sans JP', 'Noto Sans CJK JP', 'Hiragino Sans', system-ui, sans-serif;
+
+  --animate-blink: blink 1.4s infinite;
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.25;
+    }
   }
 }
 
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+}
+
+body {
+  /* スコア入力中に画面全体がバウンドすると押し間違いのもとになる */
+  overscroll-behavior-y: none;
+}
+
+/* 得点は桁が動くと読みづらいので等幅数字で揃える */
+.tabular {
+  font-variant-numeric: tabular-nums;
 }

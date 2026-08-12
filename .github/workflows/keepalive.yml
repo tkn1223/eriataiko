@@ -1,0 +1,32 @@
+name: Supabase keepalive
+
+# Supabase の無料プランは 7 日間アクセスがないとプロジェクトが自動休止する。
+# 大会前に休止していると復帰に時間がかかるので、週 2 回軽く叩いて起こしておく。
+#
+# 必要な Secrets（リポジトリの Settings > Secrets and variables > Actions）:
+#   SUPABASE_URL       … https://xxxx.supabase.co
+#   SUPABASE_ANON_KEY  … anon public キー
+
+on:
+  schedule:
+    # 月曜と木曜の 03:00 UTC（= 日本時間 12:00）
+    - cron: '0 3 * * 1,4'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supabase REST を叩いて起こす
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -o /tmp/body -w '%{http_code}' \
+            "${SUPABASE_URL}/rest/v1/operators?select=id&limit=1" \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+          echo "HTTP ${status}"
+          cat /tmp/body
+          test "${status}" = "200"

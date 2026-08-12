@@ -1,0 +1,49 @@
+# 開発用。起動:
+#   docker compose up
+# 依存を入れ直したいとき（package.json を変えたあと）:
+#   docker compose build web && docker compose up
+
+services:
+  web:
+    build:
+      context: .
+      target: dev
+    ports:
+      - '3000:3000'
+    env_file:
+      # まだ作っていなくても起動できるようにしておく
+      - path: .env.local
+        required: false
+    volumes:
+      # ソースはホストと共有してホットリロードを効かせる
+      - .:/app
+      # node_modules はコンテナ側（linux 用バイナリ）を守る。
+      # ホストの macOS 版で上書きされると sharp などが動かなくなる。
+      - node_modules:/app/node_modules
+      # .next もコンテナ内に置く。bind mount 経由の大量書き込みは
+      # macOS だと極端に遅いため。
+      - next_cache:/app/.next
+    # コンテナは使い捨てなので、落ちたら理由を見て手で直す方針
+    restart: 'no'
+    stdin_open: true
+    tty: true
+
+  # 本番相当の確認用。通常は起動しない:
+  #   docker compose --profile prod up prod --build
+  prod:
+    profiles: ['prod']
+    build:
+      context: .
+      target: runner
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
+    ports:
+      - '3001:3000'
+    env_file:
+      - path: .env.local
+        required: false
+
+volumes:
+  node_modules:
+  next_cache:

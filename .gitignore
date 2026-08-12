@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 環境変数のテンプレートだけはコミットする
+!.env.example
+
+# テスト用の環境変数はコミットする（ローカル用の固定値しか入っていない）
+!.env.test
+.env.test.raw
+
+# テストの出力
+/test-results/
+/playwright-report/
+/blob-report/
+/.screenshots/
+
+# ローカル Supabase
+/supabase/.branches/
+/supabase/.temp/

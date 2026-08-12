@@ -308,6 +308,8 @@ npm run db:push
 - [ ] `operators` に実際の運営者名を登録
 - [ ] `TOURNAMENT_PASSCODE` を決めて設定（本番では必須）
 - [ ] GitHub Secrets（`SUPABASE_URL` / `SUPABASE_ANON_KEY`）を入れて keepalive を有効化
+- [ ] 本番と確認用でデータベースを分けるか決める（いまは共有。`docs/database.md`）
 - [ ] バックアップ（定期エクスポート → リストア）のリハーサル
+      ※ 無料プランに自動バックアップは無い。当日だけ Pro にするかも含めて判断する
 - [ ] Realtime 接続数の実測（観客込み 200 接続が無料枠の上限）
 - [ ] 当日朝に Pro プラン（$25/月）へ一時アップグレードするか判断

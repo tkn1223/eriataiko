@@ -132,6 +132,15 @@ npm run test:e2e                       # 画面
 - 片手・汗ばんだ指で押される。タップ領域は大きく
 - 得点表示は `.tabular` で桁を揃える
 
+## ブランチと公開
+
+- **枝は `develop` から切る。PR の宛先も `develop`。** `main` は本番なので直接触らない
+- `develop` に入ると確認用 URL、`main` に入ると本番 URL に公開される
+- テストが赤いと公開されない（GitHub Actions が止める）
+- スキーマ変更は自動反映されない。**先に `npm run db:push`、あとからコード**
+
+詳しくは `docs/deploy.md`。
+
 ## スキーマ変更の手順
 
 1. `supabase/migrations/<日付時刻>_<名前>.sql` を追加（既存ファイルは編集しない）

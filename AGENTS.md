@@ -139,6 +139,21 @@ npm run test:e2e                       # 画面
 - テストが赤いと公開されない（GitHub Actions が止める）
 - スキーマ変更は自動反映されない。**先に `npm run db:push`、あとからコード**
 
+### マージのしかたを間違えないこと
+
+| どれを | どうマージするか |
+| --- | --- |
+| `feature/*` → `develop` | `gh pr merge --rebase --delete-branch` |
+| **`develop` → `main`** | **`gh pr merge --merge`（rebase を使わない）** |
+
+`develop` と `main` は**ずっと生き続ける 2 本**です。ここを rebase でマージすると、
+同じ内容が別コミットとして作り直され、**2 本の履歴が永久に分かれます。**
+すると次回以降の `develop` → `main` の PR に、マージ済みのコミットが毎回並びます。
+
+実際にやってしまい、`main` を `develop` に取り込んで合流させる作業が必要になりました。
+
+使い捨ての `feature/*` は rebase で問題ありません。
+
 詳しくは `docs/deploy.md`。
 
 ## データベース

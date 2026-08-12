@@ -40,6 +40,8 @@ jobs:
     timeout-minutes: 15
 
     env:
+      # vercel CLI はこの 3 つを環境変数から読む。
+      # --token フラグで渡すとプロセス一覧に出て漏れるので、フラグでは渡さない。
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -71,19 +73,21 @@ jobs:
 
       - name: Vercel から設定と環境変数を取ってくる
         # Supabase の URL や鍵は Vercel 側に置いてある。GitHub には置かない。
-        run: vercel pull --yes --environment="$TARGET_ENV" --token="$VERCEL_TOKEN"
+        run: vercel pull --yes --environment="$TARGET_ENV"
 
       - name: ビルドする
         # PROD_FLAG は空になることがあるので、あえて "" で囲まない。
         # shellcheck disable=SC2086
-        run: vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
+        run: vercel build $PROD_FLAG
 
       - name: 公開する
         id: deploy
+        # vercel deploy は URL を標準出力に、進捗を標準エラーに出す。
+        # だから $() で受けると URL だけが取れる。
         # shellcheck disable=SC2086
         run: |
           set -euo pipefail
-          url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
+          url=$(vercel deploy --prebuilt $PROD_FLAG)
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "## 公開しました" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET_ENV" = production ]; then
@@ -98,6 +102,5 @@ jobs:
         if: env.TARGET_ENV == 'preview' && vars.PREVIEW_ALIAS != ''
         run: |
           set -euo pipefail
-          vercel alias set "${{ steps.deploy.outputs.url }}" "${{ vars.PREVIEW_ALIAS }}" \
-            --token="$VERCEL_TOKEN"
+          vercel alias set "${{ steps.deploy.outputs.url }}" "${{ vars.PREVIEW_ALIAS }}"
           echo "**固定URL**: https://${{ vars.PREVIEW_ALIAS }}" >> "$GITHUB_STEP_SUMMARY"

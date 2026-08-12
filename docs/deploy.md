@@ -75,13 +75,22 @@ Vercel の Project Settings > Environment Variables で、**Production と Previ
 | `VERCEL_ORG_ID` | `.vercel/project.json` の `orgId` |
 | `VERCEL_PROJECT_ID` | `.vercel/project.json` の `projectId` |
 
-コマンドでも入れられます。
+後ろの 2 つはコマンドで入れられます。
 
 ```bash
-gh secret set VERCEL_TOKEN
-gh secret set VERCEL_ORG_ID      < <(jq -r .orgId     .vercel/project.json)
-gh secret set VERCEL_PROJECT_ID  < <(jq -r .projectId .vercel/project.json)
+jq -r .orgId     .vercel/project.json | tr -d '\n' | gh secret set VERCEL_ORG_ID
+jq -r .projectId .vercel/project.json | tr -d '\n' | gh secret set VERCEL_PROJECT_ID
 ```
+
+`VERCEL_TOKEN` は**ブラウザで作るしかありません**（CLI からは作れず、`403 Cannot create
+tokens for this app.` になる）。https://vercel.com/account/tokens で作ってコピーし、
+**値を画面に出さずに**登録します。
+
+```bash
+pbpaste | gh secret set VERCEL_TOKEN
+```
+
+`--body` で直接書くと、シェルの履歴や画面のログに残ります。使わないこと。
 
 ### 4. 確認用の URL を固定する（任意・おすすめ）
 

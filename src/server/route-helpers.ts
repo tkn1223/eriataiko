@@ -2,8 +2,8 @@ import 'server-only';
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSession, type OperatorSession } from '@/lib/session';
-import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { getSession, type OperatorSession } from '@/server/session';
+import { getSupabaseAdminClient } from '@/db/admin';
 import type { Json } from '@/types/database';
 
 /**

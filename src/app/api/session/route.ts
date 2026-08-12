@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { ApiError, logWrite, parseBody, toErrorResponse } from '@/lib/api';
-import { isPasscodeRequired } from '@/lib/env.server';
-import { createSession, destroySession, getSession, verifyPasscode } from '@/lib/session';
-import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { ApiError, logWrite, parseBody, toErrorResponse } from '@/server/route-helpers';
+import { isPasscodeRequired } from '@/config/env.server';
+import { createSession, destroySession, getSession, verifyPasscode } from '@/server/session';
+import { getSupabaseAdminClient } from '@/db/admin';
 
 /** 現在の入場状態を返す。 */
 export async function GET() {

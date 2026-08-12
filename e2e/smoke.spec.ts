@@ -5,6 +5,13 @@ import { expect, test } from '@playwright/test';
  * 新しい画面を作ったら e2e/<画面名>.spec.ts を足していく。
  */
 
+test('トップを開くと「現在」に飛ぶ', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/courts$/);
+  // タブと URL が対応していることの確認でもある
+  await expect(page.getByRole('link', { name: '現在' })).toHaveAttribute('href', '/courts');
+});
+
 test('ヘッダーとタブが出る', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'バドミントン大会 進行管理' })).toBeVisible();

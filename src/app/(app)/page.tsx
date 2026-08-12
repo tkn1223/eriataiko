@@ -1,6 +1,11 @@
-import { ComingSoon } from '@/components/ui/section';
+import { redirect } from 'next/navigation';
 
-/** 「現在」タブ。当日いちばん見られる画面になる予定。 */
-export default function NowPage() {
-  return <ComingSoon title="現在" description="コートごとの進行状況を出す画面。" />;
+/**
+ * トップページは「現在」に飛ばすだけ。
+ *
+ * こうしておくと、5 つのタブすべてが URL を持ち、
+ * `src/ui/<画面名>/` と 1 対 1 で対応する（例外を覚えなくて済む）。
+ */
+export default function RootPage() {
+  redirect('/courts');
 }

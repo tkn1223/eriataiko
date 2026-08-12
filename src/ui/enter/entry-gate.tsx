@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Block, BlockTitle, Button, List, ListInput, ListItem, Radio } from 'konsta/react';
-import type { OperatorSession } from '@/lib/session';
+import type { OperatorSession } from '@/server/session';
 import type { Tables } from '@/types/database';
 
 export type Operator = Pick<Tables<'operators'>, 'id' | 'name'>;

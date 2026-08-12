@@ -2,8 +2,8 @@
 
 import type { ReactNode } from 'react';
 import { Navbar, Page } from 'konsta/react';
-import { TabNav } from '@/components/tab-nav';
-import { TOURNAMENT_NAME } from '@/lib/app-config';
+import { TabNav } from '@/ui/tab-nav';
+import { TOURNAMENT_NAME } from '@/config/tournament';
 
 /**
  * タブ付き画面すべての外枠。

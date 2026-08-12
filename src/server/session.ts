@@ -3,7 +3,7 @@ import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import { SignJWT, jwtVerify } from 'jose';
-import { serverEnv } from '@/lib/env.server';
+import { serverEnv } from '@/config/env.server';
 
 /**
  * 「入場」セッション。

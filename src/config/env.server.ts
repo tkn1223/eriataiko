@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { z } from 'zod';
-import { parseEnv } from '@/lib/env';
+import { parseEnv } from '@/config/env';
 
 /** サーバーにしか存在しない環境変数。クライアントから import するとビルドエラーになる。 */
 const serverSchema = z.object({

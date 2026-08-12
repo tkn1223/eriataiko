@@ -188,14 +188,14 @@ order by relrowsecurity, relname;
 
 ## 書き込み API の書き方
 
-`src/lib/api.ts` の部品を使う。**この形から外れない**こと。
+`src/server/route-helpers.ts` の部品を使う。**この形から外れない**こと。
 
 ```ts
 // src/app/api/scores/route.ts
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { logWrite, parseBody, requireOperator, toErrorResponse } from '@/lib/api';
-import { getSupabaseAdminClient } from '@/lib/supabase/admin';
+import { logWrite, parseBody, requireOperator, toErrorResponse } from '@/server/route-helpers';
+import { getSupabaseAdminClient } from '@/db/admin';
 
 export async function POST(request: Request) {
   try {
@@ -225,33 +225,42 @@ export async function POST(request: Request) {
 
 ## ディレクトリ
 
+層で分けている。**「見た目は ui/、計算は domain/、DB は db/」**の 3 つを覚えれば迷わない。
+
 ```
 src/
-  app/
-    api/session/route.ts   入場 / 退場
-    layout.tsx             html, viewport, Konsta の外枠
-    providers.tsx          Konsta App（iOS / Material 自動切替）
-    globals.css            Tailwind + Konsta + テーマ色
-    page.tsx               入場画面（土台の動作確認を兼ねる）
-  components/
-    entry-gate.tsx         入場 UI
-  lib/
-    api.ts                 書き込み API の共通部品
-    env.ts                 公開環境変数
-    env.server.ts          サーバー専用環境変数
-    session.ts             署名 Cookie セッション
-    supabase/
-      client.ts            ブラウザ用 anon（読み取り + Realtime）
-      server.ts            サーバー用 anon（SSR 読み取り）
-      admin.ts             service_role（書き込み専用・サーバーのみ）
-  types/
-    database.ts            npm run db:types で生成
-supabase/
-  migrations/              スキーマ（git 管理）
-  seed.sql                 サンプル運営者
-.github/workflows/
-  keepalive.yml            無料プランの自動休止を防ぐ定期アクセス
+  app/          URL と画面の対応（Next.js の決まり。ここは動かせない）
+    (app)/      タブ付きの画面。layout.tsx がヘッダーとタブを描く
+      page.tsx  → /courts に飛ばすだけ
+      courts/   現在        standings/ 順位表     bracket/ 対戦表
+      matches/  全試合      me/        myページ
+    api/        書き込みの入口。受け取って usecases を呼ぶだけの薄い層
+    enter/      入場画面（タブなし）
+  ui/           見た目だけ。データを取らない・書かない
+    providers.tsx  app-shell.tsx  tab-nav.tsx   全画面共通の外枠
+    components/    2 つ以上の画面で使う部品
+    courts/ standings/ ...   画面ごとの部品（app/(app)/ と同じ名前）
+  domain/       大会そのもののルール。外を何も知らない（README あり）
+  usecases/     1 操作 = 1 関数。テストの主戦場（README あり）
+  db/           Supabase を触る唯一の場所
+    client.ts   ブラウザ用（読み取り + Realtime）
+    server.ts   サーバー用（SSR の読み取り）
+    admin.ts    service_role（書き込み専用・サーバーのみ）
+  server/       サーバー専用の裏方
+    session.ts        入場（署名付き Cookie）
+    route-helpers.ts  書き込み API の共通部品
+  config/       環境変数、タブ一覧、大会名
+  types/        DB の自動生成型
+
+supabase/       表のつくり（スキーマ）。書き込みのコードは入っていない
+  migrations/   seed.sql
+tests/          DB の約束を確かめるテスト
+e2e/            画面全体のテスト
+.claude/        開発ハーネス（/feature とサブエージェント）
+docs/           specs/ 仕様   security.md セキュリティ方針
 ```
+
+`ui/` のフォルダ名は `app/(app)/` と URL に 1 対 1 で対応させる。例外は作らない。
 
 ---
 

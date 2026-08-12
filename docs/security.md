@@ -89,7 +89,7 @@ React は文字を自動でエスケープするので、普通に書いてい�
 ## 5. 秘密の値の扱い
 
 - `NEXT_PUBLIC_` が付いた環境変数は**ブラウザに配られます**。秘密の値に付けないこと
-- `SUPABASE_SERVICE_ROLE_KEY` は書き込み API の中だけ。`src/lib/supabase/admin.ts` に
+- `SUPABASE_SERVICE_ROLE_KEY` は書き込み API の中だけ。`src/db/admin.ts` に
   `import 'server-only'` が入っていて、クライアントから使うとビルドが落ちます
 - `.env.local` はコミットされません（`.gitignore` 済み）
 - `.env.test` はコミットします。ローカル用の固定値しか入っていないためです

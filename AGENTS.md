@@ -44,7 +44,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ### 1. 書き込みは必ず Route Handler 経由
 
-ブラウザの Supabase クライアント（`src/lib/supabase/client.ts`）で
+ブラウザの Supabase クライアント（`src/db/client.ts`）で
 `insert` / `update` / `delete` を呼ばない。設計違反であり、そもそも弾かれる。
 
 書き込みは `src/app/api/**/route.ts` に作り、必ずこの順で書く:
@@ -99,7 +99,7 @@ create policy foo_public_read on public.foo
 ```bash
 npm run db:start                       # 先にこれ（DB を使うテストに必要）
 npm test                               # 全部
-npm run test:related src/lib/foo.ts    # 直したファイルの周りだけ
+npm run test:related src/domain/standings.ts    # 直したファイルの周りだけ
 npm run test:e2e                       # 画面
 ```
 
@@ -120,7 +120,7 @@ npm run test:e2e                       # 画面
 
 - Konsta UI（`konsta/react`）を第一選択。`Page` / `Navbar` / `List` / `Block` / `Button` で組む
 - Konsta の部品はクライアント側だけ。**Server Component から import するとビルドが落ちる**。
-  `'use client'` を付けた部品を挟む（`src/components/app-shell.tsx` が例）
+  `'use client'` を付けた部品を挟む（`src/ui/app-shell.tsx` が例）
 - 対戦表のような Konsta に無い画面は Tailwind で個別に作る
 - テーマ色は `src/app/globals.css` の `--color-brand-primary` 1 箇所。
   ここを変えると背景やボタンの色まで連動して変わる

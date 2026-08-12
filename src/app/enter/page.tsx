@@ -1,9 +1,9 @@
-import { EntryGate, type Operator } from '@/components/entry-gate';
-import { PlainPage } from '@/components/plain-page';
-import { ErrorBlock } from '@/components/ui/error-block';
-import { isPasscodeRequired } from '@/lib/env.server';
-import { getSession, type OperatorSession } from '@/lib/session';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { EntryGate, type Operator } from '@/ui/enter/entry-gate';
+import { PlainPage } from '@/ui/components/plain-page';
+import { ErrorBlock } from '@/ui/components/error-block';
+import { isPasscodeRequired } from '@/config/env.server';
+import { getSession, type OperatorSession } from '@/server/session';
+import { createSupabaseServerClient } from '@/db/server';
 
 // 入場状態（Cookie）を見るので常に動的レンダリング
 export const dynamic = 'force-dynamic';

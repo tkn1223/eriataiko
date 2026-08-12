@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { verifyPasscode } from '@/lib/session';
+import { verifyPasscode } from '@/server/session';
 
 /**
  * 合言葉の照合。

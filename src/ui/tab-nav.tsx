@@ -3,7 +3,7 @@
 import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Link, Toolbar } from 'konsta/react';
-import { TABS } from '@/lib/tabs';
+import { TABS } from '@/config/tabs';
 
 /**
  * 画面上部のタブ。

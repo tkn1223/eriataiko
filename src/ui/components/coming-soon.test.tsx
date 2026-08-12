@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
-import { ComingSoon } from '@/components/ui/section';
+import { ComingSoon } from '@/ui/components/coming-soon';
 
 describe('ComingSoon', () => {
   test('見出しと説明が出る', () => {

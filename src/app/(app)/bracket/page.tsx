@@ -1,4 +1,4 @@
-import { ComingSoon } from '@/components/ui/section';
+import { ComingSoon } from '@/ui/components/coming-soon';
 
 export default function BracketPage() {
   return (

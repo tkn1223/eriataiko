@@ -330,16 +330,19 @@ npm run db:push
 
 ## 大会当日までの残タスク
 
-- [ ] Vercel プロジェクト作成 → GitHub Secrets を 3 つ登録（`docs/deploy.md`）
-- [ ] Supabase プロジェクト作成 → `.env.local` と Vercel に環境変数を設定
+- [x] Vercel プロジェクト作成 → GitHub Secrets を 3 つ登録（`docs/deploy.md`）
+- [x] Supabase プロジェクト作成（東京）→ `.env.local` と Vercel に環境変数を設定
+      ※ 本番で読み取り可・書き込み不可を実測済み
 - [ ] `operators` に実際の運営者名を登録
-- [ ] `TOURNAMENT_PASSCODE` を決めて設定（本番では必須）
-- [ ] GitHub Secrets（`SUPABASE_URL` / `SUPABASE_ANON_KEY`）を入れて keepalive を有効化
+- [x] `TOURNAMENT_PASSCODE` を決めて設定
+- [x] GitHub Secrets（`SUPABASE_URL` / `SUPABASE_ANON_KEY`）を入れて keepalive を有効化
 - [ ] 本番と確認用でデータベースを分けるか決める（いまは共有。`docs/database.md`）
-- [ ] 当日バックアップ（Google スプレッドシートへの自動書き出し）の準備（`docs/backup.md`）
-      ※ サービスアカウント作成 → スプレッドシート共有 → Vercel/GitHub に環境変数を設定
-- [ ] バックアップの定期実行リハーサル。`.github/workflows/backup.yml` の日付を近い日に
-      書き換えて、大会より前に一度、本当に自動で動くことを確認する（一発勝負のため）
-      ※ シートからの書き戻し（リストア）は無い。壊れたら人が見て打ち直す運用
+- [x] 当日バックアップの準備（サービスアカウント・スプレッドシート共有・環境変数）
+      ※ 手で押す経路は本番で実測済み。シートからの書き戻しは無く、壊れたら人が打ち直す
+- [ ] **バックアップの定期実行リハーサル（最重要・未達）**
+      2026-08-13 時点で **GitHub の定期実行が 1 回も発火していない**（リポジトリ作成当日
+      だったためと思われる）。時間帯もタイムゾーンも外した `*/5 * * * *` で 30 分待って 0 回。
+      設定の誤りではない（`docs/backup.md` に調査結果）。
+      **大会前にもう一度試し、動かなければ別の手段に切り替えること。**
 - [ ] Realtime 接続数の実測（観客込み 200 接続が無料枠の上限）
 - [ ] 当日朝に Pro プラン（$25/月）へ一時アップグレードするか判断

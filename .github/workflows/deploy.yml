@@ -82,14 +82,14 @@ jobs:
 
       - name: 公開する
         id: deploy
-        # 出力の形は --json で固定する。付けないと、画面から実行したときと
-        # CI で実行したときで「URL 1 行」と「JSON」に分かれ、URL が取れない
-        # （実際にこれで壊れていた）。
+        # vercel CLI が返す JSON は 2 通りある。--json を付けると平ら（.url）、
+        # 付けないと入れ子（.deployment.url）。版によっても変わりうるので、
+        # 両方拾う。実際に片方だけ見ていて落ちた。
         # shellcheck disable=SC2086
         run: |
           set -euo pipefail
           out=$(vercel deploy --prebuilt $PROD_FLAG --json)
-          url=$(jq -r '.deployment.url // empty' <<<"$out")
+          url=$(jq -r '.deployment.url // .url // empty' <<<"$out")
           if [ -z "$url" ]; then
             echo "::error::公開できましたが URL が取れませんでした。出力の形が変わった可能性があります。"
             echo "$out"

@@ -1,12 +1,17 @@
 name: 公開する
 
-# develop に入ったら「確認用」、main に入ったら「本番」に公開する。
+# **マージしても公開されません。** ここを人が手で動かしたときだけ公開します。
 #
-#   feature/xxx --PR--> develop --> テスト --> 確認用URL
-#                         --PR--> main    --> テスト --> 本番URL
+#   Actions の画面 → 左の「公開する」→ Run workflow
+#     Use workflow from … どの枝の中身を出すか（main = 本番のコード）
+#     どこに出す？       … 確認用 / 本番
 #
-# どちらもテスト（ci.yml）が緑になってからでないと公開されない。
-# Vercel の自動デプロイは vercel.json で切ってある（切らないと二重に公開される）。
+# 「本番」は main からしか選べません（確認していないコードが本番に出る事故を防ぐため）。
+#
+# 公開する前に「そのコミットのテストが緑か」だけ見ます（数秒）。
+# テストを走らせ直しはしません。赤いまま／未実行なら日本語で止まります。
+#
+# Vercel の自動デプロイは vercel.json で切ってあります（切らないと二重に公開される）。
 #
 # 必要な設定（リポジトリの Settings > Secrets and variables > Actions）:
 #   Secrets:
@@ -20,8 +25,21 @@ name: 公開する
 # 手順の詳細は docs/deploy.md。
 
 on:
-  push:
-    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: どこに出す？
+        type: choice
+        required: true
+        default: 確認用
+        options:
+          - 確認用
+          - 本番
+      skip_test_check:
+        description: テストが緑かの確認を飛ばす（ふだんは触らない）
+        type: boolean
+        required: false
+        default: false
 
 # 公開の途中で打ち切ると中途半端な状態になるので、キャンセルしない。
 concurrency:
@@ -29,13 +47,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
-    name: テスト
-    uses: ./.github/workflows/ci.yml
-
   deploy:
     name: Vercel に公開
-    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -45,13 +58,48 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      # main だけが本番。それ以外（= develop）は確認用。
-      TARGET_ENV: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
+      TARGET_ENV: ${{ inputs.target == '本番' && 'production' || 'preview' }}
       # 本番のときだけ --prod を足す。確認用のときは空文字になる。
-      PROD_FLAG: ${{ github.ref_name == 'main' && '--prod' || '' }}
+      PROD_FLAG: ${{ inputs.target == '本番' && '--prod' || '' }}
 
     steps:
+      - name: 本番は main からだけ許す
+        # 確認していない枝の中身が本番に出るのを防ぐ。
+        # 「どこに出す？」と「どの枝から出す？」は別の選択なので、取り違えが起きうる。
+        if: inputs.target == '本番' && github.ref_name != 'main'
+        run: |
+          echo "::error::本番に出せるのは main だけです。いまは ${{ github.ref_name }} が選ばれています。"
+          echo "Run workflow の「Use workflow from」を main にしてから、もう一度やり直してください。"
+          echo "この枝の中身を確かめたいだけなら「確認用」を選んでください。"
+          exit 1
+
       - uses: actions/checkout@v4
+
+      - name: このコミットのテストが緑か確かめる
+        # テストは走らせ直さない（マージのときに走っている）。結果だけ見る。
+        # 「テスト」ワークフローのこのコミットぶんの結論を GitHub に問い合わせる。
+        if: ${{ !inputs.skip_test_check }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          result=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.status == "completed")] | first | .conclusion // "なし"')
+          echo "このコミット（${SHA}）のテスト結果: ${result}"
+          case "$result" in
+            success)
+              echo "テストは緑です。公開に進みます。" ;;
+            なし)
+              echo "::error::このコミットのテストがまだ終わっていません（または一度も走っていません）。"
+              echo "Actions の「テスト」が緑になるのを待ってから、もう一度やり直してください。"
+              echo "どうしても急ぐときだけ skip_test_check を on にできます。"
+              exit 1 ;;
+            *)
+              echo "::error::このコミットのテストが ${result} です。赤いものを公開しないで止めました。"
+              echo "先にテストを直してください。"
+              exit 1 ;;
+          esac
 
       - name: Vercel の設定があるか確かめる
         # 無いまま進むと Vercel CLI の英語エラーで止まって原因が分かりにくい。
@@ -96,9 +144,11 @@ jobs:
             exit 1
           fi
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "## 公開しました" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 公開しました（${{ inputs.target }}）" >> "$GITHUB_STEP_SUMMARY"
           if [ "$TARGET_ENV" = production ]; then
-            echo "**本番**: $url" >> "$GITHUB_STEP_SUMMARY"
+            echo "**本番**: https://eriataiko.vercel.app" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "この回だけの URL（ログインが必要）: $url" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "**確認用**: $url" >> "$GITHUB_STEP_SUMMARY"
           fi

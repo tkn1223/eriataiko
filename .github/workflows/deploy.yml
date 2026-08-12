@@ -1,0 +1,103 @@
+name: 公開する
+
+# develop に入ったら「確認用」、main に入ったら「本番」に公開する。
+#
+#   feature/xxx --PR--> develop --> テスト --> 確認用URL
+#                         --PR--> main    --> テスト --> 本番URL
+#
+# どちらもテスト（ci.yml）が緑になってからでないと公開されない。
+# Vercel の自動デプロイは vercel.json で切ってある（切らないと二重に公開される）。
+#
+# 必要な設定（リポジトリの Settings > Secrets and variables > Actions）:
+#   Secrets:
+#     VERCEL_TOKEN       … Vercel の Account Settings > Tokens で作る
+#     VERCEL_ORG_ID      … vercel link したあと .vercel/project.json の orgId
+#     VERCEL_PROJECT_ID  … 同じファイルの projectId
+#   Variables（任意）:
+#     PREVIEW_ALIAS      … 確認用の固定 URL（例 eriataiko-dev.vercel.app）
+#                          入れておくと毎回同じ URL で開ける。空なら毎回別 URL になる。
+#
+# 手順の詳細は docs/deploy.md。
+
+on:
+  push:
+    branches: [develop, main]
+
+# 公開の途中で打ち切ると中途半端な状態になるので、キャンセルしない。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: テスト
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Vercel に公開
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # main だけが本番。それ以外（= develop）は確認用。
+      TARGET_ENV: ${{ github.ref_name == 'main' && 'production' || 'preview' }}
+      # 本番のときだけ --prod を足す。確認用のときは空文字になる。
+      PROD_FLAG: ${{ github.ref_name == 'main' && '--prod' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Vercel の設定があるか確かめる
+        # 無いまま進むと Vercel CLI の英語エラーで止まって原因が分かりにくい。
+        # ここで日本語で止める。
+        run: |
+          missing=""
+          [ -n "$VERCEL_TOKEN" ]      || missing="$missing VERCEL_TOKEN"
+          [ -n "$VERCEL_ORG_ID" ]     || missing="$missing VERCEL_ORG_ID"
+          [ -n "$VERCEL_PROJECT_ID" ] || missing="$missing VERCEL_PROJECT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Vercel の設定が足りません:$missing"
+            echo "リポジトリの Settings > Secrets and variables > Actions に登録してください。"
+            echo "手順は docs/deploy.md にあります。"
+            exit 1
+          fi
+
+      - name: Vercel CLI を入れる
+        run: npm i -g vercel@latest
+
+      - name: Vercel から設定と環境変数を取ってくる
+        # Supabase の URL や鍵は Vercel 側に置いてある。GitHub には置かない。
+        run: vercel pull --yes --environment="$TARGET_ENV" --token="$VERCEL_TOKEN"
+
+      - name: ビルドする
+        # PROD_FLAG は空になることがあるので、あえて "" で囲まない。
+        # shellcheck disable=SC2086
+        run: vercel build $PROD_FLAG --token="$VERCEL_TOKEN"
+
+      - name: 公開する
+        id: deploy
+        # shellcheck disable=SC2086
+        run: |
+          set -euo pipefail
+          url=$(vercel deploy --prebuilt $PROD_FLAG --token="$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "## 公開しました" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$TARGET_ENV" = production ]; then
+            echo "**本番**: $url" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "**確認用**: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 確認用の固定 URL を貼り替える
+        # PREVIEW_ALIAS を設定していれば、毎回同じ URL で開けるようにする。
+        # 未設定なら何もしない（上の一時 URL をそのまま使う）。
+        if: env.TARGET_ENV == 'preview' && vars.PREVIEW_ALIAS != ''
+        run: |
+          set -euo pipefail
+          vercel alias set "${{ steps.deploy.outputs.url }}" "${{ vars.PREVIEW_ALIAS }}" \
+            --token="$VERCEL_TOKEN"
+          echo "**固定URL**: https://${{ vars.PREVIEW_ALIAS }}" >> "$GITHUB_STEP_SUMMARY"

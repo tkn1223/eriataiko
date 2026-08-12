@@ -64,9 +64,10 @@ argument-hint: <やりたいこと（雑でよい）>
 
 承認後、`docs/specs/YYYY-MM-DD-<英小文字の名前>.md` に保存する。書式は `docs/specs/TEMPLATE.md`。
 
-そのあとブランチを切る:
+そのあとブランチを切る。**枝は必ず `develop` から切る**（`main` は本番なので触らない）:
 
 ```bash
+git switch develop && git pull
 git switch -c feature/<英小文字の名前>
 ```
 
@@ -110,15 +111,21 @@ git switch -c feature/<英小文字の名前>
 × が残っていたら **PR を作らずに** 人間に報告する。全部 ○ なら:
 
 ```bash
-git add -A && git commit   # メッセージは仕様の「やること」から
-gh pr create               # 本文に仕様の要約と受け入れ基準の結果
+git branch --show-current                    # 意図した枝にいるか確認（必須）
+git log origin/develop..HEAD --oneline       # develop に対して何が新規か確認（必須）
+
+git add -A && git commit                     # メッセージは仕様の「やること」から
+gh pr create --base develop                  # 本文に仕様の要約と受け入れ基準の結果
 ```
+
+**宛先は必ず `develop`。** `main` は本番なので、ここから PR を出さない。
+PR を作るとテストが自動で走る（約 5 分）。緑になってからマージする。
 
 報告に必ず含める:
 
 - 何を作ったか（1〜3 行）
 - 受け入れ基準の ○×
 - 途中で決めたこと・妥協したこと
-- 次に人間がやること（環境変数の設定など）
+- 次に人間がやること（環境変数の設定、本番に出すなら `develop` → `main` の PR など）
 
 `README.md` の書き換えが必要になったら、忘れずに直す。

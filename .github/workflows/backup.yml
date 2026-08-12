@@ -8,8 +8,17 @@ name: 当日バックアップ（スプレッドシート）
 #   BACKUP_SECRET  … src/app/api/backup/route.ts が確かめる秘密の値（docs/backup.md で作る）
 #
 # GitHub の定期実行は「年」を指定できない。このままだと cron の条件（1月22日）に
-# 一致する 2028-01-22 にも動いてしまうため、最初のステップで日本時間の日付を確かめ、
+# 一致する 2028-01-22 にも動いてしまうため、時計で動いたときは日本時間の日付を確かめ、
 # 2027-01-22 でなければ何もせず成功で終わる。
+#
+# **手で押したときは日付を見ない。** 見張りが必要なのは「勝手に動く定期実行」だけで、
+# 手で押すのは押した人の意思があるため。これで次の 2 つができる:
+#   - 事前のリハーサル（本当に書き込めるか、当日より前に確かめる）
+#   - 当日の緊急バックアップ（「直す前にいまの状態を残したい」。次の自動実行を待たない）
+#
+# 注意: 公開リポジトリでは **60 日間リポジトリに動きがないと定期実行が自動で止まる。**
+# 大会まで間が空くときは、当日前に Actions でこのワークフローが active か確かめること
+# （docs/backup.md の当日前チェック）。
 
 on:
   schedule:
@@ -27,23 +36,33 @@ jobs:
     # API を叩くだけの処理。固まっていたら早めに諦める。
     timeout-minutes: 5
     steps:
-      - name: 大会当日（2027-01-22）かどうか確かめる
+      - name: 実行してよいか確かめる
         id: check-date
         env:
           TZ: Asia/Tokyo
+          # 時計で動いたときだけ日付を見る。手で押したときは見ない。
+          IS_SCHEDULED: ${{ github.event_name == 'schedule' }}
         run: |
           set -euo pipefail
           today=$(date +%F)
-          echo "日本時間の今日: ${today}"
-          if [ "${today}" != "2027-01-22" ]; then
-            echo "大会当日ではないので、何もせず終了します。"
-            echo "is-tournament-day=false" >> "$GITHUB_OUTPUT"
+          echo "日本時間の今日: ${today}（きっかけ: ${GITHUB_EVENT_NAME}）"
+
+          if [ "${IS_SCHEDULED}" != "true" ]; then
+            echo "手で押されたので、日付にかかわらず実行します。"
+            echo "should-run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "is-tournament-day=true" >> "$GITHUB_OUTPUT"
+
+          if [ "${today}" != "2027-01-22" ]; then
+            echo "大会当日ではないので、何もせず終了します。"
+            echo "（cron に年は書けないため、翌年の同じ日付に動くのをここで止めています）"
+            echo "should-run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "should-run=true" >> "$GITHUB_OUTPUT"
 
       - name: バックアップ API を叩く
-        if: steps.check-date.outputs.is-tournament-day == 'true'
+        if: steps.check-date.outputs.should-run == 'true'
         env:
           TZ: Asia/Tokyo
           BACKUP_SECRET: ${{ secrets.BACKUP_SECRET }}

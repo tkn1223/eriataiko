@@ -65,6 +65,47 @@ Vercel の Project Settings > Environment Variables で、**Production と Previ
 環境変数は GitHub ではなく Vercel に置きます。公開リポジトリなので、GitHub 側には
 デプロイに必要な最小限（次の 3 つ）しか置きません。
 
+当日バックアップ用の 4 つ（`BACKUP_SECRET` / `GOOGLE_SERVICE_ACCOUNT_EMAIL` /
+`GOOGLE_PRIVATE_KEY` / `BACKUP_SPREADSHEET_ID`）も同じ場所に入れます。手順は `docs/backup.md`。
+
+### ★「秘匿（Sensitive）」にしてはいけない値がある ★
+
+Vercel の環境変数には「秘匿」という設定があり、**`vercel env add` で追加すると既定で秘匿になります。**
+秘匿にすると、その値は**あとから取り出せなくなります**。`vercel pull`（Vercel から値を
+手元に持ってくるコマンド）を実行しても、本当の値ではなく `[SENSITIVE]` という文字が入ります。
+
+問題はここからです。**`NEXT_PUBLIC_` で始まる値だけは、ビルドのときにアプリの中へ
+そのまま焼き込まれます。** ブラウザ（利用者の端末）に配る必要がある値なので、
+「動かすとき」ではなく「作るとき」に本物が要るのです。
+
+つまり `NEXT_PUBLIC_...` を秘匿にすると、ビルドが受け取るのは `[SENSITIVE]` という文字です。
+それがアプリに焼き付いたまま公開され、**本番がデータベースに繋がらなくなります。**
+実際に一度この状態になりました。テストは通り、公開も成功し、画面だけがデータを出さないので
+原因に気づきにくい種類の事故です。
+
+そのため次の 2 つは**秘匿を外して**登録し直しました。どちらもブラウザに配られる
+公開前提の値なので、隠しても意味がありません。
+
+```bash
+vercel env rm  NEXT_PUBLIC_SUPABASE_URL      production
+vercel env add NEXT_PUBLIC_SUPABASE_URL      production --no-sensitive
+vercel env rm  NEXT_PUBLIC_SUPABASE_ANON_KEY production
+vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY production --no-sensitive
+```
+
+**それ以外の値（`SUPABASE_SERVICE_ROLE_KEY` / `SESSION_SECRET` / `TOURNAMENT_PASSCODE` /
+バックアップ用の 4 つ）は秘匿のままでよいです。** これらはビルドではなく、
+アプリが動いているサーバーに実行時に渡される値なので、`vercel pull` で取り出せなくても困りません。
+
+確認したいときは値を手元に落として見比べます。`NEXT_PUBLIC_` の 2 つが `[SENSITIVE]` に
+なっていたら、上のコマンドで入れ直してから再デプロイしてください。
+
+```bash
+vercel env pull .env.vercel-check --environment=production
+```
+
+（`.env*` は `.gitignore` 済みなのでコミットされません。見終わったら消してください）
+
 ### 3. GitHub に 3 つ登録する
 
 リポジトリの **Settings > Secrets and variables > Actions**、`Secrets` タブで `New repository secret`。
@@ -159,6 +200,12 @@ Vercel は公開のたびに**その回だけの URL**（`eriataiko-xxxxxxx-cata
 
 Vercel 側の環境変数が足りていない可能性が高いです（手順 2）。
 ビルド時に必要なものが欠けていると、そこで落ちます。
+
+### 公開は成功したのに、本番でデータが出ない・繋がらない
+
+`NEXT_PUBLIC_SUPABASE_URL` と `NEXT_PUBLIC_SUPABASE_ANON_KEY` が Vercel で
+「秘匿（Sensitive）」になっていないか確認してください。手順 2 の
+「秘匿にしてはいけない値がある」を読んでください。実際にこれで詰まったことがあります。
 
 ### 確認用に出したいだけなのに本番に出てしまった
 

@@ -8,7 +8,7 @@ export function ComingSoon({ title, description }: { title: string; description:
     <>
       <BlockTitle>{title}</BlockTitle>
       <Block strong inset className="text-center">
-        <p className="font-bold">準備中</p>
+        <p className="font-bold">準備中！！</p>
         <p className="mt-1 text-sm opacity-60">{description}</p>
       </Block>
     </>

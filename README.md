@@ -230,16 +230,16 @@ export async function POST(request: Request) {
 ```
 src/
   app/          URL と画面の対応（Next.js の決まり。ここは動かせない）
-    (app)/      タブ付きの画面。layout.tsx がヘッダーとタブを描く
+    (app)/      画面下のメニュー付きの画面。layout.tsx がヘッダーとメニューを描く
       page.tsx  → /courts に飛ばすだけ
-      courts/   現在        standings/ 順位表     bracket/ 対戦表
+      courts/   現在        bracket/   対戦表
       matches/  全試合      me/        myページ
     api/        書き込みの入口。受け取って usecases を呼ぶだけの薄い層
     enter/      入場画面（タブなし）
   ui/           見た目だけ。データを取らない・書かない
-    providers.tsx  app-shell.tsx  tab-nav.tsx   全画面共通の外枠
+    providers.tsx  app-shell.tsx  bottom-nav.tsx   全画面共通の外枠
     components/    2 つ以上の画面で使う部品
-    courts/ standings/ ...   画面ごとの部品（app/(app)/ と同じ名前）
+    bracket/ me/ ...   画面ごとの部品（app/(app)/ と同じ名前）
   domain/       大会そのもののルール。外を何も知らない（README あり）
   usecases/     1 操作 = 1 関数。テストの主戦場（README あり）
   db/           Supabase を触る唯一の場所

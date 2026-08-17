@@ -56,5 +56,6 @@ test('メニューを押すと画面が切り替わる', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('link', { name: /対戦表/ }).click();
   await expect(page).toHaveURL(/\/bracket$/);
-  await expect(page.getByText('準備中！！')).toBeVisible();
+  // 対戦表は e2e/bracket.spec.ts で詳しく見るので、ここでは切り替わったことだけ確認する
+  await expect(page.getByRole('heading', { name: '対戦表' })).toBeVisible();
 });

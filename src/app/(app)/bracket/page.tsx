@@ -1,10 +1,18 @@
-import { ComingSoon } from '@/ui/components/coming-soon';
+import { BracketPage } from '@/ui/bracket/bracket-page';
+import {
+  sampleKoBracket,
+  sampleLeagueCards,
+  sampleStandings,
+  sampleTeams,
+} from '@/ui/bracket/sample-data';
 
-export default function BracketPage() {
+export default function Page() {
   return (
-    <ComingSoon
-      title="対戦表"
-      description="予選リーグの星取表と、決勝トーナメントの勝ち上がり表。"
+    <BracketPage
+      teams={sampleTeams}
+      leagueCards={sampleLeagueCards}
+      standings={sampleStandings}
+      koBracket={sampleKoBracket}
     />
   );
 }

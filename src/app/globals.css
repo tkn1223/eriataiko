@@ -17,6 +17,17 @@
 
   --color-live: #e11d2e;
 
+  /* 対戦表の強調色。soft のほうは進行中の行の下地に使う（赤は --color-live） */
+  --color-accent: #e94e1b;
+  --color-accent-soft: #fdede6;
+
+  /* いちばん濃い色。見出しの文字・選ばれているボタン・優勝の帯・シートの暗幕（ink/45） */
+  --color-ink: #17150f;
+  /* 丸い切り替え（予選リーグ｜決勝トーナメント）の下地 */
+  --color-segment: #e9e7df;
+  /* 順位表で自分のチームの行だけ敷く色 */
+  --color-self-row: #fff8ec;
+
   /* チームの色分け（1〜4 の 4 色のみ）。myページのアバターの背景に使う */
   --color-team-1: #c0392b;
   --color-team-2: #3f8f5f;

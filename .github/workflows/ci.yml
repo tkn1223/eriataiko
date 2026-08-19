@@ -59,8 +59,33 @@ jobs:
       - name: テスト
         run: npm test
 
+      - name: 日本語フォントを入れる
+        # **画面テストの命綱。** 下の「画面テスト」は 390px で崩れていないかを
+        # 数値で測る。日本語の字形が変われば文字幅も変わり、測定が意味を失う。
+        #
+        # 入れるのは Noto Sans JP。src/app/globals.css の --font-material が
+        # 'Noto Sans JP' を名指ししており、Android の実機で使われるものと同じ。
+        #
+        # 以前は下の `--with-deps` が Ubuntu の配布サーバーから日本語フォント
+        # （fonts-ipafont-gothic）を取ってきていた。だがそこが不調だと止まる。
+        # 2026-08-19 は 10 分 28 秒無言になり、人が手で止めた。npm から入れれば
+        # 版が package-lock.json で固定され、外の配布サーバーに一切触らない。
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.fonts
+          cp node_modules/@expo-google-fonts/noto-sans-jp/400Regular/*.ttf ~/.fonts/
+          cp node_modules/@expo-google-fonts/noto-sans-jp/700Bold/*.ttf ~/.fonts/
+          fc-cache -f
+          # 本当にそれが選ばれるかを見る。ここが違うフォントを指していたら、
+          # 下の測定は当てにならない。
+          echo "日本語に使われるフォント: $(fc-match -f '%{family}' 'Noto Sans JP')"
+
       - name: ブラウザを入れる
-        run: npx playwright install --with-deps chromium
+        # `--with-deps` は付けない。あれは OS の部品を Ubuntu の配布サーバーから
+        # 取りに行くが、ubuntu-latest には最初から入っている（外して 54/55 件が
+        # 通ることを実測した）。唯一足りなかった日本語フォントは、上の手順で
+        # npm から入れている。これでテストが外の配布サーバーに依存しなくなった。
+        run: npx playwright install chromium
 
       - name: 画面テスト
         # スマホ幅（390px）で崩れていないかを実際に測る。

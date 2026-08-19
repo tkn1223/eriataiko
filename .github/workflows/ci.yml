@@ -60,7 +60,11 @@ jobs:
         run: npm test
 
       - name: ブラウザを入れる
-        run: npx playwright install --with-deps chromium
+        # `--with-deps` を付けない。あれは OS の部品を配布サーバーから取りに行くが、
+        # ubuntu-latest には最初から入っている。持っているものを取りに行くだけなのに、
+        # 配布サーバーが不調だと延々と待つ（実際に 11 分止まり、人が手で止めた）。
+        # 付けなければブラウザ本体を落とすだけなので 30 秒前後で終わる。
+        run: npx playwright install chromium
 
       - name: 画面テスト
         # スマホ幅（390px）で崩れていないかを実際に測る。

@@ -1,7 +1,6 @@
-import { ComingSoon } from '@/ui/components/coming-soon';
+import { MatchesPage } from '@/ui/matches/matches-page';
+import { sampleCourts } from '@/ui/matches/sample-data';
 
-export default function MatchesPage() {
-  return (
-    <ComingSoon title="全試合" description="コート別の進行表。終了した試合の折りたたみ表示。" />
-  );
+export default function Page() {
+  return <MatchesPage courts={sampleCourts} />;
 }

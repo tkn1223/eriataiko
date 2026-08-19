@@ -59,27 +59,33 @@ jobs:
       - name: テスト
         run: npm test
 
-      - name: ブラウザを入れる
-        # `--with-deps` は外さないこと。**日本語フォント（fonts-ipafont-gothic）を
-        # 入れているのがこれ。** 外すと日本語が別の字形で描かれ、文字幅が変わる。
-        # このリポジトリの画面テストは 390px で崩れないかを**数値で測る**ので、
-        # 字形が違えば測定そのものが無意味になる（実際に外したら星取表が
-        # はみ出さなくなり、横スクロールのテストが落ちた）。
+      - name: 日本語フォントを入れる
+        # **画面テストの命綱。** 下の「画面テスト」は 390px で崩れていないかを
+        # 数値で測る。日本語の字形が変われば文字幅も変わり、測定が意味を失う。
         #
-        # ただし `--with-deps` は Ubuntu の配布サーバーから取ってくるので、
-        # 向こうが不調だと止まる。2026-08-19 に 10 分 28 秒無言になり、人が手で止めた。
-        # 5 分で見切りをつけて 1 回だけやり直す。つまずきはたいてい一時的なもの。
+        # 入れるのは Noto Sans JP。src/app/globals.css の --font-material が
+        # 'Noto Sans JP' を名指ししており、Android の実機で使われるものと同じ。
+        #
+        # 以前は下の `--with-deps` が Ubuntu の配布サーバーから日本語フォント
+        # （fonts-ipafont-gothic）を取ってきていた。だがそこが不調だと止まる。
+        # 2026-08-19 は 10 分 28 秒無言になり、人が手で止めた。npm から入れれば
+        # 版が package-lock.json で固定され、外の配布サーバーに一切触らない。
         run: |
-          set -uo pipefail
-          for i in 1 2; do
-            if timeout -k 30 300 npx playwright install --with-deps chromium; then
-              echo "入りました（${i} 回目）"
-              exit 0
-            fi
-            echo "::warning::${i} 回目が 5 分で終わりませんでした。やり直します。"
-          done
-          echo "::error::2 回とも失敗しました。Ubuntu の配布サーバーが不調の可能性が高いです。"
-          exit 1
+          set -euo pipefail
+          mkdir -p ~/.fonts
+          cp node_modules/@expo-google-fonts/noto-sans-jp/400Regular/*.ttf ~/.fonts/
+          cp node_modules/@expo-google-fonts/noto-sans-jp/700Bold/*.ttf ~/.fonts/
+          fc-cache -f
+          # 本当にそれが選ばれるかを見る。ここが違うフォントを指していたら、
+          # 下の測定は当てにならない。
+          echo "日本語に使われるフォント: $(fc-match -f '%{family}' 'Noto Sans JP')"
+
+      - name: ブラウザを入れる
+        # `--with-deps` は付けない。あれは OS の部品を Ubuntu の配布サーバーから
+        # 取りに行くが、ubuntu-latest には最初から入っている（外して 54/55 件が
+        # 通ることを実測した）。唯一足りなかった日本語フォントは、上の手順で
+        # npm から入れている。これでテストが外の配布サーバーに依存しなくなった。
+        run: npx playwright install chromium
 
       - name: 画面テスト
         # スマホ幅（390px）で崩れていないかを実際に測る。

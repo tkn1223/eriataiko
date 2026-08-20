@@ -1,20 +1,10 @@
+import { ClassChip } from '@/ui/components/class-chip';
+import { YouTag } from '@/ui/components/you-tag';
 import type { CourtMatch } from '@/ui/matches/sample-data';
 
 type Props = {
   match: CourtMatch;
   onSelect: () => void;
-};
-
-const CLASS_TEXT_CLASS: Record<CourtMatch['classLabel'], string> = {
-  '1部': 'text-class-1',
-  '2部': 'text-class-2',
-  '3部': 'text-class-3',
-};
-
-const CLASS_BG_CLASS: Record<CourtMatch['classLabel'], string> = {
-  '1部': 'bg-class-1-bg',
-  '2部': 'bg-class-2-bg',
-  '3部': 'bg-class-3-bg',
 };
 
 /** 終わった試合のゲーム得点を見て、どちらが勝ったかを返す（引き分けは無い前提）。 */
@@ -52,16 +42,8 @@ export function MatchRow({ match, onSelect }: Props) {
         <span className="tabular flex min-w-[58px] shrink-0 items-center justify-center rounded-full bg-gray-100 px-2 py-1 text-[11px] font-extrabold text-gray-500">
           {match.orderInCourt}試合目
         </span>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-extrabold ${CLASS_TEXT_CLASS[match.classLabel]} ${CLASS_BG_CLASS[match.classLabel]}`}
-        >
-          {match.classLabel}
-        </span>
-        {match.isMine && (
-          <span className="bg-accent shrink-0 rounded-[5px] px-1.5 py-0.5 text-[11px] font-extrabold whitespace-nowrap text-white">
-            あなたの試合
-          </span>
-        )}
+        <ClassChip classLabel={match.classLabel} />
+        {match.isMine && <YouTag />}
       </div>
 
       <div className="flex items-start gap-2">

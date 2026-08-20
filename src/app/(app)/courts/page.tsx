@@ -1,6 +1,13 @@
-import { ComingSoon } from '@/ui/components/coming-soon';
+import { CourtsPage } from '@/ui/courts/courts-page';
+import { completedMatches, sampleCourts, totalMatches } from '@/ui/courts/sample-data';
 
-/** 「現在」タブ。当日いちばん見られる画面になる予定。 */
-export default function NowPage() {
-  return <ComingSoon title="現在" description="コートごとの進行状況を出す画面。" />;
+/** 「結果LIVE」画面。当日いちばん見られる画面。トップ（/）を開くとここに飛ぶ。 */
+export default function Page() {
+  return (
+    <CourtsPage
+      courts={sampleCourts}
+      completedMatches={completedMatches}
+      totalMatches={totalMatches}
+    />
+  );
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { BottomSheet } from '@/ui/components/bottom-sheet';
+import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import type { CourtMatch, GameScore, MatchTeam, TeamNumber } from '@/ui/matches/sample-data';
 
 type SelectedMatch = CourtMatch & { courtNumber: number };
@@ -64,9 +65,7 @@ export function ScoreSheet({
     >
       {/* 保存されないことは、得点を押す前に必ず目に入る位置と色で出す。
           リハーサルで「入れたのに消えた」と誤解されるのを防ぐため。 */}
-      <p className="text-accent bg-accent-soft rounded-[10px] px-3 py-2 text-[12px] font-extrabold">
-        入れた点はまだ保存されません（画面を閉じると消えます）
-      </p>
+      <UnsavedNotice />
 
       <div className="mt-3 grid grid-cols-2 gap-3">
         <TeamScorePanel

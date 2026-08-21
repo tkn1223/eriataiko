@@ -255,30 +255,6 @@ export type Database = {
           },
         ];
       };
-      operators: {
-        Row: {
-          created_at: string;
-          display_order: number;
-          id: string;
-          is_active: boolean;
-          name: string;
-        };
-        Insert: {
-          created_at?: string;
-          display_order?: number;
-          id?: string;
-          is_active?: boolean;
-          name: string;
-        };
-        Update: {
-          created_at?: string;
-          display_order?: number;
-          id?: string;
-          is_active?: boolean;
-          name?: string;
-        };
-        Relationships: [];
-      };
       players: {
         Row: {
           created_at: string;
@@ -434,31 +410,31 @@ export type Database = {
           created_at: string;
           detail: Json | null;
           id: number;
-          operator_id: string | null;
-          operator_name: string;
+          player_id: string | null;
+          player_name: string;
         };
         Insert: {
           action: string;
           created_at?: string;
           detail?: Json | null;
           id?: never;
-          operator_id?: string | null;
-          operator_name: string;
+          player_id?: string | null;
+          player_name: string;
         };
         Update: {
           action?: string;
           created_at?: string;
           detail?: Json | null;
           id?: never;
-          operator_id?: string | null;
-          operator_name?: string;
+          player_id?: string | null;
+          player_name?: string;
         };
         Relationships: [
           {
-            foreignKeyName: 'write_logs_operator_id_fkey';
-            columns: ['operator_id'];
+            foreignKeyName: 'write_logs_player_id_fkey';
+            columns: ['player_id'];
             isOneToOne: false;
-            referencedRelation: 'operators';
+            referencedRelation: 'players';
             referencedColumns: ['id'];
           },
         ];

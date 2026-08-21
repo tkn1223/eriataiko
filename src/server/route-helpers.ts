@@ -76,8 +76,8 @@ export async function logWrite(
   const { error } = await getSupabaseAdminClient()
     .from('write_logs')
     .insert({
-      operator_id: operator.operatorId,
-      operator_name: operator.operatorName,
+      player_id: operator.playerId,
+      player_name: operator.playerName,
       action,
       detail: (detail ?? null) as Json,
     });

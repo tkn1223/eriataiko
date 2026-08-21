@@ -16,34 +16,42 @@ export async function GET() {
 }
 
 const enterSchema = z.object({
-  operatorId: z.uuid({ message: '運営者を選んでください' }),
+  playerId: z.uuid({ message: '名前を選んでください' }),
   passcode: z.string().default(''),
 });
 
 /**
- * 入場。合言葉を検証し、選ばれた運営者が実在することをサーバー側で確かめてから
- * 署名付き Cookie を発行する。ブラウザから来た名前は信用しない。
+ * 入場。合言葉を検証し、選ばれた人が**いまの大会に参加している**ことを
+ * サーバー側で確かめてから署名付き Cookie を発行する。
+ * ブラウザから来た名前も can_input も信用しない。
  */
 export async function POST(request: Request) {
   try {
-    const { operatorId, passcode } = await parseBody(request, enterSchema);
+    const { playerId, passcode } = await parseBody(request, enterSchema);
 
     if (!verifyPasscode(passcode)) {
       throw new ApiError(401, '合言葉が違います。');
     }
 
-    const { data: operator, error } = await getSupabaseAdminClient()
-      .from('operators')
-      .select('id, name, is_active')
-      .eq('id', operatorId)
+    // 「いまの大会に参加しているか」まで確かめる。過去の大会にだけ出た人では入場できない。
+    const { data: entry, error } = await getSupabaseAdminClient()
+      .from('entries')
+      .select('can_input, players!inner(id, number, name), competitions!inner(is_current)')
+      .eq('player_id', playerId)
+      .eq('competitions.is_current', true)
       .maybeSingle();
 
     if (error) throw error;
-    if (!operator || !operator.is_active) {
-      throw new ApiError(404, 'その運営者は見つかりませんでした。一覧を更新してください。');
+    if (!entry) {
+      throw new ApiError(404, 'その名前は見つかりませんでした。一覧を更新してください。');
     }
 
-    const session = { operatorId: operator.id, operatorName: operator.name };
+    const session = {
+      playerId: entry.players.id,
+      playerName: entry.players.name,
+      playerNumber: entry.players.number,
+      canInput: entry.can_input,
+    };
     await createSession(session);
     await logWrite(session, 'session.enter');
 

@@ -4,12 +4,19 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Block, BlockTitle, Button, List, ListInput, ListItem, Radio } from 'konsta/react';
 import type { OperatorSession } from '@/server/session';
-import type { Tables } from '@/types/database';
 
-export type Operator = Pick<Tables<'operators'>, 'id' | 'name'>;
+/** 入場画面の一覧に出す 1 人。いまの大会に参加している人だけが来る。 */
+export type Entrant = {
+  entryId: string;
+  playerId: string;
+  /** 同名（「たろう」が複数いる）を見分けるための番号 */
+  number: number;
+  name: string;
+  canInput: boolean;
+};
 
 type Props = {
-  operators: Operator[];
+  entrants: Entrant[];
   passcodeRequired: boolean;
   session: OperatorSession | null;
 };
@@ -21,7 +28,7 @@ type Props = {
  * 実際の検証（合言葉・運営者の実在確認・Cookie 発行）はすべて
  * /api/session の中でサーバーが行う。
  */
-export function EntryGate({ operators, passcodeRequired, session }: Props) {
+export function EntryGate({ entrants, passcodeRequired, session }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
@@ -58,11 +65,11 @@ export function EntryGate({ operators, passcodeRequired, session }: Props) {
       <>
         <BlockTitle>入場中</BlockTitle>
         <List strong inset>
-          <ListItem title="名前" after={session.operatorName} />
+          <ListItem title="名前" after={`${session.playerName} #${session.playerNumber}`} />
         </List>
         <Block>
           <p className="mb-4 text-sm opacity-60">
-            この端末からの書き込みは「{session.operatorName}」として記録されます。
+            この端末からの書き込みは「{session.playerName}」として記録されます。
             別の人に渡すときは退場してください。
           </p>
           <Button outline onClick={() => call('DELETE')} disabled={working}>
@@ -76,26 +83,28 @@ export function EntryGate({ operators, passcodeRequired, session }: Props) {
   return (
     <>
       <BlockTitle>あなたは誰ですか？</BlockTitle>
-      {operators.length === 0 ? (
+      {entrants.length === 0 ? (
         <Block strong inset>
           <p className="text-sm">
-            運営者がまだ登録されていません。Supabase の <code>operators</code>{' '}
-            テーブルに名前を追加してください。
+            参加者がまだ登録されていません。今の大会（<code>competitions</code> の{' '}
+            <code>is_current</code>）と、その参加者（<code>entries</code>）を登録してください。
           </p>
         </Block>
       ) : (
         <List strong inset>
-          {operators.map((operator) => (
+          {entrants.map((entrant) => (
             <ListItem
-              key={operator.id}
+              key={entrant.playerId}
               label
-              title={operator.name}
+              title={entrant.name}
+              // 同じニックネームの人がいるので、番号を添えないと選び分けられない
+              after={`#${entrant.number}`}
               media={
                 <Radio
                   component="div"
-                  value={operator.id}
-                  checked={selectedId === operator.id}
-                  onChange={() => setSelectedId(operator.id)}
+                  value={entrant.playerId}
+                  checked={selectedId === entrant.playerId}
+                  onChange={() => setSelectedId(entrant.playerId)}
                 />
               }
             />
@@ -128,7 +137,7 @@ export function EntryGate({ operators, passcodeRequired, session }: Props) {
         <Button
           large
           disabled={!selectedId || working}
-          onClick={() => call('POST', { operatorId: selectedId, passcode })}
+          onClick={() => call('POST', { playerId: selectedId, passcode })}
         >
           入場する
         </Button>

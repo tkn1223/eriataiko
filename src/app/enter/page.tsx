@@ -1,4 +1,4 @@
-import { EntryGate, type Operator } from '@/ui/enter/entry-gate';
+import { EntryGate, type Entrant } from '@/ui/enter/entry-gate';
 import { PlainPage } from '@/ui/components/plain-page';
 import { ErrorBlock } from '@/ui/components/error-block';
 import { isPasscodeRequired } from '@/config/env.server';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 /** 入場画面。得点入力をする運営が「自分が誰か」を申告する。 */
 export default async function EnterPage() {
   let session: OperatorSession | null = null;
-  let operators: Operator[] = [];
+  let entrants: Entrant[] = [];
   let passcodeRequired = false;
   let loadError: string | null = null;
 
@@ -19,15 +19,29 @@ export default async function EnterPage() {
     session = await getSession();
     passcodeRequired = isPasscodeRequired();
 
-    // anon クライアントで読む = 観戦者にも同じものが見えることの確認になる
+    // anon クライアントで読む = 観戦者にも同じものが見えることの確認になる。
+    //
+    // **大会はユーザーに選ばせない。** is_current が true の 1 件をここで決める。
+    // 過去の大会にだけ出た人は一覧に出ない。
     const { data, error } = await createSupabaseServerClient()
-      .from('operators')
-      .select('id, name')
-      .order('display_order')
-      .order('name');
+      .from('entries')
+      .select('id, can_input, players!inner(id, number, name), competitions!inner(is_current)')
+      .eq('competitions.is_current', true)
+      .limit(500);
 
     if (error) throw new Error(error.message);
-    operators = data ?? [];
+
+    // 番号順に並べる。DB 側で並べ替えると、つないだ表の列を指す書き方が
+    // PostgREST の版に左右されるので、ここで確実に並べる。
+    entrants = (data ?? [])
+      .map((row) => ({
+        entryId: row.id,
+        playerId: row.players.id,
+        number: row.players.number,
+        name: row.players.name,
+        canInput: row.can_input,
+      }))
+      .sort((a, b) => a.number - b.number);
   } catch (error) {
     // 環境変数の未設定・DB 未接続はここに落ちる。画面に理由を出す。
     loadError = error instanceof Error ? error.message : String(error);
@@ -38,7 +52,7 @@ export default async function EnterPage() {
       {loadError ? (
         <ErrorBlock message={loadError} />
       ) : (
-        <EntryGate operators={operators} passcodeRequired={passcodeRequired} session={session} />
+        <EntryGate entrants={entrants} passcodeRequired={passcodeRequired} session={session} />
       )}
     </PlainPage>
   );

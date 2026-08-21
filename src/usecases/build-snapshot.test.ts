@@ -54,9 +54,9 @@ describe('空の表でも落ちない', () => {
     const result = buildSnapshot({
       now: NOW,
       existingTabNames: [],
-      tables: [{ table: 'operators', label: '運営者', rows: [] }],
+      tables: [{ table: 'players', label: '人', rows: [] }],
     });
-    expect(result.values[0]).toEqual(['運営者']);
+    expect(result.values[0]).toEqual(['人']);
   });
 });
 
@@ -67,8 +67,8 @@ describe('対象の表が見出し付きで縦に並ぶ', () => {
       existingTabNames: [],
       tables: [
         {
-          table: 'operators',
-          label: '運営者',
+          table: 'players',
+          label: '人',
           rows: [{ id: '1', name: '太郎' }],
         },
         {
@@ -80,7 +80,7 @@ describe('対象の表が見出し付きで縦に並ぶ', () => {
     });
 
     // 1 つ目の表: 見出し → 列名 → データ
-    expect(result.values[0]).toEqual(['運営者']);
+    expect(result.values[0]).toEqual(['人']);
     expect(result.values[1]).toEqual(['id', 'name']);
     expect(result.values[2]).toEqual(['1', '太郎']);
 
@@ -98,9 +98,9 @@ describe('表の行が上限を超えたとき「一部だけです」と分か�
     const result = buildSnapshot({
       now: NOW,
       existingTabNames: [],
-      tables: [{ table: 'operators', label: '運営者', rows }],
+      tables: [{ table: 'players', label: '人', rows }],
     });
-    expect(result.values[0]).toEqual(['運営者']);
+    expect(result.values[0]).toEqual(['人']);
   });
 
   test('上限を 1 件でも超えると見出しに「一部だけです」が入り、データは上限件数までに切られる', () => {
@@ -108,7 +108,7 @@ describe('表の行が上限を超えたとき「一部だけです」と分か�
     const result = buildSnapshot({
       now: NOW,
       existingTabNames: [],
-      tables: [{ table: 'operators', label: '運営者', rows }],
+      tables: [{ table: 'players', label: '人', rows }],
     });
 
     expect(String(result.values[0][0])).toContain('一部だけです');

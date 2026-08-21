@@ -9,7 +9,18 @@ type TableName = keyof Database['public']['Tables'];
  * 次のバックアップから一緒に書き出される。
  */
 export const BACKUP_TABLES: { table: TableName; label: string }[] = [
-  { table: 'operators', label: '運営者' },
+  // 大会のデータ。当日これが消えると大会が止まるので、全部書き出す。
+  { table: 'competitions', label: '大会' },
+  { table: 'divisions', label: '部' },
+  { table: 'teams', label: 'チーム' },
+  { table: 'players', label: '人' },
+  { table: 'entries', label: '参加' },
+  { table: 'stages', label: '段（予選・決勝）' },
+  { table: 'team_matches', label: '対戦' },
+  { table: 'matches', label: '試合' },
+  { table: 'match_players', label: '出場者' },
+  { table: 'games', label: '得点' },
+  // 誰が何を書いたか。データが壊れたときに突き合わせる。
   { table: 'write_logs', label: '書き込み履歴' },
 ];
 

@@ -147,7 +147,7 @@ anon key はブラウザに配られるので **誰でも入手できる**。だ
 ### 「誰が書いたか」の担保
 
 1. 大会共通の**合言葉 1 つ**（`TOURNAMENT_PASSCODE`）を入力
-2. `operators` テーブルの一覧から自分を選ぶ
+2. `operators` テーブルの一覧から自分を選ぶ（**段2 で `entries` に切り替える**。`docs/database.md`）
 3. サーバーが合言葉と運営者の実在を確認し、**署名付き httpOnly Cookie** を発行
 
 Cookie は `SESSION_SECRET` で署名（HS256）されているので、ブラウザ側で中身を
@@ -333,7 +333,9 @@ npm run db:push
 - [x] Vercel プロジェクト作成 → GitHub Secrets を 3 つ登録（`docs/deploy.md`）
 - [x] Supabase プロジェクト作成（東京）→ `.env.local` と Vercel に環境変数を設定
       ※ 本番で読み取り可・書き込み不可を実測済み
-- [ ] `operators` に実際の運営者名を登録
+- [ ] **入場する人の名簿を登録**（`players` と `entries`。番号・名前・チーム・部・入力可）
+      ※ 旧 `operators` への登録は**不要になった**。段2 で名簿を一本化するため、
+      いま入れると移し替える手間が増える。本番は空のままにしておくこと
 - [x] `TOURNAMENT_PASSCODE` を決めて設定
 - [x] GitHub Secrets（`SUPABASE_URL` / `SUPABASE_ANON_KEY`）を入れて keepalive を有効化
 - [ ] 本番と確認用でデータベースを分けるか決める（いまは共有。`docs/database.md`）

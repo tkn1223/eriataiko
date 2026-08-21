@@ -204,12 +204,10 @@ export type Database = {
           created_at: string;
           division_id: string;
           finished_at: string | null;
-          games_to_win: number;
           id: string;
           order_in_court: number | null;
           order_in_team_match: number;
           outcome: string;
-          points_to_win: number;
           started_at: string | null;
           status: string;
           team_match_id: string;
@@ -219,12 +217,10 @@ export type Database = {
           created_at?: string;
           division_id: string;
           finished_at?: string | null;
-          games_to_win?: number;
           id?: string;
           order_in_court?: number | null;
           order_in_team_match?: number;
           outcome?: string;
-          points_to_win?: number;
           started_at?: string | null;
           status?: string;
           team_match_id: string;
@@ -234,12 +230,10 @@ export type Database = {
           created_at?: string;
           division_id?: string;
           finished_at?: string | null;
-          games_to_win?: number;
           id?: string;
           order_in_court?: number | null;
           order_in_team_match?: number;
           outcome?: string;
-          points_to_win?: number;
           started_at?: string | null;
           status?: string;
           team_match_id?: string;

@@ -201,8 +201,14 @@ create index if not exists team_matches_stage_idx
 -- ---------------------------------------------------------------------
 -- 対戦の中の 1 試合（部ごと）。ダブルスなので出場者は片側 2 人。
 --
--- **points_to_win / games_to_win を試合に焼き付ける。** 部でもステージでも
--- 変わるうえ、あとからルールを変えても終わった試合の解釈が壊れない。
+-- **「何点先取」「何ゲーム先取」は持たない。**
+-- 勝敗はこれらが無くても出せる（ゲームは点が多いほう、試合はゲームを多く取ったほう）。
+-- 一方で実際の大会は「1部は 21,21,11 / 2部は 15,15,5」のようにゲームごとに違い、
+-- 持たせると **試合の行ごとに点数を書く設定作業**が増える。
+-- これまでの大会運営でも人の目で確かめてきた箇所なので、設定を足さない側を選んだ。
+--
+-- そのぶん「終了」は自動で判定できない。**人が「確定」を押したときに done になる。**
+-- 誤入力（21 のつもりで 121）は止まらないが、あとから直せる。
 create table if not exists public.matches (
   id                  uuid primary key default gen_random_uuid(),
   team_match_id       uuid not null references public.team_matches(id) on delete cascade,
@@ -221,8 +227,6 @@ create table if not exists public.matches (
                         check (outcome in ('normal',
                                            'retired_a', 'retired_b',
                                            'walkover_a', 'walkover_b')),
-  points_to_win       integer not null default 15 check (points_to_win > 0),
-  games_to_win        integer not null default 1  check (games_to_win  > 0),
   started_at          timestamptz,
   finished_at         timestamptz,
   created_at          timestamptz not null default now(),
@@ -230,7 +234,7 @@ create table if not exists public.matches (
 );
 
 comment on table public.matches is
-  '試合。何点先取かはこの行に焼き付ける（部でもステージでも変わるため）。';
+  '試合。何点先取かは持たない（勝敗は得点の多いほうで決まる）。終了は人が確定を押す。';
 
 create index if not exists matches_court_idx
   on public.matches (court_number, order_in_court);

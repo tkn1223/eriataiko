@@ -131,8 +131,6 @@ async function makeMatch(over: Record<string, unknown> = {}) {
     team_match_id: ids.leagueTeamMatchId,
     division_id: ids.divisionId,
     order_in_team_match: Math.floor(Math.random() * 1_000_000),
-    points_to_win: 15,
-    games_to_win: 1,
     ...over,
   });
 }
@@ -314,46 +312,39 @@ describe('出場者（ダブルス）', () => {
 });
 
 describe('試合のルールと結果', () => {
-  test('同じ大会の中で、予選と決勝に別々の「何点先取」を入れられる', async () => {
-    const koTeamMatchId = await insertOne('team_matches', {
-      stage_id: ids.koStageId,
-      label: '準決勝2',
-      slot_a_label: '予選2位',
-      slot_b_label: '予選3位',
-    });
-
-    const leagueMatch = await makeMatch({ points_to_win: 15, games_to_win: 1 });
-    const koMatch = await makeMatch({
-      team_match_id: koTeamMatchId,
-      points_to_win: 21,
-      games_to_win: 2,
-    });
-
+  test('試合数に上限が無い（1 つの対戦に何試合でも入る）', async () => {
+    // 実際の大会では 1 対戦あたり 3 試合のことも 8 試合のこともある。
+    // 「今回は何試合」をシステム側で決めてしまわないこと。
+    for (let i = 0; i < 20; i += 1) {
+      await makeMatch({ order_in_team_match: 5000 + i });
+    }
     const { data } = await admin
       .from('matches')
-      .select('id, points_to_win, games_to_win')
-      .in('id', [leagueMatch, koMatch]);
-
-    const byId = Object.fromEntries((data ?? []).map((m) => [m.id, m]));
-    expect(byId[leagueMatch].points_to_win).toBe(15);
-    expect(byId[koMatch].points_to_win).toBe(21);
-    expect(byId[koMatch].games_to_win).toBe(2);
+      .select('id')
+      .eq('team_match_id', ids.leagueTeamMatchId)
+      .gte('order_in_team_match', 5000)
+      .lte('order_in_team_match', 5019);
+    expect(data?.length).toBe(20);
   });
 
-  test('何も指定しなければ 15 点・1 ゲームになる', async () => {
-    const { data, error } = await admin
-      .from('matches')
-      .insert({
-        team_match_id: ids.leagueTeamMatchId,
-        division_id: ids.divisionId,
-        order_in_team_match: Math.floor(Math.random() * 1_000_000),
-      })
-      .select('points_to_win, games_to_win')
-      .single();
+  test('「何点先取」は持たない（勝敗は得点の多いほうで決まる）', async () => {
+    // 持たせると「1部は 21,21,11 / 2部は 15,15,5」のように試合ごとの設定作業が増える。
+    // 勝敗の判定にはそもそも要らないので持たない。経緯は仕様書の「決めたこと」。
+    const matchId = await makeMatch();
+    const { error } = await admin.from('matches').update({ points_to_win: 21 }).eq('id', matchId);
+    expect(error, '点数の上限を持つ列が復活している').not.toBeNull();
+  });
 
+  test('ゲームは何本でも入る（1 ゲームでも 5 ゲームでも）', async () => {
+    const matchId = await makeMatch();
+    const rows = [1, 2, 3, 4, 5].map((n) => ({
+      match_id: matchId,
+      game_number: n,
+      score_a: 21,
+      score_b: 19,
+    }));
+    const { error } = await admin.from('games').insert(rows);
     expect(error).toBeNull();
-    expect(data!.points_to_win).toBe(15);
-    expect(data!.games_to_win).toBe(1);
   });
 
   test.each(['retired_a', 'retired_b', 'walkover_a', 'walkover_b'])(

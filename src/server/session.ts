@@ -41,13 +41,27 @@ function secretKey() {
   return new TextEncoder().encode(serverEnv().SESSION_SECRET);
 }
 
-/** 合言葉の照合。長さの差から中身が漏れないよう、ハッシュ化してから定数時間比較する。 */
+/**
+ * 合言葉の照合。
+ *
+ * 長さの差から中身が漏れないよう、ハッシュ化してから定数時間で比較する。
+ *
+ * **日本語の合言葉のために NFC で正規化している。** 「がんばれ」の「が」は
+ * 1 文字として持つ形と「か」＋濁点の 2 文字で持つ形があり、見た目が同じでも
+ * 別のバイト列になる。端末や入力方法によってどちらで届くかが変わるので、
+ * 正規化しないと**正しい合言葉を入れたのに弾かれる**（実測で確認）。
+ */
 export function verifyPasscode(input: string) {
   const expected = serverEnv().TOURNAMENT_PASSCODE;
   if (expected.length === 0) return true; // 合言葉なし運用
-  const a = createHash('sha256').update(input.trim()).digest();
-  const b = createHash('sha256').update(expected).digest();
+  const a = createHash('sha256').update(normalize(input)).digest();
+  const b = createHash('sha256').update(normalize(expected)).digest();
   return timingSafeEqual(a, b);
+}
+
+/** 前後の空白を落とし、文字の表し方を 1 通りに揃える */
+function normalize(value: string) {
+  return value.trim().normalize('NFC');
 }
 
 export async function createSession(session: OperatorSession) {

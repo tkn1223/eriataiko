@@ -54,7 +54,7 @@ SUPABASE_SERVICE_ROLE_KEY=${serviceKey}
 
 # テスト用の固定値。本番とは別のものを使う。
 SESSION_SECRET=test-only-session-secret-do-not-use-in-production
-TOURNAMENT_PASSCODE=test-passcode
+TOURNAMENT_PASSCODE=がんばれ2027
 
 # /api/backup の 401 テスト用。Google 側の値は入れないので、
 # 正しいヘッダーで叩くところまでは自動テストしない（docs/backup.md の手順で人が確かめる）。

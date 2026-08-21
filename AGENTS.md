@@ -205,11 +205,15 @@ Supabase には書き込まない（読むだけ）ので、上の「書き込�
 
 ## スキーマ変更の手順
 
-1. `supabase/migrations/<日付時刻>_<名前>.sql` を追加（既存ファイルは編集しない）
-2. `npm run db:reset`（ローカルに反映）
-3. `npm run db:types`（`src/types/database.ts` を再生成。手書きしない）
-4. `tests/rls.test.ts` にテストを足す
-5. 本番へは `npm run db:push`
+1. `supabase/migrations/<日付時刻>_<名前>.sql` を追加（**既存ファイルは編集しない**）
+2. `npm run db:reset`（手元に反映。作り直すのでサンプルも入り直す）
+3. `npm run db:types`（`src/types/database.ts` を再生成。**手書きしない**）
+4. `tests/rls.test.ts` と `tests/schema.test.ts` にテストを足す
+5. `npm run check && npm test` が緑
+6. マージまで済ませる
+7. **本番へ流す（`npm run db:push`）。手順は `docs/database.md` の「本番に流す」を読むこと**
+
+**7 は人の判断で行う。勝手に流さない。** 一度流したものは編集できず、消してもデータは戻らない。
 
 ## コマンド
 

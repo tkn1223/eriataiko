@@ -1,0 +1,176 @@
+name: リリース PR を作る
+
+# `develop` の中身を `main`（本番）へ出すための PR を作る。
+#
+# 手でも作れるが、毎回同じことを確かめる必要があり、忘れると事故になる:
+#   - DB の指示書が含まれているのに、先に本番へ流していない → 本番が壊れる
+#   - 画面が変わるのかどうかが分からない → 公開が要るか判断できない
+#   - テストが緑か見ずにマージする
+# それを機械で本文に書き出す。
+#
+# **マージは人が GitHub の画面で押す。** ここでは作るだけ。
+# 押すときは必ず「Create a merge commit」を選ぶこと（`AGENTS.md`）。
+# rebase で入れると develop と main の履歴が永久に分かれる。
+#
+# 注意: **このファイルは `main` に入って初めてボタンとして現れる。**
+# 手で動かすワークフローは既定のブランチのものしか使えない。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  create:
+    name: リリース PR を作る
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # main と develop を比べるので、履歴を全部持ってくる
+          fetch-depth: 0
+
+      - name: 差を調べて PR を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TZ: Asia/Tokyo
+        run: |
+          set -euo pipefail
+          git fetch --quiet origin main develop
+
+          # --- 出すものがあるか -------------------------------------------------
+          # コミットの並びではなく **中身** で見る（develop → main はマージコミットで
+          # 入れるので、コミットの並びはリリースのたびにずれる。それは害が無い）。
+          if git diff --quiet origin/main origin/develop; then
+            echo "出すものがありません。main と develop の中身は同じです。"
+            {
+              echo "### 出すものがありません"
+              echo ""
+              echo "\`main\` と \`develop\` の中身は同じです。"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # --- すでに開いていないか ---------------------------------------------
+          existing=$(gh pr list --base main --head develop --state open \
+            --json url --jq '.[0].url // empty')
+          if [ -n "${existing}" ]; then
+            echo "すでに開いています: ${existing}"
+            {
+              echo "### すでに開いています"
+              echo ""
+              echo "${existing}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # --- 何が入るか -------------------------------------------------------
+          commits=$(git log origin/main..origin/develop --oneline --no-merges)
+          # 画面に出るもの。ここに差があれば、マージ後に「公開する」を押す必要がある。
+          site=$(git diff --name-only origin/main origin/develop -- src/ public/ || true)
+          # DB の指示書。**先に本番へ流していないと、コードだけ新しくなって壊れる。**
+          migrations=$(git diff --name-only origin/main origin/develop -- supabase/migrations/ || true)
+          # 環境変数の定義。増えていたら Vercel 側の設定が要る。
+          envdiff=$(git diff --name-only origin/main origin/develop -- src/config/env.ts src/config/env.server.ts || true)
+
+          # --- develop のテストは緑か -------------------------------------------
+          # Actions が作った PR には**テストが自動で走らない**（GitHub が無限ループを
+          # 防ぐため）。代わりに develop の最新の結果をここに書き出す。
+          sha=$(git rev-parse origin/develop)
+          run=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${sha}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.status == "completed")] | first | "\(.conclusion)\t\(.html_url)"' || true)
+          conclusion=$(printf '%s' "${run}" | cut -f1)
+          run_url=$(printf '%s' "${run}" | cut -f2)
+          case "${conclusion}" in
+            success) test_line="✅ 緑（[結果](${run_url})）" ;;
+            "")      test_line="⚠ **まだ終わっていません。** 緑になるまでマージしないこと" ;;
+            *)       test_line="❌ **${conclusion}**（[結果](${run_url})）。**マージしないこと**" ;;
+          esac
+
+          # --- 本文を組み立てる -------------------------------------------------
+          body=$(mktemp)
+          {
+            echo "\`develop\` の中身を本番へ出します。"
+            echo ""
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| develop のテスト | ${test_line} |"
+            if [ -n "${site}" ]; then
+              echo "| 画面 | **変わります。マージ後に「公開する」を押してください** |"
+            else
+              echo "| 画面 | 変わりません（公開は不要） |"
+            fi
+            if [ -n "${migrations}" ]; then
+              echo "| DB の表 | ⚠ **指示書が入っています** |"
+            else
+              echo "| DB の表 | 変わりません |"
+            fi
+            if [ -n "${envdiff}" ]; then
+              echo "| 環境変数 | ⚠ **定義が変わっています。Vercel 側の設定を確認** |"
+            else
+              echo "| 環境変数 | 追加なし |"
+            fi
+            echo ""
+            echo "## 入る変更"
+            echo ""
+            echo '```'
+            echo "${commits}"
+            echo '```'
+
+            if [ -n "${migrations}" ]; then
+              echo ""
+              echo "## ⚠ DB の指示書が入っています"
+              echo ""
+              echo '```'
+              echo "${migrations}"
+              echo '```'
+              echo ""
+              echo "**マージする前に、本番へ流し終わっているか確かめてください。**"
+              echo "順番は **先に表、あとからコード**。逆にすると、コードが「まだ無い表」を"
+              echo "読みに行って本番が壊れます。"
+              echo ""
+              echo '```bash'
+              echo "npx supabase migration list --linked   # 左右が揃っていれば流し済み"
+              echo '```'
+              echo ""
+              echo "手順は \`docs/database.md\` の「本番に流す」。"
+            fi
+
+            if [ -n "${site}" ]; then
+              echo ""
+              echo "## 画面の変更"
+              echo ""
+              echo '```'
+              echo "${site}"
+              echo '```'
+            fi
+
+            echo ""
+            echo "## マージのしかた"
+            echo ""
+            echo "**「Create a merge commit」を選ぶこと。** rebase や squash で入れると、"
+            echo "\`develop\` と \`main\` の履歴が永久に分かれ、次回以降の PR に"
+            echo "マージ済みのコミットが毎回並びます（\`AGENTS.md\`）。"
+            echo ""
+            echo "**マージしただけではサイトは変わりません。**"
+            echo "Actions の「公開する」を \`main\` から押して初めて反映されます。"
+            echo ""
+            echo "---"
+            echo ""
+            echo "この PR は Actions の「リリース PR を作る」で自動生成されました。"
+            echo "**テストの欄が緑であることを確かめてからマージしてください。**"
+          } > "${body}"
+
+          url=$(gh pr create --base main --head develop \
+            --title "リリース $(date +%F)" --body-file "${body}")
+          echo "作りました: ${url}"
+          {
+            echo "### リリース PR を作りました"
+            echo ""
+            echo "${url}"
+            echo ""
+            echo "テスト: ${test_line}"
+          } >> "$GITHUB_STEP_SUMMARY"

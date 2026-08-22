@@ -117,11 +117,20 @@ export function EntryGate({ entrants, passcodeRequired, session }: Props) {
           <BlockTitle>合言葉</BlockTitle>
           <List strong inset>
             <ListInput
-              type="password"
+              // **伏せ字にしない。** 端末によっては伏せ字の欄で日本語入力（IME）が
+              // 切られ、日本語の合言葉を打てない。見えていれば濁点が正しく入ったかも
+              // 自分で確かめられる。合言葉は大会共通で、個人の秘密ではない。
+              type="text"
               placeholder="当日配布された合言葉"
               value={passcode}
               onChange={(e) => setPasscode((e.target as HTMLInputElement).value)}
-              autoComplete="one-time-code"
+              // one-time-code は SMS で届く数字コード用の指定で、iPhone では
+              // 数字キーパッドが出てしまう。ここは SMS コードではないので使わない。
+              autoComplete="off"
+              // 勝手に大文字にしたり、綴りを直したりさせない
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck="false"
             />
           </List>
         </>

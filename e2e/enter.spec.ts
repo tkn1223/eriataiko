@@ -2,7 +2,8 @@ import { expect, test } from '@playwright/test';
 
 /**
  * 入場画面。見た目は運用中のアプリ（badminton-app）に合わせてある。
- * 流れは「チームを選ぶ → 名前をタップ → 合言葉」。
+ * 流れは「部を選ぶ → 名前をタップ → 合言葉」。見るだけの人は最初の画面の
+ * 一番下から、合言葉なしで入れる。
  *
  * 合言葉の入力欄には触ってはいけない指定が 2 つある。
  * 伏せ字（type="password"）にすると、端末によっては日本語入力（IME）が切られて
@@ -11,36 +12,50 @@ import { expect, test } from '@playwright/test';
  * どちらも実際に「英数字しか入らない」という報告が出たので、ここで固定する。
  */
 
-/** 手元の見本データ（supabase/seed.sql）の 1 チーム目と、その 1 部の人。 */
-const TEAM = '愛知南';
+/** 手元の見本データ（supabase/seed.sql）の 1 部と、そこに居る人。 */
+const DIVISION = '1部';
 const PLAYER = 'さとう';
 
 async function openPasscodeSheet(page: import('@playwright/test').Page) {
   await page.goto('/enter');
-  await page.getByRole('button', { name: new RegExp(TEAM) }).click();
+  await page.getByRole('button', { name: new RegExp(DIVISION) }).click();
   await page.getByRole('button', { name: new RegExp(PLAYER) }).click();
   return page.getByPlaceholder('当日配布された合言葉');
 }
 
 test.describe('入場画面', () => {
-  test('チームを選ぶと、そのチームの人が名前のボタンで並ぶ', async ({ page }) => {
+  test('部を選ぶと、その部の人が名前のボタンで並ぶ', async ({ page }) => {
     await page.goto('/enter');
 
-    await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
-    await page.getByRole('button', { name: new RegExp(TEAM) }).click();
+    await expect(page.getByText('あなたの部を選んでください')).toBeVisible();
+    await page.getByRole('button', { name: new RegExp(DIVISION) }).click();
 
     await expect(page.getByText('あなたの名前をタップ')).toBeVisible();
     await expect(page.getByRole('button', { name: new RegExp(PLAYER) })).toBeVisible();
-    // 部ごとにまとまっている
-    await expect(page.getByText('1部', { exact: true })).toBeVisible();
+    // チームごとにまとまっている
+    await expect(page.getByText('愛知南', { exact: true })).toBeVisible();
   });
 
-  test('「← 戻る」でチーム選びに戻れる', async ({ page }) => {
+  test('「← 戻る」で部選びに戻れる', async ({ page }) => {
     await page.goto('/enter');
-    await page.getByRole('button', { name: new RegExp(TEAM) }).click();
+    await page.getByRole('button', { name: new RegExp(DIVISION) }).click();
     await page.getByRole('button', { name: '← 戻る' }).click();
 
-    await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
+    await expect(page.getByText('あなたの部を選んでください')).toBeVisible();
+  });
+
+  test('観戦の入口から、合言葉なしで見るだけの状態になれる', async ({ page }) => {
+    await page.goto('/enter');
+    await page.getByRole('button', { name: /観戦の方はこちら/ }).click();
+
+    await expect(page.getByText('観戦中')).toBeVisible();
+    await expect(page.getByRole('button', { name: '観戦をやめる' })).toBeVisible();
+    // 合言葉は一度も聞かれない
+    await expect(page.getByPlaceholder('当日配布された合言葉')).toHaveCount(0);
+
+    // 元に戻しておく（テストは直列に流れるので、次のテストに持ち越さない）
+    await page.getByRole('button', { name: '観戦をやめる' }).click();
+    await expect(page.getByText('あなたの部を選んでください')).toBeVisible();
   });
 
   test('名前を押すと合言葉の入力が開く', async ({ page }) => {
@@ -81,12 +96,12 @@ test.describe('入場画面', () => {
 
   test('390px 幅で横にはみ出さない', async ({ page }) => {
     await page.goto('/enter');
-    const overflowOnTeamStep = await page.evaluate(
+    const overflowOnDivisionStep = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth
     );
-    expect(overflowOnTeamStep).toBe(false);
+    expect(overflowOnDivisionStep).toBe(false);
 
-    await page.getByRole('button', { name: new RegExp(TEAM) }).click();
+    await page.getByRole('button', { name: new RegExp(DIVISION) }).click();
     const overflowOnNameStep = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth
     );

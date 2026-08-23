@@ -7,13 +7,22 @@
      いまは Konsta 標準（#007aff）のまま。デザインが決まったらここだけ差し替える。 */
   /* --color-brand-primary: #007aff; */
 
-  /* 部（クラス）別の色。1部＝上級、3部＝初級 のイメージ */
+  /* 部（クラス）別の色。1部＝上級、3部＝初級 のイメージ。
+     **部の名前ではなく、その大会の中での並び順で引くこと。** 部の呼び名は
+     大会ごとに変わる（「1部」が「A級」になる）ので、名前で色を決めると
+     次の大会で色が付かなくなる。数が増える前提で 6 つ用意してある。 */
   --color-class-1: #c2410c;
   --color-class-1-bg: #fdede6;
   --color-class-2: #2563eb;
   --color-class-2-bg: #e8effc;
   --color-class-3: #1b8a4c;
   --color-class-3-bg: #e6f4ec;
+  --color-class-4: #6d28d9;
+  --color-class-4-bg: #f1ebfd;
+  --color-class-5: #be185d;
+  --color-class-5-bg: #fce7f0;
+  --color-class-6: #475569;
+  --color-class-6-bg: #eef1f5;
 
   --color-live: #e11d2e;
 

@@ -5,14 +5,14 @@ import { EntryGate, type EnterDivision, type EnterTeam, type Entrant } from '@/u
 // 入場に成功すると router.refresh() で画面を描き直す作りなので、差し替えておく
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
-const divisions: EnterDivision[] = [
-  { id: 'd1', name: '1部' },
-  { id: 'd2', name: '2部' },
-];
-
 const teams: EnterTeam[] = [
   { id: 't1', number: 1, name: '愛知南' },
   { id: 't2', number: 2, name: '愛知中央' },
+];
+
+const divisions: EnterDivision[] = [
+  { id: 'd1', name: '1部' },
+  { id: 'd2', name: '2部' },
 ];
 
 function entrant(overrides: Partial<Entrant> & Pick<Entrant, 'playerId' | 'number' | 'name'>) {
@@ -27,8 +27,8 @@ function entrant(overrides: Partial<Entrant> & Pick<Entrant, 'playerId' | 'numbe
 
 const entrants: Entrant[] = [
   entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
-  entrant({ playerId: 'p2', number: 2, name: 'すずき', teamId: 't2', divisionId: 'd1' }),
-  entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't1', divisionId: 'd2' }),
+  entrant({ playerId: 'p2', number: 2, name: 'すずき', teamId: 't1', divisionId: 'd2' }),
+  entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't2', divisionId: 'd1' }),
 ];
 
 function renderGate(overrides: Partial<Parameters<typeof EntryGate>[0]> = {}) {
@@ -59,94 +59,63 @@ afterEach(() => {
 });
 
 describe('入場画面', () => {
-  test('最初に部が並ぶ（チームではない）', () => {
+  test('最初にチームが並ぶ', () => {
     renderGate();
 
-    expect(screen.getByText('あなたの部を選んでください')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /1部/ })).toHaveTextContent('2名');
-    expect(screen.getByRole('button', { name: /2部/ })).toHaveTextContent('1名');
+    expect(screen.getByText('あなたのチームを選んでください')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /愛知南/ })).toHaveTextContent('2名');
+    expect(screen.getByRole('button', { name: /愛知中央/ })).toHaveTextContent('1名');
   });
 
-  test('部を選ぶと、その部の人だけがチームごとに並ぶ', () => {
+  test('チームを選ぶと、そのチームの人だけが部ごとに並ぶ', () => {
     renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
 
     expect(screen.getByText('あなたの名前をタップ')).toBeInTheDocument();
-    // チームが見出しになる
-    expect(screen.getByText('愛知南')).toBeInTheDocument();
-    expect(screen.getByText('愛知中央')).toBeInTheDocument();
+    // 部が見出しになる
+    expect(screen.getByText('1部')).toBeInTheDocument();
+    expect(screen.getByText('2部')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /すずき/ })).toBeInTheDocument();
-    // 別の部の人は出ない
+    // 別のチームの人は出ない
     expect(screen.queryByRole('button', { name: /たろう/ })).not.toBeInTheDocument();
-  });
-
-  test('チームが設定されていない人も、見出しなしで名前が出る', () => {
-    renderGate({
-      entrants: [
-        entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
-        // チームだけ空。取り込み待ちの人や、試合には出るがチーム未定の人。
-        entrant({ playerId: 'p9', number: 9, name: 'はやし', teamId: null, divisionId: 'd1' }),
-        // 部が 1 つだけだと部選びが飛ぶので、2 部にも 1 人置いて 2 段階にする
-        entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't1', divisionId: 'd2' }),
-      ],
-    });
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
-
-    // チームがある人は見出しの下、無い人は見出しなしで、どちらも並ぶ
-    expect(screen.getByText('愛知南')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /はやし/ })).toBeInTheDocument();
-  });
-
-  test('全員チーム未設定でも、名前は並ぶ（チームの見出しは出ない）', () => {
-    renderGate({
-      teams: [],
-      entrants: [
-        entrant({ playerId: 'p1', number: 1, name: 'さとう', divisionId: 'd1' }),
-        entrant({ playerId: 'p2', number: 2, name: 'すずき', divisionId: 'd1' }),
-        entrant({ playerId: 'p3', number: 3, name: 'たろう', divisionId: 'd2' }),
-      ],
-    });
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
-
-    expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /すずき/ })).toBeInTheDocument();
-    expect(screen.queryByText('愛知南')).not.toBeInTheDocument();
   });
 
   test('同名を見分けられるよう、名前に番号が添えられている', () => {
     renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
 
     expect(screen.getByRole('button', { name: /さとう/ })).toHaveTextContent('#1');
   });
 
-  test('「← 戻る」で部選びに戻れる', () => {
-    renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
-    fireEvent.click(screen.getByRole('button', { name: '← 戻る' }));
-
-    expect(screen.getByText('あなたの部を選んでください')).toBeInTheDocument();
-  });
-
-  test('部が 1 つも無いときは、いきなり名前が並ぶ（行き止まりにならない）', () => {
+  test('部が設定されていない人も、見出しなしで名前が出る', () => {
     renderGate({
-      divisions: [],
-      teams: [],
       entrants: [
-        entrant({ playerId: 'p1', number: 1, name: 'フジ親分' }),
-        entrant({ playerId: 'p2', number: 2, name: 'くみ' }),
+        entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
+        // 部だけ空。試合には出るが部が未定の人。
+        entrant({ playerId: 'p9', number: 9, name: 'はやし', teamId: 't1', divisionId: null }),
+        // チームが 1 つだけだとチーム選びが出ないので、2 チーム目にも 1 人置く
+        entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't2', divisionId: 'd1' }),
       ],
     });
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
 
-    expect(screen.queryByText('あなたの部を選んでください')).not.toBeInTheDocument();
-    expect(screen.getByText('あなたの名前をタップ')).toBeInTheDocument();
+    expect(screen.getByText('1部')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /はやし/ })).toBeInTheDocument();
+  });
+
+  test('「← 戻る」でチーム選びに戻れる', () => {
+    renderGate();
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: '← 戻る' }));
+
+    expect(screen.getByText('あなたのチームを選んでください')).toBeInTheDocument();
   });
 
   test('名前を押すと合言葉の入力が出る', () => {
     renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
     fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -157,7 +126,7 @@ describe('入場画面', () => {
 
   test('合言葉の欄は伏せ字ではない（伏せ字だと日本語を打てない端末がある）', () => {
     renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
     fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
 
     const input = screen.getByPlaceholderText('当日配布された合言葉');
@@ -167,7 +136,7 @@ describe('入場画面', () => {
 
   test('合言葉が設定されていないときは、名前を押すとそのまま入場を送る', () => {
     renderGate({ passcodeRequired: false });
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
     fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -180,8 +149,57 @@ describe('入場画面', () => {
   });
 });
 
+/**
+ * チーム分けをしない大会もある。そのとき参加の記録にはチームが入らないので、
+ * **チームを選ぶ手順そのものが要らなくなる。**
+ */
+describe('チーム分けの無い大会', () => {
+  const soloEntrants = [
+    entrant({ playerId: 'p1', number: 1, name: 'フジ親分', divisionId: 'd1' }),
+    entrant({ playerId: 'p2', number: 2, name: 'くみ', divisionId: 'd2' }),
+    entrant({ playerId: 'p3', number: 3, name: 'たかな', divisionId: 'd1' }),
+  ];
+
+  test('チームを選ぶ画面が出ず、いきなり名前が並ぶ', () => {
+    renderGate({ teams: [], entrants: soloEntrants });
+
+    expect(screen.queryByText('あなたのチームを選んでください')).not.toBeInTheDocument();
+    expect(screen.getByText('あなたの名前をタップ')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /フジ親分/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /くみ/ })).toBeInTheDocument();
+  });
+
+  test('部の見出しは今までどおり出る', () => {
+    renderGate({ teams: [], entrants: soloEntrants });
+
+    expect(screen.getByText('1部')).toBeInTheDocument();
+    expect(screen.getByText('2部')).toBeInTheDocument();
+  });
+
+  test('戻る先が無いので「← 戻る」も出ない', () => {
+    renderGate({ teams: [], entrants: soloEntrants });
+
+    expect(screen.queryByRole('button', { name: '← 戻る' })).not.toBeInTheDocument();
+  });
+
+  test('名前を押せば今までどおり合言葉に進める', () => {
+    renderGate({ teams: [], entrants: soloEntrants });
+    fireEvent.click(screen.getByRole('button', { name: /フジ親分/ }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  test('チームの表はあるのに誰も所属していない大会でも、チーム選びは出ない', () => {
+    // 前の大会のチームが残っているだけ、という状況
+    renderGate({ teams, entrants: soloEntrants });
+
+    expect(screen.queryByText('あなたのチームを選んでください')).not.toBeInTheDocument();
+    expect(screen.getByText('あなたの名前をタップ')).toBeInTheDocument();
+  });
+});
+
 describe('観戦者の入口', () => {
-  test('部を選ぶ画面の一番下にある', () => {
+  test('チームを選ぶ画面の一番下にある', () => {
     renderGate();
     expect(screen.getByRole('button', { name: VIEWER_BUTTON })).toBeInTheDocument();
   });
@@ -197,9 +215,8 @@ describe('観戦者の入口', () => {
     );
   });
 
-  test('部が 1 つも無くて部選びを飛ばしたときも出る（置き去りにしない）', () => {
+  test('チーム選びが出ない大会でも、名前の一覧の下に出る（置き去りにしない）', () => {
     renderGate({
-      divisions: [],
       teams: [],
       entrants: [entrant({ playerId: 'p1', number: 1, name: 'フジ親分' })],
     });
@@ -209,7 +226,7 @@ describe('観戦者の入口', () => {
 
   test('名前を選ぶ画面まで進んだら出ない（最初の画面だけに置く）', () => {
     renderGate();
-    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
 
     expect(screen.queryByRole('button', { name: VIEWER_BUTTON })).not.toBeInTheDocument();
   });

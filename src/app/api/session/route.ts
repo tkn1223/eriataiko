@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   try {
     const { as, playerId, passcode } = await parseBody(request, enterSchema);
 
-    // 観戦者は見るだけ。合言葉も名前も要らない（docs/specs/2026-08-23-enter-by-division.md）。
+    // 観戦者は見るだけ。合言葉も名前も要らない（docs/specs/2026-08-23-viewer-entrance.md）。
     if (as === 'viewer') {
       const session = { role: 'viewer' as const };
       await createSession(session);

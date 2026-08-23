@@ -31,15 +31,31 @@ type Props = {
   session: Session | null;
 };
 
-/** 部が決まっていない人（試合に出ない入力係など）の置き場を指す目印。 */
-const NO_DIVISION = '__no_division__';
+/** チームが決まっていない人（試合に出ない入力係など）の置き場を指す目印。 */
+const NO_TEAM = '__no_team__';
+
+/** チーム番号 → 縦棒の色（globals.css の --color-team-1〜4）。 */
+const TEAM_BAR_CLASS: Record<number, string> = {
+  1: 'bg-team-1',
+  2: 'bg-team-2',
+  3: 'bg-team-3',
+  4: 'bg-team-4',
+};
+
+/** 5 チーム目からは色が足りないので、色を付けずに枠線と同じ薄い色にする。 */
+function teamBarClass(teamNumber: number | null) {
+  if (teamNumber === null) return 'bg-hairline';
+  return TEAM_BAR_CLASS[teamNumber] ?? 'bg-hairline';
+}
 
 /**
- * 部の色。**名前ではなく並び順で引く。**
+ * 部の色。**名前ではなく、その大会での並び順で引く。**
  * 部の呼び名は大会ごとに変わる（「1部」が「A級」になる）ので、
  * 名前で決めると次の大会で色が付かなくなる。
+ *
+ * チームをまたいで同じ部が同じ色になるよう、番号は**大会の部の並び**から取る。
  */
-const DIVISION_BAR_CLASS = [
+const DIVISION_DOT_CLASS = [
   'bg-class-1',
   'bg-class-2',
   'bg-class-3',
@@ -48,65 +64,57 @@ const DIVISION_BAR_CLASS = [
   'bg-class-6',
 ];
 
-/** チーム番号 → 点の色（globals.css の --color-team-1〜4）。 */
-const TEAM_DOT_CLASS: Record<number, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
-};
-
 type Bucket = {
   key: string;
-  /** 一覧の中での位置。色をここから引く。 */
-  colorIndex: number;
+  teamNumber: number | null;
   name: string;
   members: Entrant[];
 };
 
 /**
- * 部ごとの束を作る。人が 1 人もいない部は出さない
+ * チームごとの束を作る。人が 1 人もいないチームは出さない
  * （押しても誰も出てこないカードで行き止まりにならないように）。
  */
-function buildBuckets(entrants: Entrant[], divisions: EnterDivision[]): Bucket[] {
-  const buckets: Bucket[] = divisions
-    .map((division) => ({
-      key: division.id,
-      name: division.name,
-      members: entrants.filter((entrant) => entrant.divisionId === division.id),
+function buildBuckets(entrants: Entrant[], teams: EnterTeam[]): Bucket[] {
+  const buckets: Bucket[] = teams
+    .map((team) => ({
+      key: team.id,
+      teamNumber: team.number,
+      name: team.name,
+      members: entrants.filter((entrant) => entrant.teamId === team.id),
     }))
-    .filter((bucket) => bucket.members.length > 0)
-    .map((bucket, index) => ({ ...bucket, colorIndex: index }));
+    .filter((bucket) => bucket.members.length > 0);
 
-  const withoutDivision = entrants.filter((entrant) => entrant.divisionId === null);
-  if (withoutDivision.length > 0) {
-    buckets.push({
-      key: NO_DIVISION,
-      colorIndex: buckets.length,
-      name: '部なし',
-      members: withoutDivision,
-    });
+  const withoutTeam = entrants.filter((entrant) => entrant.teamId === null);
+  if (withoutTeam.length > 0) {
+    buckets.push({ key: NO_TEAM, teamNumber: null, name: 'チームなし', members: withoutTeam });
   }
 
   return buckets;
 }
 
-type Group = { key: string; teamNumber: number | null; name: string | null; members: Entrant[] };
+type Group = { key: string; colorIndex: number; name: string | null; members: Entrant[] };
 
-/** 選んだ部の中をチームごとに分ける。チームが無い人は見出しなしで最後にまとめる。 */
-function buildGroups(members: Entrant[], teams: EnterTeam[]): Group[] {
-  const groups: Group[] = teams
-    .map((team) => ({
-      key: team.id,
-      teamNumber: team.number,
-      name: team.name,
-      members: members.filter((member) => member.teamId === team.id),
+/** 選んだチームの中を部ごとに分ける。部が無い人は見出しなしで最後にまとめる。 */
+function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
+  const groups: Group[] = divisions
+    .map((division, index) => ({
+      key: division.id,
+      // チームをまたいで「1部」が同じ色になるよう、大会の部の並びから取る
+      colorIndex: index,
+      name: division.name,
+      members: members.filter((member) => member.divisionId === division.id),
     }))
     .filter((group) => group.members.length > 0);
 
-  const withoutTeam = members.filter((member) => member.teamId === null);
-  if (withoutTeam.length > 0) {
-    groups.push({ key: '__no_team__', teamNumber: null, name: null, members: withoutTeam });
+  const withoutDivision = members.filter((member) => member.divisionId === null);
+  if (withoutDivision.length > 0) {
+    groups.push({
+      key: '__no_division__',
+      colorIndex: -1,
+      name: null,
+      members: withoutDivision,
+    });
   }
 
   return groups;
@@ -118,7 +126,10 @@ function buildGroups(members: Entrant[], teams: EnterTeam[]): Group[] {
  * 見た目は運用中のアプリ（badminton-app）の入場画面に合わせてある
  * （`docs/specs/2026-08-23-enter-screen.md` に実測値）。流れは
  *
- *   部を選ぶ → 名前をタップ → 合言葉 → 入場
+ *   チームを選ぶ → 名前をタップ → 合言葉 → 入場
+ *
+ * **チーム分けの無い大会では、チームを選ぶ画面ごと出さない。**
+ * 参加の記録にチームが入っていなければ束が 1 つになるので、そのまま名前が並ぶ。
  *
  * 見るだけの人は、最初の画面の一番下から**合言葉なしで**入れる。
  *
@@ -137,23 +148,24 @@ export function EntryGate({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [busy, setBusy] = useState(false);
-  const [divisionKey, setDivisionKey] = useState<string | null>(null);
+  const [teamKey, setTeamKey] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Entrant | null>(null);
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   const working = busy || pending;
 
-  const buckets = buildBuckets(entrants, divisions);
-  // 束が 1 つしか無いなら選ばせる意味が無いので、部を選ぶ画面ごと飛ばす。
-  const divisionStepShown = buckets.length > 1;
-  const bucket = divisionStepShown
-    ? (buckets.find((b) => b.key === divisionKey) ?? null)
+  const buckets = buildBuckets(entrants, teams);
+  // **束が 1 つしか無いなら、チームを選ぶ画面ごと出さない。**
+  // チーム分けの無い大会では全員がチームなしになるので、ここが 1 つになる。
+  const teamStepShown = buckets.length > 1;
+  const bucket = teamStepShown
+    ? (buckets.find((b) => b.key === teamKey) ?? null)
     : (buckets[0] ?? null);
 
   // 観戦者のボタンは「最初に開いた画面」の一番下に置く。
-  // 部が 1 つしか無くて部選びを飛ばしたときも、置き去りにしない。
-  const onFirstScreen = bucket === null || !divisionStepShown;
+  // チーム選びを出さないときも、置き去りにしない。
+  const onFirstScreen = bucket === null || !teamStepShown;
 
   async function call(method: 'POST' | 'DELETE', body?: unknown) {
     setError(null);
@@ -204,13 +216,13 @@ export function EntryGate({
           ) : entrants.length === 0 ? (
             <EmptyView />
           ) : bucket === null ? (
-            <DivisionStep buckets={buckets} onChoose={setDivisionKey} disabled={working} />
+            <TeamStep buckets={buckets} onChoose={setTeamKey} disabled={working} />
           ) : (
             <NameStep
               bucket={bucket}
-              teams={teams}
-              backShown={divisionStepShown}
-              onBack={() => setDivisionKey(null)}
+              divisions={divisions}
+              backShown={teamStepShown}
+              onBack={() => setTeamKey(null)}
               onChoose={choose}
               disabled={working}
             />
@@ -360,7 +372,7 @@ function EmptyView() {
   );
 }
 
-function DivisionStep({
+function TeamStep({
   buckets,
   onChoose,
   disabled,
@@ -371,7 +383,7 @@ function DivisionStep({
 }) {
   return (
     <>
-      <h2 className="text-[17px] font-black">あなたの部を選んでください</h2>
+      <h2 className="text-[17px] font-black">あなたのチームを選んでください</h2>
       <div className="mt-3 flex flex-col gap-[10px]">
         {buckets.map((bucket) => (
           <button
@@ -383,9 +395,7 @@ function DivisionStep({
           >
             <span
               aria-hidden="true"
-              className={`h-[34px] w-[10px] shrink-0 rounded-[6px] ${
-                DIVISION_BAR_CLASS[bucket.colorIndex] ?? 'bg-hairline'
-              }`}
+              className={`h-[34px] w-[10px] shrink-0 rounded-[6px] ${teamBarClass(bucket.teamNumber)}`}
             />
             <span className="min-w-0 flex-1 truncate text-[18px] font-black">{bucket.name}</span>
             <span className="text-muted-ink tabular shrink-0 text-[13px] font-bold">
@@ -400,20 +410,20 @@ function DivisionStep({
 
 function NameStep({
   bucket,
-  teams,
+  divisions,
   backShown,
   onBack,
   onChoose,
   disabled,
 }: {
   bucket: Bucket;
-  teams: EnterTeam[];
+  divisions: EnterDivision[];
   backShown: boolean;
   onBack: () => void;
   onChoose: (entrant: Entrant) => void;
   disabled: boolean;
 }) {
-  const groups = buildGroups(bucket.members, teams);
+  const groups = buildGroups(bucket.members, divisions);
 
   return (
     <>
@@ -429,9 +439,7 @@ function NameStep({
           <span className="flex min-w-0 items-center gap-2 text-[15px] font-black">
             <span
               aria-hidden="true"
-              className={`h-[10px] w-[10px] shrink-0 rounded-full ${
-                DIVISION_BAR_CLASS[bucket.colorIndex] ?? 'bg-hairline'
-              }`}
+              className={`h-[10px] w-[10px] shrink-0 rounded-full ${teamBarClass(bucket.teamNumber)}`}
             />
             <span className="truncate">{bucket.name}</span>
           </span>
@@ -447,7 +455,7 @@ function NameStep({
               <span
                 aria-hidden="true"
                 className={`h-[8px] w-[8px] shrink-0 rounded-full ${
-                  (group.teamNumber !== null && TEAM_DOT_CLASS[group.teamNumber]) || 'bg-hairline'
+                  DIVISION_DOT_CLASS[group.colorIndex] ?? 'bg-hairline'
                 }`}
               />
               {group.name}

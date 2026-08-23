@@ -81,6 +81,40 @@ describe('入場画面', () => {
     expect(screen.queryByRole('button', { name: /たろう/ })).not.toBeInTheDocument();
   });
 
+  test('チームが設定されていない人も、見出しなしで名前が出る', () => {
+    renderGate({
+      entrants: [
+        entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
+        // チームだけ空。取り込み待ちの人や、試合には出るがチーム未定の人。
+        entrant({ playerId: 'p9', number: 9, name: 'はやし', teamId: null, divisionId: 'd1' }),
+        // 部が 1 つだけだと部選びが飛ぶので、2 部にも 1 人置いて 2 段階にする
+        entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't1', divisionId: 'd2' }),
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+
+    // チームがある人は見出しの下、無い人は見出しなしで、どちらも並ぶ
+    expect(screen.getByText('愛知南')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /はやし/ })).toBeInTheDocument();
+  });
+
+  test('全員チーム未設定でも、名前は並ぶ（チームの見出しは出ない）', () => {
+    renderGate({
+      teams: [],
+      entrants: [
+        entrant({ playerId: 'p1', number: 1, name: 'さとう', divisionId: 'd1' }),
+        entrant({ playerId: 'p2', number: 2, name: 'すずき', divisionId: 'd1' }),
+        entrant({ playerId: 'p3', number: 3, name: 'たろう', divisionId: 'd2' }),
+      ],
+    });
+    fireEvent.click(screen.getByRole('button', { name: /1部/ }));
+
+    expect(screen.getByRole('button', { name: /さとう/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /すずき/ })).toBeInTheDocument();
+    expect(screen.queryByText('愛知南')).not.toBeInTheDocument();
+  });
+
   test('同名を見分けられるよう、名前に番号が添えられている', () => {
     renderGate();
     fireEvent.click(screen.getByRole('button', { name: /1部/ }));

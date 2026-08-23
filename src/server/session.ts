@@ -19,16 +19,13 @@ const COOKIE_NAME = 'eriataiko_session';
 const MAX_AGE_SECONDS = 60 * 60 * 16;
 
 /**
- * いま操作している人。
- *
- * 名前の "Operator" は**役割**（この端末を操作している人）を指す。
- * かつて同名の表があったが、名簿は players / entries に一本化して消した
- * （docs/specs/2026-08-21-drop-operators.md）。
+ * 名前を選んで入場した人。合言葉を 1 回通している。
  *
  * `canInput` は入場したときの値を焼き付けている。当日に入力権限を外しても
  * その端末では 16 時間効かないが、そこまで厳密に管理するアプリではない。
  */
-export type OperatorSession = {
+export type PlayerSession = {
+  role: 'player';
   playerId: string;
   playerName: string;
   /** 同名（「たろう」が複数いる）を画面で見分けるための番号 */
@@ -36,6 +33,19 @@ export type OperatorSession = {
   /** 得点を入力してよい人か */
   canInput: boolean;
 };
+
+/**
+ * 観戦者。**合言葉を聞かない。**
+ *
+ * 合言葉を設けたのは「まったくの他人にデータを見られたくない」ためだが、
+ * 運営として困るのは**書き込まれること**だけ。見るだけの人に合言葉を配ると
+ * 100 人に配る手間が戻ってくるので、見るだけなら素通しにすると決めた。
+ *
+ * 誰かは名乗らないので、書き込みは一切できない（requireOperator が弾く）。
+ */
+export type ViewerSession = { role: 'viewer' };
+
+export type Session = PlayerSession | ViewerSession;
 
 function secretKey() {
   return new TextEncoder().encode(serverEnv().SESSION_SECRET);
@@ -64,17 +74,26 @@ function normalize(value: string) {
   return value.trim().normalize('NFC');
 }
 
-export async function createSession(session: OperatorSession) {
-  const token = await new SignJWT({
-    name: session.playerName,
-    number: session.playerNumber,
-    canInput: session.canInput,
-  })
+export async function createSession(session: Session) {
+  const claims =
+    session.role === 'viewer'
+      ? { role: 'viewer' as const }
+      : {
+          role: 'player' as const,
+          name: session.playerName,
+          number: session.playerNumber,
+          canInput: session.canInput,
+        };
+
+  let builder = new SignJWT(claims)
     .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(session.playerId)
     .setIssuedAt()
-    .setExpirationTime(`${MAX_AGE_SECONDS}s`)
-    .sign(secretKey());
+    .setExpirationTime(`${MAX_AGE_SECONDS}s`);
+
+  // 観戦者は誰でもないので sub を入れない
+  if (session.role === 'player') builder = builder.setSubject(session.playerId);
+
+  const token = await builder.sign(secretKey());
 
   const store = await cookies();
   store.set(COOKIE_NAME, token, {
@@ -86,7 +105,7 @@ export async function createSession(session: OperatorSession) {
   });
 }
 
-export async function getSession(): Promise<OperatorSession | null> {
+export async function getSession(): Promise<Session | null> {
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
 
@@ -94,9 +113,15 @@ export async function getSession(): Promise<OperatorSession | null> {
     const { payload } = await jwtVerify(token, secretKey(), {
       algorithms: ['HS256'],
     });
+
+    if (payload.role === 'viewer') return { role: 'viewer' };
+
+    // role が入っていない古い Cookie も、中身がそろっていれば人として通す。
+    // 観戦者を足す前に入場した端末を、当日いきなり締め出さないため。
     if (!payload.sub || typeof payload.name !== 'string') return null;
     if (typeof payload.number !== 'number') return null;
     return {
+      role: 'player',
       playerId: payload.sub,
       playerName: payload.name,
       playerNumber: payload.number,

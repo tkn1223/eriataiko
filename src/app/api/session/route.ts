@@ -16,7 +16,9 @@ export async function GET() {
 }
 
 const enterSchema = z.object({
-  playerId: z.uuid({ message: '名前を選んでください' }),
+  /** 観戦者は名前も合言葉も無しで入る。既定は「名前を選んで入る人」。 */
+  as: z.enum(['player', 'viewer']).default('player'),
+  playerId: z.uuid({ message: '名前を選んでください' }).optional(),
   passcode: z.string().default(''),
 });
 
@@ -27,7 +29,18 @@ const enterSchema = z.object({
  */
 export async function POST(request: Request) {
   try {
-    const { playerId, passcode } = await parseBody(request, enterSchema);
+    const { as, playerId, passcode } = await parseBody(request, enterSchema);
+
+    // 観戦者は見るだけ。合言葉も名前も要らない（docs/specs/2026-08-23-viewer-entrance.md）。
+    if (as === 'viewer') {
+      const session = { role: 'viewer' as const };
+      await createSession(session);
+      return NextResponse.json({ session });
+    }
+
+    if (!playerId) {
+      throw new ApiError(400, '名前を選んでください。');
+    }
 
     if (!verifyPasscode(passcode)) {
       throw new ApiError(401, '合言葉が違います。');
@@ -47,6 +60,7 @@ export async function POST(request: Request) {
     }
 
     const session = {
+      role: 'player' as const,
       playerId: entry.players.id,
       playerName: entry.players.name,
       playerNumber: entry.players.number,
@@ -65,7 +79,8 @@ export async function POST(request: Request) {
 export async function DELETE() {
   try {
     const session = await getSession();
-    if (session) await logWrite(session, 'session.leave');
+    // 観戦者は誰かを名乗っていないので記録に残せない（残す名前が無い）
+    if (session?.role === 'player') await logWrite(session, 'session.leave');
     await destroySession();
     return NextResponse.json({ session: null });
   } catch (error) {

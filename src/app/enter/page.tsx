@@ -2,7 +2,7 @@ import { EntryGate, type Entrant, type EnterDivision, type EnterTeam } from '@/u
 import { ErrorBlock } from '@/ui/components/error-block';
 import { isPasscodeRequired } from '@/config/env.server';
 import { TOURNAMENT_NAME } from '@/config/tournament';
-import { getSession, type OperatorSession } from '@/server/session';
+import { getSession, type Session } from '@/server/session';
 import { createSupabaseServerClient } from '@/db/server';
 
 // 入場状態（Cookie）を見るので常に動的レンダリング
@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 
 /** 入場画面。得点入力をする運営が「自分が誰か」を申告する。 */
 export default async function EnterPage() {
-  let session: OperatorSession | null = null;
+  let session: Session | null = null;
   let competitionName = TOURNAMENT_NAME;
   let entrants: Entrant[] = [];
   let teams: EnterTeam[] = [];

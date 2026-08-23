@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test';
 
 /**
  * 入場画面。見た目は運用中のアプリ（badminton-app）に合わせてある。
- * 流れは「チームを選ぶ → 名前をタップ → 合言葉」。
+ * 流れは「チームを選ぶ → 名前をタップ → 合言葉」。チーム分けの無い大会では
+ * チームを選ぶ画面ごと出さない。見るだけの人は最初の画面の一番下から、
+ * 合言葉なしで入れる。
  *
  * 合言葉の入力欄には触ってはいけない指定が 2 つある。
  * 伏せ字（type="password"）にすると、端末によっては日本語入力（IME）が切られて
@@ -11,7 +13,7 @@ import { expect, test } from '@playwright/test';
  * どちらも実際に「英数字しか入らない」という報告が出たので、ここで固定する。
  */
 
-/** 手元の見本データ（supabase/seed.sql）の 1 チーム目と、その 1 部の人。 */
+/** 手元の見本データ（supabase/seed.sql）の 1 チーム目と、そこに居る人。 */
 const TEAM = '愛知南';
 const PLAYER = 'さとう';
 
@@ -40,6 +42,20 @@ test.describe('入場画面', () => {
     await page.getByRole('button', { name: new RegExp(TEAM) }).click();
     await page.getByRole('button', { name: '← 戻る' }).click();
 
+    await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
+  });
+
+  test('観戦の入口から、合言葉なしで見るだけの状態になれる', async ({ page }) => {
+    await page.goto('/enter');
+    await page.getByRole('button', { name: /観戦の方はこちら/ }).click();
+
+    await expect(page.getByText('観戦中')).toBeVisible();
+    await expect(page.getByRole('button', { name: '観戦をやめる' })).toBeVisible();
+    // 合言葉は一度も聞かれない
+    await expect(page.getByPlaceholder('当日配布された合言葉')).toHaveCount(0);
+
+    // 元に戻しておく（テストは直列に流れるので、次のテストに持ち越さない）
+    await page.getByRole('button', { name: '観戦をやめる' }).click();
     await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
   });
 

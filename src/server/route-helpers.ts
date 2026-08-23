@@ -2,7 +2,7 @@ import 'server-only';
 
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getSession, type OperatorSession } from '@/server/session';
+import { getSession, type PlayerSession } from '@/server/session';
 import { getSupabaseAdminClient } from '@/db/admin';
 import type { Json } from '@/types/database';
 
@@ -35,11 +35,19 @@ export class ApiError extends Error {
   }
 }
 
-/** 入場済みでなければ 401。書き込み系ハンドラの先頭で必ず呼ぶ。 */
-export async function requireOperator(): Promise<OperatorSession> {
+/**
+ * 入場済みでなければ 401。書き込み系ハンドラの先頭で必ず呼ぶ。
+ *
+ * **観戦者もここで弾く。** 観戦者は合言葉を通していないうえ誰かも名乗って
+ * いないので、書き込みの記録（write_logs）に残す名前が無い。
+ */
+export async function requireOperator(): Promise<PlayerSession> {
   const session = await getSession();
   if (!session) {
     throw new ApiError(401, '入場していません。もう一度名前を選んでください。');
+  }
+  if (session.role === 'viewer') {
+    throw new ApiError(403, '観戦中は書き込めません。名前を選んで入場してください。');
   }
   return session;
 }
@@ -69,7 +77,7 @@ export async function parseBody<T extends z.ZodType>(
  * 大会後の突き合わせと、当日トラブル時の巻き戻し判断に使う。
  */
 export async function logWrite(
-  operator: OperatorSession,
+  operator: PlayerSession,
   action: string,
   detail?: unknown
 ): Promise<void> {

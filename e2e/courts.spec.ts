@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enterAsViewer } from './helpers/enter';
 
 /**
  * /courts（結果LIVE）の画面確認。
@@ -8,6 +9,11 @@ import { expect, test } from '@playwright/test';
 function courtCard(page: import('@playwright/test').Page, courtNumber: number) {
   return page.getByTestId(`court-card-${courtNumber}`);
 }
+
+// 大会の画面は入場していないと入場画面へ送られる。中身を見たいので先に入っておく。
+test.beforeEach(async ({ page }) => {
+  await enterAsViewer(page);
+});
 
 test('「予選リーグ」のラベルと「2/48 試合消化」が出る', async ({ page }) => {
   await page.goto('/courts');

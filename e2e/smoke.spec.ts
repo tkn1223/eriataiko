@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { enterAsViewer } from './helpers/enter';
 
 /**
  * 土台が壊れていないことを確かめる最小のテスト。
  * 新しい画面を作ったら e2e/<画面名>.spec.ts を足していく。
  */
+
+// 大会の画面は入場していないと入場画面へ送られる。中身を見たいので先に入っておく。
+test.beforeEach(async ({ page }) => {
+  await enterAsViewer(page);
+});
 
 test('トップを開くと「結果LIVE」に飛ぶ', async ({ page }) => {
   await page.goto('/');

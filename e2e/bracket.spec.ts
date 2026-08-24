@@ -1,9 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { enterAsViewer } from './helpers/enter';
 
 /**
  * /bracket（対戦表）の画面確認。
  * *.test.tsx は jsdom で見た目の中身を、ここではスマホ幅での実際の見え方を確かめる。
  */
+
+// 大会の画面は入場していないと入場画面へ送られる。中身を見たいので先に入っておく。
+test.beforeEach(async ({ page }) => {
+  await enterAsViewer(page);
+});
 
 test('「予選リーグ」「決勝トーナメント」の切り替えが出て、押すと中身が入れ替わる', async ({
   page,

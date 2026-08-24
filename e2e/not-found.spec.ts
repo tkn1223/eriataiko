@@ -1,10 +1,16 @@
 import { expect, test } from '@playwright/test';
+import { enterAsViewer } from './helpers/enter';
 
 /**
  * 無いページを開いたときの画面。
  * Next.js の標準は英語（"404 This page could not be found."）なので、
  * 日本語で出ていることと、戻り道があることを確かめる。
  */
+
+// 大会の画面は入場していないと入場画面へ送られる。中身を見たいので先に入っておく。
+test.beforeEach(async ({ page }) => {
+  await enterAsViewer(page);
+});
 
 test('無い URL を開くと「ページがありません」と日本語で出る', async ({ page }) => {
   const response = await page.goto('/nothing-here');

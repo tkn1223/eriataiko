@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { enterAsViewer } from './helpers/enter';
 
 /**
  * /matches（進行表）の画面確認。
@@ -10,6 +11,11 @@ import { expect, test } from '@playwright/test';
 function courtHeadingName(courtNumber: number) {
   return new RegExp(`^コート${courtNumber}(?!\\d)`);
 }
+
+// 大会の画面は入場していないと入場画面へ送られる。中身を見たいので先に入っておく。
+test.beforeEach(async ({ page }) => {
+  await enterAsViewer(page);
+});
 
 test('「全試合」「自分の試合」の絞り込みが出て、押すと並ぶ試合が変わる', async ({ page }) => {
   await page.goto('/matches');

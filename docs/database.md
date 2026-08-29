@@ -215,8 +215,8 @@ players  人（大会をまたぐ。番号で見分ける）── participants 
 | --- | --- | --- |
 | `POST /api/session` | `write_logs`（入場の記録だけ） | 名前を選んで入場する |
 | `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない） |
-| `POST /api/matches/[matchId]/finish` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める） |
-| `POST /api/matches/[matchId]/reopen` | `matches` | 終了を取り消す（`done` を `live` に戻す） |
+| `POST /api/matches/[matchId]/result` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める） |
+| `DELETE /api/matches/[matchId]/result` | `matches` | 終了を取り消す（`done` を `live` に戻す） |
 
 どれも `AGENTS.md` の順（`requirePlayer()` → 入力検証 → 書き込み → `logWrite()`）を守っています。
 中身の分岐（1 点も入っていない試合の終了は 400、終了済みの試合への得点は 409、など）は `src/usecases/save-score.ts` /

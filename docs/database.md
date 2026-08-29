@@ -205,6 +205,26 @@ players  人（大会をまたぐ。番号で見分ける）── participants 
 
 ---
 
+## 書き込みの入口（Route Handler）
+
+「サーバーだけ」と書いた表を、実際に書き換えられる場所は次の Route Handler だけです。
+ブラウザからはここを叩く以外に書き込む方法がありません（`getSupabaseAdminClient()` を使うのは
+`src/server/` と `src/db/` の中だけで、そこを呼ぶのはこれらの Route Handler だけ）。
+
+| 入口 | 触る表 | 中身 |
+| --- | --- | --- |
+| `POST /api/session` | `write_logs`（入場の記録だけ） | 名前を選んで入場する |
+| `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない） |
+| `POST /api/matches/[matchId]/finish` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める） |
+| `POST /api/matches/[matchId]/reopen` | `matches` | 終了を取り消す（`done` を `live` に戻す） |
+
+どれも `AGENTS.md` の順（`requirePlayer()` → 入力検証 → 書き込み → `logWrite()`）を守っています。
+中身の分岐（1 点も入っていない試合の終了は 400、終了済みの試合への得点は 409、など）は `src/usecases/save-score.ts` /
+`finish-match.ts` / `reopen-match.ts` にまとまっています。仕様は
+`docs/specs/2026-08-29-score-input-backend.md`。
+
+---
+
 ## 大会のデータで、知らないと困ること
 
 ### 人は「番号」で見分ける。名前では見分けられない

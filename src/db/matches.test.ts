@@ -6,7 +6,7 @@ import { matchesDb } from '@/db/matches';
  * `matchesDb` を本物のデータベースに当てて確かめる。
  *
  * usecases 側は偽物の DB で分岐を確かめている（save-score.test.ts など）。
- * ここでしか分からないのは **upsert が実際にどう書くか**で、
+ * ここでしか分からないのは **実際に表へどう書かれるか**で、
  * 仕様の受け入れ基準（行が増えない / updated_at が新しくなる）はここが担当。
  *
  * 実行前に `npm run db:start` が必要。
@@ -138,6 +138,20 @@ describe('得点を送ると game_scores に保存され、もう一度送ると
     );
     // 書き換えで created_at まで上書きすると「いつ最初に入力されたか」が消える
     expect(after.created_at).toBe(before.created_at);
+  });
+
+  test('まだ行の無いゲームに 2 つ同時に届いても、行は 1 つのまま両方が届く', async () => {
+    // 得点係が 2 台で開いていると起きる。「無ければ作る」を素直に書くと
+    // 両方が作りに行き、あとから届いた側が重複で弾かれて得点を取りこぼす。
+    // ここは max_game_count を見ない層なので、4 ゲーム目でも書ける（上限の判定は save-score.ts）。
+    const now = new Date('2027-03-14T06:00:00.000Z');
+    const both = await Promise.allSettled([
+      matchesDb.saveGameScore({ matchId, gameNumber: 4, sideAScore: 1, sideBScore: 0, now }),
+      matchesDb.saveGameScore({ matchId, gameNumber: 4, sideAScore: 0, sideBScore: 1, now }),
+    ]);
+
+    expect(both.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled']);
+    expect(await readRows(4)).toHaveLength(1);
   });
 });
 

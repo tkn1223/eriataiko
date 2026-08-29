@@ -32,7 +32,7 @@
 | `gameNumber` が 1 未満、または `matches.max_game_count` を超えている | 400 |
 | 試合が `done`（先に終了を取り消してもらう） | 409 |
 
-### 2. 試合を終了する `POST /api/matches/[matchId]/finish`
+### 2. 試合を終了する `POST /api/matches/[matchId]/result`
 
 送るもの: なし
 
@@ -40,7 +40,7 @@
 - **1 点も入っていなければ 400 で止める**（押し間違いを防ぐ）
 - 既に `done` のときは何も変えずに成功を返す（二重に押しても壊れない）
 
-### 3. 終了を取り消す `POST /api/matches/[matchId]/reopen`
+### 3. 終了を取り消す `DELETE /api/matches/[matchId]/result`
 
 送るもの: なし
 
@@ -49,7 +49,7 @@
 
 ### 共通
 
-3 本とも `AGENTS.md` の順を守る。
+どの入口も `AGENTS.md` の順を守る。
 誰か確認（`requirePlayer()`）→ zod で検証 → `getSupabaseAdminClient()` で書き込み →
 `logWrite()` → catch で `toErrorResponse()`。
 
@@ -101,8 +101,7 @@ DB も HTTP も触らない純粋な計算。
 | `src/usecases/reopen-match.ts` / `reopen-match.test.ts` | 新規 |
 | `src/db/matches.ts` | 新規（usecases に渡す DB の実装） |
 | `src/app/api/matches/[matchId]/scores/route.ts` | 新規 |
-| `src/app/api/matches/[matchId]/finish/route.ts` | 新規 |
-| `src/app/api/matches/[matchId]/reopen/route.ts` | 新規 |
+| `src/app/api/matches/[matchId]/result/route.ts` | 新規（`POST` で終了、`DELETE` で取り消し） |
 | `docs/database.md` | 変更（書き込みの入口の説明を足す） |
 
 `supabase/migrations/` は触らない。表の変更は `20260829000100_match_settings.sql` で済んでいる。
@@ -117,6 +116,7 @@ DB も HTTP も触らない純粋な計算。
 | 空のゲーム | **0 対 0 のゲームは数えない、をルールにする** | バドミントンに 0 対 0 で終わるゲームは無い。1 ゲームでも 3 ゲームでも同じ扱いにでき、消す処理も例外も要らない |
 | 二重に押されたとき | 終了・取り消しは**何も変えずに成功を返す** | 電波の悪い体育館では同じ操作が 2 回届く。2 回目でエラーを出すと得点係が不安になる |
 | 誰が入れられるか | **入場した人は全員。** `requirePlayer()` だけで足りる | `can_input` は `20260829000000_naming_review.sql` で消えた。「今回の大会の参加者＝得点を入れられる人」 |
+| 入口の名前 | **`result` というモノを作る（`POST`）／消す（`DELETE`）。** `finish` `reopen` という動詞のパスにしない | 動詞にすると入口が増えるたびに名前を考えることになり、2 つが表裏であることもパスから読めない。**「1 点も入っていなければ止める」のような大会のルールは入口の名前に出さない**（判断は `src/usecases/` にある。ルールが変わっても URL は変わらない） |
 
 ## フロントに渡すこと
 

@@ -14,12 +14,13 @@ export const BACKUP_TABLES: { table: TableName; label: string }[] = [
   { table: 'divisions', label: '部' },
   { table: 'teams', label: 'チーム' },
   { table: 'players', label: '人' },
-  { table: 'entries', label: '参加' },
-  { table: 'stages', label: '段（予選・決勝）' },
-  { table: 'team_matches', label: '対戦' },
+  { table: 'participants', label: '参加' },
+  { table: 'stages', label: '予選リーグ・決勝トーナメント' },
+  { table: 'match_settings', label: '段 × 部ごとの決めごと' },
+  { table: 'matchups', label: '対戦' },
   { table: 'matches', label: '試合' },
   { table: 'match_players', label: '出場者' },
-  { table: 'games', label: '得点' },
+  { table: 'game_scores', label: '得点' },
   // 誰が何を書いたか。データが壊れたときに突き合わせる。
   { table: 'write_logs', label: '書き込み履歴' },
 ];

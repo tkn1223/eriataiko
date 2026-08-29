@@ -25,7 +25,7 @@ const enterSchema = z.object({
 /**
  * 入場。合言葉を検証し、選ばれた人が**いまの大会に参加している**ことを
  * サーバー側で確かめてから署名付き Cookie を発行する。
- * ブラウザから来た名前も can_input も信用しない。
+ * ブラウザから来た名前は信用しない。
  */
 export async function POST(request: Request) {
   try {
@@ -47,24 +47,23 @@ export async function POST(request: Request) {
     }
 
     // 「いまの大会に参加しているか」まで確かめる。過去の大会にだけ出た人では入場できない。
-    const { data: entry, error } = await getSupabaseAdminClient()
-      .from('entries')
-      .select('can_input, players!inner(id, number, name), competitions!inner(is_current)')
+    const { data: participant, error } = await getSupabaseAdminClient()
+      .from('participants')
+      .select('players!inner(id, player_number, name), competitions!inner(is_current)')
       .eq('player_id', playerId)
       .eq('competitions.is_current', true)
       .maybeSingle();
 
     if (error) throw error;
-    if (!entry) {
+    if (!participant) {
       throw new ApiError(404, 'その名前は見つかりませんでした。一覧を更新してください。');
     }
 
     const session = {
       role: 'player' as const,
-      playerId: entry.players.id,
-      playerName: entry.players.name,
-      playerNumber: entry.players.number,
-      canInput: entry.can_input,
+      playerId: participant.players.id,
+      playerName: participant.players.name,
+      playerNumber: participant.players.player_number,
     };
     await createSession(session);
     await logWrite(session, 'session.enter');

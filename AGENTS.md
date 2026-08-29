@@ -50,10 +50,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 書き込みは `src/app/api/**/route.ts` に作り、必ずこの順で書く:
 
 ```ts
-const operator = await requireOperator();          // 1. 誰か確認（未入場は 401）
-const body = await parseBody(request, schema);     // 2. zod で入力検証
+const player = await requirePlayer();           // 1. 誰か確認（未入場は 401）
+const body = await parseBody(request, schema);  // 2. zod で入力検証
 // 3. getSupabaseAdminClient() で書き込み
-await logWrite(operator, 'なにをしたか', body);     // 4. 記録を残す
+await logWrite(player, 'なにをしたか', body);   // 4. 記録を残す
 // 5. catch で toErrorResponse(error)
 ```
 
@@ -199,7 +199,7 @@ git switch -c feature/<名前>      # 2. 枝を切る
 
 大会当日だけ、GitHub Actions が 15 分おきに `/api/backup` を叩いて全データを
 Google スプレッドシートへ書き出す（`src/app/api/backup/route.ts`）。
-Supabase には書き込まない（読むだけ）ので、上の「書き込みは `requireOperator()` から」は
+Supabase には書き込まない（読むだけ）ので、上の「書き込みは `requirePlayer()` から」は
 当てはまらない。代わりに秘密のヘッダー（`x-backup-secret`）で守っている。
 準備の手順は `docs/backup.md`。
 

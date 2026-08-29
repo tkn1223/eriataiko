@@ -13,11 +13,11 @@ import type { Json } from '@/types/database';
  *
  *   export async function POST(request: Request) {
  *     try {
- *       const operator = await requireOperator();
+ *       const player = await requirePlayer();
  *       const body = await parseBody(request, z.object({ matchId: z.uuid(), score: z.number() }));
  *       const supabase = getSupabaseAdminClient();
  *       // ...書き込み...
- *       await logWrite(operator, 'score.update', body);
+ *       await logWrite(player, 'score.update', body);
  *       return NextResponse.json({ ok: true });
  *     } catch (error) {
  *       return toErrorResponse(error);
@@ -41,7 +41,7 @@ export class ApiError extends Error {
  * **観戦者もここで弾く。** 観戦者は合言葉を通していないうえ誰かも名乗って
  * いないので、書き込みの記録（write_logs）に残す名前が無い。
  */
-export async function requireOperator(): Promise<PlayerSession> {
+export async function requirePlayer(): Promise<PlayerSession> {
   const session = await getSession();
   if (!session) {
     throw new ApiError(401, '入場していません。もう一度名前を選んでください。');
@@ -77,17 +77,17 @@ export async function parseBody<T extends z.ZodType>(
  * 大会後の突き合わせと、当日トラブル時の巻き戻し判断に使う。
  */
 export async function logWrite(
-  operator: PlayerSession,
+  player: PlayerSession,
   action: string,
-  detail?: unknown
+  actionDetail?: unknown
 ): Promise<void> {
   const { error } = await getSupabaseAdminClient()
     .from('write_logs')
     .insert({
-      player_id: operator.playerId,
-      player_name: operator.playerName,
+      player_id: player.playerId,
+      player_name: player.playerName,
       action,
-      detail: (detail ?? null) as Json,
+      action_detail: (actionDetail ?? null) as Json,
     });
 
   // ログ失敗で本処理を落とさない。当日の運営が止まる方が損害が大きい。

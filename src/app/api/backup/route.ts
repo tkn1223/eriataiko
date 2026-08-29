@@ -11,9 +11,9 @@ import { pickTabsToDelete } from '@/usecases/pick-tabs-to-delete';
 /**
  * 大会当日、GitHub Actions（.github/workflows/backup.yml）から 15 分おきに叩かれる。
  *
- * このアプリの他の書き込み API と違い、`requireOperator()` から始めない。
+ * このアプリの他の書き込み API と違い、`requirePlayer()` から始めない。
  * Supabase には一切書き込まない（読むだけ）ので、AGENTS.md の「書き込みは
- * requireOperator() から」は当てはまらない（docs/specs/2026-08-13-backup-to-sheets.md
+ * requirePlayer() から」は当てはまらない（docs/specs/2026-08-13-backup-to-sheets.md
  * の「決めたこと」参照）。代わりに秘密のヘッダーで守る。
  *
  * データは返さないので、万一叩かれても情報は漏れない。起きるのはタブが増えることだけで、

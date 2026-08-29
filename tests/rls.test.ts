@@ -31,7 +31,7 @@ describe('書き込み記録（write_logs）', () => {
 });
 
 /**
- * 大会データの表（段1で追加した 10 表）。
+ * 大会データの表（11 表）。
  *
  * ここが破れると、URL を知っている人なら誰でも得点や組み合わせを書き換えられる。
  *
@@ -69,18 +69,19 @@ describe('大会データの表は anon から読めるが書けない', () => {
     const division = await one('divisions');
     const team = await one('teams');
     const player = await one('players');
-    const entry = await one('entries');
+    const participant = await one('participants');
     const stage = await one('stages');
-    const teamMatch = await one('team_matches');
+    const matchup = await one('matchups');
     const match = await one('matches');
     const matchPlayer = await one('match_players');
-    const game = await one('games');
+    const gameScore = await one('game_scores');
+    const matchSetting = await one('match_settings');
 
     // まだ大会に参加していない人を 1 人作る。
     // 「参加を勝手に足せない」を、重複エラーではなく RLS で落ちることとして確かめるため。
     const spare = await admin
       .from('players')
-      .insert({ number: 700001, name: 'rls-テスト用（未参加）' })
+      .insert({ player_number: 700001, name: 'rls-テスト用（未参加）' })
       .select('id')
       .single();
     sparePlayerId = spare.data!.id;
@@ -94,14 +95,14 @@ describe('大会データの表は anon から読めるが書けない', () => {
     expect(emptyMatch, '出場者のいない試合がサンプルデータに必要').toBeDefined();
 
     // 出場者の書き換え用に、その試合に出ていない参加を 1 つ探す
-    const { data: usedEntries } = await admin
+    const { data: usedParticipants } = await admin
       .from('match_players')
-      .select('entry_id')
+      .select('participant_id')
       .eq('match_id', (await one('match_players', 'id, match_id')).match_id);
-    const { data: spareEntry } = await admin
-      .from('entries')
+    const { data: spareParticipant } = await admin
+      .from('participants')
       .select('id')
-      .not('id', 'in', `(${(usedEntries ?? []).map((r) => r.entry_id).join(',')})`)
+      .not('id', 'in', `(${(usedParticipants ?? []).map((r) => r.participant_id).join(',')})`)
       .limit(1)
       .single();
 
@@ -118,61 +119,72 @@ describe('大会データの表は anon から読めるが書けない', () => {
       keepId: division.id,
     };
     cases.teams = {
-      insert: { competition_id: competition.id, number: 99, name: 'anon が勝手に追加' },
-      findInserted: { number: 99 },
+      insert: { competition_id: competition.id, team_number: 99, name: 'anon が勝手に追加' },
+      findInserted: { team_number: 99 },
       update: { id: team.id, column: 'name', value: '書き換えた' },
       keepId: team.id,
     };
     cases.players = {
-      insert: { number: 700099, name: 'anon が勝手に追加' },
-      findInserted: { number: 700099 },
+      insert: { player_number: 700099, name: 'anon が勝手に追加' },
+      findInserted: { player_number: 700099 },
       update: { id: player.id, column: 'name', value: '書き換えた' },
       keepId: player.id,
     };
-    cases.entries = {
+    cases.participants = {
       insert: { competition_id: competition.id, player_id: sparePlayerId },
       findInserted: { player_id: sparePlayerId },
-      update: { id: entry.id, column: 'can_input', value: true },
-      keepId: entry.id,
+      update: { id: participant.id, column: 'player_id', value: sparePlayerId },
+      keepId: participant.id,
     };
     cases.stages = {
-      insert: { competition_id: competition.id, name: 'anon が勝手に追加', kind: 'league' },
+      insert: { competition_id: competition.id, name: 'anon が勝手に追加', format: 'league' },
       findInserted: { name: 'anon が勝手に追加' },
       update: { id: stage.id, column: 'name', value: '書き換えた' },
       keepId: stage.id,
     };
-    cases.team_matches = {
+    cases.matchups = {
       insert: {
         stage_id: stage.id,
-        label: 'anon が勝手に追加',
-        slot_a_label: 'あ',
-        slot_b_label: 'い',
+        round_name: 'anon が勝手に追加',
+        side_a_slot_label: 'あ',
+        side_b_slot_label: 'い',
       },
-      findInserted: { label: 'anon が勝手に追加' },
-      update: { id: teamMatch.id, column: 'label', value: '書き換えた' },
-      keepId: teamMatch.id,
+      findInserted: { round_name: 'anon が勝手に追加' },
+      update: { id: matchup.id, column: 'round_name', value: '書き換えた' },
+      keepId: matchup.id,
     };
     cases.matches = {
       insert: {
-        team_match_id: teamMatch.id,
+        matchup_id: matchup.id,
         division_id: division.id,
-        order_in_team_match: 987654,
+        order_in_matchup: 987654,
       },
-      findInserted: { order_in_team_match: 987654 },
+      findInserted: { order_in_matchup: 987654 },
       update: { id: match.id, column: 'status', value: 'done' },
       keepId: match.id,
     };
     cases.match_players = {
-      insert: { match_id: emptyMatch.id, side: 'a', entry_id: entry.id, player_order: 1 },
+      insert: {
+        match_id: emptyMatch.id,
+        side: 'a',
+        participant_id: participant.id,
+        order_in_pair: 1,
+      },
       findInserted: { match_id: emptyMatch.id },
-      update: { id: matchPlayer.id, column: 'entry_id', value: spareEntry!.id },
+      update: { id: matchPlayer.id, column: 'participant_id', value: spareParticipant!.id },
       keepId: matchPlayer.id,
     };
-    cases.games = {
+    cases.game_scores = {
       insert: { match_id: emptyMatch.id, game_number: 99 },
       findInserted: { match_id: emptyMatch.id, game_number: 99 },
-      update: { id: game.id, column: 'score_a', value: 999 },
-      keepId: game.id,
+      update: { id: gameScore.id, column: 'side_a_score', value: 999 },
+      keepId: gameScore.id,
+    };
+    cases.match_settings = {
+      insert: { stage_id: stage.id, division_id: division.id, max_game_count: 9 },
+      findInserted: { max_game_count: 9 },
+      update: { id: matchSetting.id, column: 'max_game_count', value: 7 },
+      keepId: matchSetting.id,
     };
   });
 
@@ -185,12 +197,13 @@ describe('大会データの表は anon から読めるが書けない', () => {
     'divisions',
     'teams',
     'players',
-    'entries',
+    'participants',
     'stages',
-    'team_matches',
+    'match_settings',
+    'matchups',
     'matches',
     'match_players',
-    'games',
+    'game_scores',
   ];
 
   test.each(tables)('%s は読める（画面が anon で読むため）', async (table) => {

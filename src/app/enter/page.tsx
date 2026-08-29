@@ -41,21 +41,21 @@ export default async function EnterPage() {
 
       const [entryResult, teamResult, divisionResult] = await Promise.all([
         supabase
-          .from('entries')
-          .select('id, can_input, team_id, division_id, players!inner(id, number, name)')
+          .from('participants')
+          .select('id, team_id, division_id, players!inner(id, player_number, name)')
           .eq('competition_id', competition.id)
           .limit(500),
         supabase
           .from('teams')
-          .select('id, number, name')
+          .select('id, team_number, name')
           .eq('competition_id', competition.id)
-          .order('display_order')
+          .order('sort_order')
           .limit(50),
         supabase
           .from('divisions')
           .select('id, name')
           .eq('competition_id', competition.id)
-          .order('display_order')
+          .order('sort_order')
           .limit(50),
       ]);
 
@@ -67,17 +67,20 @@ export default async function EnterPage() {
       // PostgREST の版に左右されるので、ここで確実に並べる。
       entrants = (entryResult.data ?? [])
         .map((row) => ({
-          entryId: row.id,
+          participantId: row.id,
           playerId: row.players.id,
-          number: row.players.number,
+          playerNumber: row.players.player_number,
           name: row.players.name,
-          canInput: row.can_input,
           teamId: row.team_id,
           divisionId: row.division_id,
         }))
-        .sort((a, b) => a.number - b.number);
+        .sort((a, b) => a.playerNumber - b.playerNumber);
 
-      teams = teamResult.data ?? [];
+      teams = (teamResult.data ?? []).map((row) => ({
+        id: row.id,
+        teamNumber: row.team_number,
+        name: row.name,
+      }));
       divisions = divisionResult.data ?? [];
     }
   } catch (error) {

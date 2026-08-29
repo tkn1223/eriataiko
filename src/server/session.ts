@@ -21,8 +21,8 @@ const MAX_AGE_SECONDS = 60 * 60 * 16;
 /**
  * 名前を選んで入場した人。合言葉を 1 回通している。
  *
- * `canInput` は入場したときの値を焼き付けている。当日に入力権限を外しても
- * その端末では 16 時間効かないが、そこまで厳密に管理するアプリではない。
+ * **この人は全員 得点を入力できる。** 入力できないのは観戦者だけで、
+ * 観戦者は participants に行を持たない（docs/specs/2026-08-29-naming-review.md）。
  */
 export type PlayerSession = {
   role: 'player';
@@ -30,8 +30,6 @@ export type PlayerSession = {
   playerName: string;
   /** 同名（「たろう」が複数いる）を画面で見分けるための番号 */
   playerNumber: number;
-  /** 得点を入力してよい人か */
-  canInput: boolean;
 };
 
 /**
@@ -41,7 +39,7 @@ export type PlayerSession = {
  * 運営として困るのは**書き込まれること**だけ。見るだけの人に合言葉を配ると
  * 100 人に配る手間が戻ってくるので、見るだけなら素通しにすると決めた。
  *
- * 誰かは名乗らないので、書き込みは一切できない（requireOperator が弾く）。
+ * 誰かは名乗らないので、書き込みは一切できない（requirePlayer が弾く）。
  */
 export type ViewerSession = { role: 'viewer' };
 
@@ -82,7 +80,6 @@ export async function createSession(session: Session) {
           role: 'player' as const,
           name: session.playerName,
           number: session.playerNumber,
-          canInput: session.canInput,
         };
 
   let builder = new SignJWT(claims)
@@ -125,7 +122,6 @@ export async function getSession(): Promise<Session | null> {
       playerId: payload.sub,
       playerName: payload.name,
       playerNumber: payload.number,
-      canInput: payload.canInput === true,
     };
   } catch {
     // 期限切れ・改ざん・鍵の入れ替え

@@ -31,23 +31,23 @@ export type Database = {
         Row: {
           competition_id: string;
           created_at: string;
-          display_order: number;
           id: string;
           name: string;
+          sort_order: number;
         };
         Insert: {
           competition_id: string;
           created_at?: string;
-          display_order?: number;
           id?: string;
           name: string;
+          sort_order?: number;
         };
         Update: {
           competition_id?: string;
           created_at?: string;
-          display_order?: number;
           id?: string;
           name?: string;
+          sort_order?: number;
         };
         Relationships: [
           {
@@ -59,73 +59,14 @@ export type Database = {
           },
         ];
       };
-      entries: {
-        Row: {
-          can_input: boolean;
-          competition_id: string;
-          created_at: string;
-          division_id: string | null;
-          id: string;
-          player_id: string;
-          team_id: string | null;
-        };
-        Insert: {
-          can_input?: boolean;
-          competition_id: string;
-          created_at?: string;
-          division_id?: string | null;
-          id?: string;
-          player_id: string;
-          team_id?: string | null;
-        };
-        Update: {
-          can_input?: boolean;
-          competition_id?: string;
-          created_at?: string;
-          division_id?: string | null;
-          id?: string;
-          player_id?: string;
-          team_id?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'entries_competition_id_fkey';
-            columns: ['competition_id'];
-            isOneToOne: false;
-            referencedRelation: 'competitions';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'entries_division_id_fkey';
-            columns: ['division_id'];
-            isOneToOne: false;
-            referencedRelation: 'divisions';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'entries_player_id_fkey';
-            columns: ['player_id'];
-            isOneToOne: false;
-            referencedRelation: 'players';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'entries_team_id_fkey';
-            columns: ['team_id'];
-            isOneToOne: false;
-            referencedRelation: 'teams';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-      games: {
+      game_scores: {
         Row: {
           created_at: string;
           game_number: number;
           id: string;
           match_id: string;
-          score_a: number;
-          score_b: number;
+          side_a_score: number;
+          side_b_score: number;
           updated_at: string;
         };
         Insert: {
@@ -133,8 +74,8 @@ export type Database = {
           game_number: number;
           id?: string;
           match_id: string;
-          score_a?: number;
-          score_b?: number;
+          side_a_score?: number;
+          side_b_score?: number;
           updated_at?: string;
         };
         Update: {
@@ -142,13 +83,13 @@ export type Database = {
           game_number?: number;
           id?: string;
           match_id?: string;
-          score_a?: number;
-          score_b?: number;
+          side_a_score?: number;
+          side_b_score?: number;
           updated_at?: string;
         };
         Relationships: [
           {
-            foreignKeyName: 'games_match_id_fkey';
+            foreignKeyName: 'game_scores_match_id_fkey';
             columns: ['match_id'];
             isOneToOne: false;
             referencedRelation: 'matches';
@@ -159,41 +100,80 @@ export type Database = {
       match_players: {
         Row: {
           created_at: string;
-          entry_id: string;
           id: string;
           match_id: string;
-          player_order: number;
+          order_in_pair: number;
+          participant_id: string;
           side: string;
         };
         Insert: {
           created_at?: string;
-          entry_id: string;
           id?: string;
           match_id: string;
-          player_order?: number;
+          order_in_pair?: number;
+          participant_id: string;
           side: string;
         };
         Update: {
           created_at?: string;
-          entry_id?: string;
           id?: string;
           match_id?: string;
-          player_order?: number;
+          order_in_pair?: number;
+          participant_id?: string;
           side?: string;
         };
         Relationships: [
-          {
-            foreignKeyName: 'match_players_entry_id_fkey';
-            columns: ['entry_id'];
-            isOneToOne: false;
-            referencedRelation: 'entries';
-            referencedColumns: ['id'];
-          },
           {
             foreignKeyName: 'match_players_match_id_fkey';
             columns: ['match_id'];
             isOneToOne: false;
             referencedRelation: 'matches';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'match_players_participant_id_fkey';
+            columns: ['participant_id'];
+            isOneToOne: false;
+            referencedRelation: 'participants';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      match_settings: {
+        Row: {
+          created_at: string;
+          division_id: string;
+          id: string;
+          max_game_count: number;
+          stage_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          division_id: string;
+          id?: string;
+          max_game_count?: number;
+          stage_id: string;
+        };
+        Update: {
+          created_at?: string;
+          division_id?: string;
+          id?: string;
+          max_game_count?: number;
+          stage_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'match_settings_division_id_fkey';
+            columns: ['division_id'];
+            isOneToOne: false;
+            referencedRelation: 'divisions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'match_settings_stage_id_fkey';
+            columns: ['stage_id'];
+            isOneToOne: false;
+            referencedRelation: 'stages';
             referencedColumns: ['id'];
           },
         ];
@@ -203,40 +183,43 @@ export type Database = {
           court_number: number | null;
           created_at: string;
           division_id: string;
+          ending: string;
           finished_at: string | null;
           id: string;
+          matchup_id: string;
+          max_game_count: number;
           order_in_court: number | null;
-          order_in_team_match: number;
-          outcome: string;
+          order_in_matchup: number;
           started_at: string | null;
           status: string;
-          team_match_id: string;
         };
         Insert: {
           court_number?: number | null;
           created_at?: string;
           division_id: string;
+          ending?: string;
           finished_at?: string | null;
           id?: string;
+          matchup_id: string;
+          max_game_count?: number;
           order_in_court?: number | null;
-          order_in_team_match?: number;
-          outcome?: string;
+          order_in_matchup?: number;
           started_at?: string | null;
           status?: string;
-          team_match_id: string;
         };
         Update: {
           court_number?: number | null;
           created_at?: string;
           division_id?: string;
+          ending?: string;
           finished_at?: string | null;
           id?: string;
+          matchup_id?: string;
+          max_game_count?: number;
           order_in_court?: number | null;
-          order_in_team_match?: number;
-          outcome?: string;
+          order_in_matchup?: number;
           started_at?: string | null;
           status?: string;
-          team_match_id?: string;
         };
         Relationships: [
           {
@@ -247,10 +230,124 @@ export type Database = {
             referencedColumns: ['id'];
           },
           {
-            foreignKeyName: 'matches_team_match_id_fkey';
-            columns: ['team_match_id'];
+            foreignKeyName: 'matches_matchup_id_fkey';
+            columns: ['matchup_id'];
             isOneToOne: false;
-            referencedRelation: 'team_matches';
+            referencedRelation: 'matchups';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      matchups: {
+        Row: {
+          created_at: string;
+          id: string;
+          round_name: string;
+          side_a_slot_label: string | null;
+          side_a_team_id: string | null;
+          side_b_slot_label: string | null;
+          side_b_team_id: string | null;
+          sort_order: number;
+          stage_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          round_name: string;
+          side_a_slot_label?: string | null;
+          side_a_team_id?: string | null;
+          side_b_slot_label?: string | null;
+          side_b_team_id?: string | null;
+          sort_order?: number;
+          stage_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          round_name?: string;
+          side_a_slot_label?: string | null;
+          side_a_team_id?: string | null;
+          side_b_slot_label?: string | null;
+          side_b_team_id?: string | null;
+          sort_order?: number;
+          stage_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'matchups_side_a_team_id_fkey';
+            columns: ['side_a_team_id'];
+            isOneToOne: false;
+            referencedRelation: 'teams';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'matchups_side_b_team_id_fkey';
+            columns: ['side_b_team_id'];
+            isOneToOne: false;
+            referencedRelation: 'teams';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'matchups_stage_id_fkey';
+            columns: ['stage_id'];
+            isOneToOne: false;
+            referencedRelation: 'stages';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      participants: {
+        Row: {
+          competition_id: string;
+          created_at: string;
+          division_id: string | null;
+          id: string;
+          player_id: string;
+          team_id: string | null;
+        };
+        Insert: {
+          competition_id: string;
+          created_at?: string;
+          division_id?: string | null;
+          id?: string;
+          player_id: string;
+          team_id?: string | null;
+        };
+        Update: {
+          competition_id?: string;
+          created_at?: string;
+          division_id?: string | null;
+          id?: string;
+          player_id?: string;
+          team_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'participants_competition_id_fkey';
+            columns: ['competition_id'];
+            isOneToOne: false;
+            referencedRelation: 'competitions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'participants_division_id_fkey';
+            columns: ['division_id'];
+            isOneToOne: false;
+            referencedRelation: 'divisions';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'participants_player_id_fkey';
+            columns: ['player_id'];
+            isOneToOne: false;
+            referencedRelation: 'players';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'participants_team_id_fkey';
+            columns: ['team_id'];
+            isOneToOne: false;
+            referencedRelation: 'teams';
             referencedColumns: ['id'];
           },
         ];
@@ -260,19 +357,19 @@ export type Database = {
           created_at: string;
           id: string;
           name: string;
-          number: number;
+          player_number: number;
         };
         Insert: {
           created_at?: string;
           id?: string;
           name: string;
-          number: number;
+          player_number: number;
         };
         Update: {
           created_at?: string;
           id?: string;
           name?: string;
-          number?: number;
+          player_number?: number;
         };
         Relationships: [];
       };
@@ -280,26 +377,26 @@ export type Database = {
         Row: {
           competition_id: string;
           created_at: string;
-          display_order: number;
+          format: string;
           id: string;
-          kind: string;
           name: string;
+          sort_order: number;
         };
         Insert: {
           competition_id: string;
           created_at?: string;
-          display_order?: number;
+          format: string;
           id?: string;
-          kind: string;
           name: string;
+          sort_order?: number;
         };
         Update: {
           competition_id?: string;
           created_at?: string;
-          display_order?: number;
+          format?: string;
           id?: string;
-          kind?: string;
           name?: string;
+          sort_order?: number;
         };
         Relationships: [
           {
@@ -311,88 +408,30 @@ export type Database = {
           },
         ];
       };
-      team_matches: {
-        Row: {
-          created_at: string;
-          display_order: number;
-          id: string;
-          label: string;
-          slot_a_label: string | null;
-          slot_b_label: string | null;
-          stage_id: string;
-          team_a_id: string | null;
-          team_b_id: string | null;
-        };
-        Insert: {
-          created_at?: string;
-          display_order?: number;
-          id?: string;
-          label: string;
-          slot_a_label?: string | null;
-          slot_b_label?: string | null;
-          stage_id: string;
-          team_a_id?: string | null;
-          team_b_id?: string | null;
-        };
-        Update: {
-          created_at?: string;
-          display_order?: number;
-          id?: string;
-          label?: string;
-          slot_a_label?: string | null;
-          slot_b_label?: string | null;
-          stage_id?: string;
-          team_a_id?: string | null;
-          team_b_id?: string | null;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'team_matches_stage_id_fkey';
-            columns: ['stage_id'];
-            isOneToOne: false;
-            referencedRelation: 'stages';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'team_matches_team_a_id_fkey';
-            columns: ['team_a_id'];
-            isOneToOne: false;
-            referencedRelation: 'teams';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'team_matches_team_b_id_fkey';
-            columns: ['team_b_id'];
-            isOneToOne: false;
-            referencedRelation: 'teams';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
       teams: {
         Row: {
           competition_id: string;
           created_at: string;
-          display_order: number;
           id: string;
           name: string;
-          number: number;
+          sort_order: number;
+          team_number: number;
         };
         Insert: {
           competition_id: string;
           created_at?: string;
-          display_order?: number;
           id?: string;
           name: string;
-          number: number;
+          sort_order?: number;
+          team_number: number;
         };
         Update: {
           competition_id?: string;
           created_at?: string;
-          display_order?: number;
           id?: string;
           name?: string;
-          number?: number;
+          sort_order?: number;
+          team_number?: number;
         };
         Relationships: [
           {
@@ -407,24 +446,24 @@ export type Database = {
       write_logs: {
         Row: {
           action: string;
+          action_detail: Json | null;
           created_at: string;
-          detail: Json | null;
           id: number;
           player_id: string | null;
           player_name: string;
         };
         Insert: {
           action: string;
+          action_detail?: Json | null;
           created_at?: string;
-          detail?: Json | null;
           id?: never;
           player_id?: string | null;
           player_name: string;
         };
         Update: {
           action?: string;
+          action_detail?: Json | null;
           created_at?: string;
-          detail?: Json | null;
           id?: never;
           player_id?: string | null;
           player_name?: string;

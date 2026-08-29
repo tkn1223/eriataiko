@@ -9,6 +9,9 @@ import type { SaveScoreRepository } from '@/usecases/save-score';
 
 const matchIdSchema = z.uuid();
 
+/** Postgres の「すでに同じものがあります」。unique (match_id, game_number) に引っかかると返る。 */
+const UNIQUE_VIOLATION = '23505';
+
 /**
  * `matches` / `game_scores` を触る、得点入力まわりの usecases 向け実装。
  *
@@ -38,20 +41,46 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
   },
 
   async saveGameScore({ matchId, gameNumber, sideAScore, sideBScore, now }) {
-    // upsert 1 回で「無ければ作る、あれば書き換える」が済む。
-    // unique (match_id, game_number) があるので行が増える心配は無い。
-    // updated_at は自分で入れる（この DB に自動更新の仕掛けは無い）。
-    const { error } = await getSupabaseAdminClient().from('game_scores').upsert(
-      {
-        match_id: matchId,
-        game_number: gameNumber,
-        side_a_score: sideAScore,
-        side_b_score: sideBScore,
-        updated_at: now.toISOString(),
-      },
-      { onConflict: 'match_id,game_number' }
-    );
-    if (error) throw error;
+    const supabase = getSupabaseAdminClient();
+    const scores = {
+      side_a_score: sideAScore,
+      side_b_score: sideBScore,
+      // この DB に自動更新の仕掛けは無いので、書き換えるたびに自分で入れる
+      updated_at: now.toISOString(),
+    };
+
+    const updateScores = async () => {
+      const { error } = await supabase
+        .from('game_scores')
+        .update(scores)
+        .eq('match_id', matchId)
+        .eq('game_number', gameNumber);
+      if (error) throw error;
+    };
+
+    const { data: existing, error: findError } = await supabase
+      .from('game_scores')
+      .select('id')
+      .eq('match_id', matchId)
+      .eq('game_number', gameNumber)
+      .maybeSingle();
+    if (findError) throw findError;
+
+    if (existing) {
+      await updateScores();
+      return;
+    }
+
+    const { error } = await supabase
+      .from('game_scores')
+      .insert({ match_id: matchId, game_number: gameNumber, ...scores });
+    if (!error) return;
+
+    // 得点係が 2 台で開いていると、まだ行の無いゲームに同時に届くことがある。
+    // 先に届いた側が行を作り、こちらは重複で弾かれる。落とさずに書き換えへ回す。
+    // （そのまま throw すると得点係には「サーバー側でエラー」と出て、1 点消える）
+    if (error.code !== UNIQUE_VIOLATION) throw error;
+    await updateScores();
   },
 
   async markLive({ matchId, startedAt }) {

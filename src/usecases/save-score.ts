@@ -12,7 +12,10 @@ export type MatchForScoring = {
 /** `saveScore` が DB に求める操作の約束。実装は `src/db/matches.ts`。 */
 export type SaveScoreRepository = {
   findMatch(matchId: string): Promise<MatchForScoring | null>;
-  /** `game_scores` を `match_id` × `game_number` で upsert する。updated_at は呼び出し側が入れる。 */
+  /**
+   * `match_id` × `game_number` の行に得点を書く。
+   * 無ければ作り、あれば書き換える（どちらになるかは実装側の判断）。
+   */
   saveGameScore(input: {
     matchId: string;
     gameNumber: number;

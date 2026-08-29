@@ -16,13 +16,13 @@ insert into public.competitions (id, name, held_on, is_current) values
   ('c0000000-0000-4000-8000-000000000001', 'えりあ太鼓カップ 2027', '2027-01-22', true)
 on conflict (id) do nothing;
 
-insert into public.divisions (id, competition_id, name, display_order) values
+insert into public.divisions (id, competition_id, name, sort_order) values
   ('d0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', '1部', 10),
   ('d0000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', '2部', 20),
   ('d0000000-0000-4000-8000-000000000003', 'c0000000-0000-4000-8000-000000000001', '3部', 30)
 on conflict (id) do nothing;
 
-insert into public.teams (id, competition_id, number, name, display_order) values
+insert into public.teams (id, competition_id, team_number, name, sort_order) values
   ('40000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 1, '愛知南',   10),
   ('40000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', 2, '愛知中央', 20),
   ('40000000-0000-4000-8000-000000000003', 'c0000000-0000-4000-8000-000000000001', 3, '愛知北',   30),
@@ -35,53 +35,61 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------
 -- 同じニックネームの人をわざと 2 人入れてある（#3 と #11 が「たろう」）。
 -- 名前だけでは人を特定できないことを、画面を作るときに忘れないため。
-insert into public.players (number, name) values
+insert into public.players (player_number, name) values
   ( 1, 'さとう'), ( 2, 'すずき'), ( 3, 'たろう'), ( 4, 'いとう'),
   ( 5, 'わたなべ'), ( 6, 'こばやし'), ( 7, 'やまもと'), ( 8, 'まつもと'),
   ( 9, 'なかむら'), (10, 'かとう'), (11, 'たろう'), (12, 'よしだ'),
   (13, 'しみず'), (14, 'やまぐち'), (15, 'いのうえ'), (16, 'もり'),
   (99, '本部（入力だけ）')
-on conflict (number) do nothing;
+on conflict (player_number) do nothing;
 
 -- #1〜#16 を 4 人ずつ 4 チームへ。部は 1部/2部/3部/3部 の順で回す。
-insert into public.entries (competition_id, player_id, team_id, division_id, can_input)
+insert into public.participants (competition_id, player_id, team_id, division_id)
 select
   'c0000000-0000-4000-8000-000000000001',
   p.id,
   t.id,
-  d.id,
-  p.number = 1   -- #1 だけ入力係も兼ねる
+  d.id
 from public.players p
 join public.teams t
   on t.competition_id = 'c0000000-0000-4000-8000-000000000001'
- and t.number = ((p.number - 1) / 4) + 1
+ and t.team_number = ((p.player_number - 1) / 4) + 1
 join public.divisions d
   on d.competition_id = 'c0000000-0000-4000-8000-000000000001'
- and d.name = (array['1部', '2部', '3部', '3部'])[((p.number - 1) % 4) + 1]
-where p.number between 1 and 16
+ and d.name = (array['1部', '2部', '3部', '3部'])[((p.player_number - 1) % 4) + 1]
+where p.player_number between 1 and 16
 on conflict (competition_id, player_id) do nothing;
 
--- 試合に出ない入力係（チームも部も空）
-insert into public.entries (competition_id, player_id, can_input)
-select 'c0000000-0000-4000-8000-000000000001', p.id, true
-from public.players p where p.number = 99
+-- 試合に出ない入力係（チームも部も空）。
+-- **この表に行がある人は全員、得点を入れられる**（観戦者はここに行を持たない）。
+insert into public.participants (competition_id, player_id)
+select 'c0000000-0000-4000-8000-000000000001', p.id
+from public.players p where p.player_number = 99
 on conflict (competition_id, player_id) do nothing;
 
 
 -- ---------------------------------------------------------------------
--- 段（予選リーグ / 決勝トーナメント）
+-- 予選リーグ / 決勝トーナメント
 -- ---------------------------------------------------------------------
-insert into public.stages (id, competition_id, name, kind, display_order) values
+insert into public.stages (id, competition_id, name, format, sort_order) values
   ('50000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', '予選リーグ',       'league',   10),
   ('50000000-0000-4000-8000-000000000002', 'c0000000-0000-4000-8000-000000000001', '決勝トーナメント', 'knockout', 20)
 on conflict (id) do nothing;
+
+-- 段 × 部ごとの決めごと。実際の運用に合わせて、予選は 1 ゲーム、決勝は 3 ゲーム。
+insert into public.match_settings (stage_id, division_id, max_game_count)
+select s.id, d.id, case when s.format = 'league' then 1 else 3 end
+from public.stages s
+join public.divisions d on d.competition_id = s.competition_id
+where s.competition_id = 'c0000000-0000-4000-8000-000000000001'
+on conflict (stage_id, division_id) do nothing;
 
 
 -- ---------------------------------------------------------------------
 -- 対戦
 -- ---------------------------------------------------------------------
--- 予選は 4 チームの総当たり（6 対戦）。相手が決まっているので team_x_id を入れる。
-insert into public.team_matches (id, stage_id, label, team_a_id, team_b_id, display_order) values
+-- 予選は 4 チームの総当たり（6 対戦）。相手が決まっているので side_x_team_id を入れる。
+insert into public.matchups (id, stage_id, round_name, side_a_team_id, side_b_team_id, sort_order) values
   ('60000000-0000-4000-8000-000000000001', '50000000-0000-4000-8000-000000000001', '予選 1回戦', '40000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000002', 10),
   ('60000000-0000-4000-8000-000000000002', '50000000-0000-4000-8000-000000000001', '予選 1回戦', '40000000-0000-4000-8000-000000000003', '40000000-0000-4000-8000-000000000004', 20),
   ('60000000-0000-4000-8000-000000000003', '50000000-0000-4000-8000-000000000001', '予選 2回戦', '40000000-0000-4000-8000-000000000001', '40000000-0000-4000-8000-000000000003', 30),
@@ -91,8 +99,8 @@ insert into public.team_matches (id, stage_id, label, team_a_id, team_b_id, disp
 on conflict (id) do nothing;
 
 -- 決勝は**相手がまだ決まっていない**ので、空枠のラベルだけを入れておく。
--- 予選が終わったら team_x_id を埋める。対戦表はこの文字をそのまま薄字で出す。
-insert into public.team_matches (id, stage_id, label, slot_a_label, slot_b_label, display_order) values
+-- 予選が終わったら side_x_team_id を埋める。対戦表はこの文字をそのまま薄字で出す。
+insert into public.matchups (id, stage_id, round_name, side_a_slot_label, side_b_slot_label, sort_order) values
   ('60000000-0000-4000-8000-000000000011', '50000000-0000-4000-8000-000000000002', '準決勝1',    '予選1位',       '予選4位',       10),
   ('60000000-0000-4000-8000-000000000012', '50000000-0000-4000-8000-000000000002', '準決勝2',    '予選2位',       '予選3位',       20),
   ('60000000-0000-4000-8000-000000000013', '50000000-0000-4000-8000-000000000002', '決勝',       '準決勝1 勝者',  '準決勝2 勝者',  30),
@@ -105,19 +113,22 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------
 -- 「予選 1回戦（愛知南 対 愛知中央）」の 3 試合だけ中身を入れる。
 -- 終了 / 進行中 / これから が 1 つずつそろうようにして、画面の作り分けを試せるようにする。
+--
+-- max_game_count は match_settings の値をコピーしたつもりの数字。
+-- 当日は CSV 取り込みがこのコピーを行う。
 insert into public.matches
-  (id, team_match_id, division_id, order_in_team_match, court_number, order_in_court, status) values
-  ('70000000-0000-4000-8000-000000000001', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 1, 1, 1, 'done'),
-  ('70000000-0000-4000-8000-000000000002', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000002', 2, 1, 2, 'live'),
-  ('70000000-0000-4000-8000-000000000003', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000003', 3, 1, 3, 'waiting')
+  (id, matchup_id, division_id, order_in_matchup, court_number, order_in_court, status, max_game_count) values
+  ('70000000-0000-4000-8000-000000000001', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001', 1, 1, 1, 'done',    1),
+  ('70000000-0000-4000-8000-000000000002', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000002', 2, 1, 2, 'live',    1),
+  ('70000000-0000-4000-8000-000000000003', '60000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000003', 3, 1, 3, 'waiting', 1)
 on conflict (id) do nothing;
 
 -- 決勝の試合。**枠は事前に作れるが、出場者は当日まで決まらない**ので入れない。
 insert into public.matches
-  (id, team_match_id, division_id, order_in_team_match, status) values
-  ('70000000-0000-4000-8000-000000000011', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000001', 1, 'waiting'),
-  ('70000000-0000-4000-8000-000000000012', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 2, 'waiting'),
-  ('70000000-0000-4000-8000-000000000013', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000003', 3, 'waiting')
+  (id, matchup_id, division_id, order_in_matchup, status, max_game_count) values
+  ('70000000-0000-4000-8000-000000000011', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000001', 1, 'waiting', 3),
+  ('70000000-0000-4000-8000-000000000012', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000002', 2, 'waiting', 3),
+  ('70000000-0000-4000-8000-000000000013', '60000000-0000-4000-8000-000000000011', 'd0000000-0000-4000-8000-000000000003', 3, 'waiting', 3)
 on conflict (id) do nothing;
 
 
@@ -126,8 +137,8 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------
 -- **ペアは試合ごとに違う。** #1 は 1試合目で #2 と、3試合目で #4 と組んでいる。
 -- 予選はばらばら、決勝は固定、という運用のどちらも同じ形で表せることを示す。
-insert into public.match_players (match_id, side, entry_id, player_order)
-select v.match_id, v.side, e.id, v.player_order
+insert into public.match_players (match_id, side, participant_id, order_in_pair)
+select v.match_id, v.side, pt.id, v.order_in_pair
 from (values
   -- 1試合目（1部）: 愛知南 #1・#2  対  愛知中央 #5・#6
   ('70000000-0000-4000-8000-000000000001'::uuid, 'a',  1, 1),
@@ -144,18 +155,18 @@ from (values
   ('70000000-0000-4000-8000-000000000003'::uuid, 'a',  4, 2),
   ('70000000-0000-4000-8000-000000000003'::uuid, 'b',  5, 1),
   ('70000000-0000-4000-8000-000000000003'::uuid, 'b',  8, 2)
-) as v(match_id, side, player_number, player_order)
-join public.players p on p.number = v.player_number
-join public.entries e
-  on e.player_id = p.id
- and e.competition_id = 'c0000000-0000-4000-8000-000000000001'
+) as v(match_id, side, player_number, order_in_pair)
+join public.players p on p.player_number = v.player_number
+join public.participants pt
+  on pt.player_id = p.id
+ and pt.competition_id = 'c0000000-0000-4000-8000-000000000001'
 on conflict do nothing;
 
 
 -- ---------------------------------------------------------------------
 -- 得点
 -- ---------------------------------------------------------------------
-insert into public.games (match_id, game_number, score_a, score_b) values
+insert into public.game_scores (match_id, game_number, side_a_score, side_b_score) values
   -- 終わった試合
   ('70000000-0000-4000-8000-000000000001', 1, 15, 11),
   -- 進行中の試合（当日はここが「＋1」のたびに書き換わる）

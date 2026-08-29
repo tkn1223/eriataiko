@@ -21,7 +21,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 ### 2. このプロジェクトで外せない決まり
 
 - 書き込みが `src/app/api/**` を通っているか。ブラウザから直接 DB に書いていないか
-- `requireOperator()` を通さずに書き込んでいる箇所はないか
+- `requirePlayer()` を通さずに書き込んでいる箇所はないか
 - `getSupabaseAdminClient()` が Route Handler の外で使われていないか
 - 新しいテーブルに `enable row level security` が付いているか。
   `insert` / `update` / `delete` のポリシーを書いていないか（書いたら誰でも書ける）

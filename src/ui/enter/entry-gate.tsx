@@ -8,18 +8,17 @@ import type { Session } from '@/server/session';
 
 /** 入場画面の一覧に出す 1 人。いまの大会に参加している人だけが来る。 */
 export type Entrant = {
-  entryId: string;
+  participantId: string;
   playerId: string;
   /** 同名（「たろう」が複数いる）を見分けるための番号 */
-  number: number;
+  playerNumber: number;
   name: string;
-  canInput: boolean;
   /** 試合に出ない入力係はチームも部も無い */
   teamId: string | null;
   divisionId: string | null;
 };
 
-export type EnterTeam = { id: string; number: number; name: string };
+export type EnterTeam = { id: string; teamNumber: number; name: string };
 export type EnterDivision = { id: string; name: string };
 
 type Props = {
@@ -79,7 +78,7 @@ function buildBuckets(entrants: Entrant[], teams: EnterTeam[]): Bucket[] {
   const buckets: Bucket[] = teams
     .map((team) => ({
       key: team.id,
-      teamNumber: team.number,
+      teamNumber: team.teamNumber,
       name: team.name,
       members: entrants.filter((entrant) => entrant.teamId === team.id),
     }))
@@ -255,7 +254,7 @@ export function EntryGate({
           <h2 id="passcode-heading" className="text-[17px] font-black">
             {chosen?.name}
             <span className="text-muted-ink tabular ml-2 text-[13px] font-bold">
-              #{chosen?.number}
+              #{chosen?.playerNumber}
             </span>
           </h2>
         }
@@ -473,7 +472,7 @@ function NameStep({
                 <span className="min-w-0 truncate">{entrant.name}</span>
                 {/* 同じニックネームの人がいるので、番号が無いと選び分けられない */}
                 <span className="text-muted-ink tabular shrink-0 text-[11px] font-bold">
-                  #{entrant.number}
+                  #{entrant.playerNumber}
                 </span>
               </button>
             ))}

@@ -9,7 +9,7 @@ import type { Database } from '@/types/database';
  * service_role クライアント。**RLS を完全に無視する**。
  *
  * 使ってよいのは Route Handler の中だけ。しかも「誰が書いたか」を
- * `requireOperator()` で確かめた後に限る（src/lib/session.ts）。
+ * `requirePlayer()` で確かめた後に限る（src/lib/session.ts）。
  * Server Component から呼ぶと、うっかり公開ページに秘密のデータを
  * 載せてしまうので使わない。
  */

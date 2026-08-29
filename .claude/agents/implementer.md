@@ -43,7 +43,7 @@ DB を触るテストは `npx supabase start` が必要です。落ちたらま�
 `AGENTS.md` を読んで守ってください。特に外せないもの:
 
 - **書き込みは `src/app/api/**` の Route Handler 経由だけ。** ブラウザから直接 DB に書かない
-- `requireOperator()` → `parseBody()` → 書き込み → `logWrite()` の順
+- `requirePlayer()` → `parseBody()` → 書き込み → `logWrite()` の順
 - 新しいテーブルは `enable row level security` と select ポリシーだけ書く
 - `getSupabaseAdminClient()` は Route Handler の中だけ
 - 一覧を読むクエリには `.limit()` を付ける（無制限に読むと通信量の枠を食い潰す）

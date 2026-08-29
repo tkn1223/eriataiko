@@ -6,8 +6,8 @@ import { EntryGate, type EnterDivision, type EnterTeam, type Entrant } from '@/u
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }));
 
 const teams: EnterTeam[] = [
-  { id: 't1', number: 1, name: '愛知南' },
-  { id: 't2', number: 2, name: '愛知中央' },
+  { id: 't1', teamNumber: 1, name: '愛知南' },
+  { id: 't2', teamNumber: 2, name: '愛知中央' },
 ];
 
 const divisions: EnterDivision[] = [
@@ -15,10 +15,11 @@ const divisions: EnterDivision[] = [
   { id: 'd2', name: '2部' },
 ];
 
-function entrant(overrides: Partial<Entrant> & Pick<Entrant, 'playerId' | 'number' | 'name'>) {
+function entrant(
+  overrides: Partial<Entrant> & Pick<Entrant, 'playerId' | 'playerNumber' | 'name'>
+) {
   return {
-    entryId: `e-${overrides.playerId}`,
-    canInput: true,
+    participantId: `e-${overrides.playerId}`,
     teamId: null,
     divisionId: null,
     ...overrides,
@@ -26,9 +27,9 @@ function entrant(overrides: Partial<Entrant> & Pick<Entrant, 'playerId' | 'numbe
 }
 
 const entrants: Entrant[] = [
-  entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
-  entrant({ playerId: 'p2', number: 2, name: 'すずき', teamId: 't1', divisionId: 'd2' }),
-  entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't2', divisionId: 'd1' }),
+  entrant({ playerId: 'p1', playerNumber: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
+  entrant({ playerId: 'p2', playerNumber: 2, name: 'すずき', teamId: 't1', divisionId: 'd2' }),
+  entrant({ playerId: 'p3', playerNumber: 3, name: 'たろう', teamId: 't2', divisionId: 'd1' }),
 ];
 
 function renderGate(overrides: Partial<Parameters<typeof EntryGate>[0]> = {}) {
@@ -91,11 +92,29 @@ describe('入場画面', () => {
   test('部が設定されていない人も、見出しなしで名前が出る', () => {
     renderGate({
       entrants: [
-        entrant({ playerId: 'p1', number: 1, name: 'さとう', teamId: 't1', divisionId: 'd1' }),
+        entrant({
+          playerId: 'p1',
+          playerNumber: 1,
+          name: 'さとう',
+          teamId: 't1',
+          divisionId: 'd1',
+        }),
         // 部だけ空。試合には出るが部が未定の人。
-        entrant({ playerId: 'p9', number: 9, name: 'はやし', teamId: 't1', divisionId: null }),
+        entrant({
+          playerId: 'p9',
+          playerNumber: 9,
+          name: 'はやし',
+          teamId: 't1',
+          divisionId: null,
+        }),
         // チームが 1 つだけだとチーム選びが出ないので、2 チーム目にも 1 人置く
-        entrant({ playerId: 'p3', number: 3, name: 'たろう', teamId: 't2', divisionId: 'd1' }),
+        entrant({
+          playerId: 'p3',
+          playerNumber: 3,
+          name: 'たろう',
+          teamId: 't2',
+          divisionId: 'd1',
+        }),
       ],
     });
     fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
@@ -155,9 +174,9 @@ describe('入場画面', () => {
  */
 describe('チーム分けの無い大会', () => {
   const soloEntrants = [
-    entrant({ playerId: 'p1', number: 1, name: 'フジ親分', divisionId: 'd1' }),
-    entrant({ playerId: 'p2', number: 2, name: 'くみ', divisionId: 'd2' }),
-    entrant({ playerId: 'p3', number: 3, name: 'たかな', divisionId: 'd1' }),
+    entrant({ playerId: 'p1', playerNumber: 1, name: 'フジ親分', divisionId: 'd1' }),
+    entrant({ playerId: 'p2', playerNumber: 2, name: 'くみ', divisionId: 'd2' }),
+    entrant({ playerId: 'p3', playerNumber: 3, name: 'たかな', divisionId: 'd1' }),
   ];
 
   test('チームを選ぶ画面が出ず、いきなり名前が並ぶ', () => {
@@ -218,7 +237,7 @@ describe('観戦者の入口', () => {
   test('チーム選びが出ない大会でも、名前の一覧の下に出る（置き去りにしない）', () => {
     renderGate({
       teams: [],
-      entrants: [entrant({ playerId: 'p1', number: 1, name: 'フジ親分' })],
+      entrants: [entrant({ playerId: 'p1', playerNumber: 1, name: 'フジ親分' })],
     });
 
     expect(screen.getByRole('button', { name: VIEWER_BUTTON })).toBeInTheDocument();
@@ -240,7 +259,6 @@ describe('入場したあと', () => {
         playerId: 'p1',
         playerName: 'さとう',
         playerNumber: 1,
-        canInput: true,
       },
     });
 

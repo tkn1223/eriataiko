@@ -1,11 +1,70 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
-import { CourtsPage } from '@/ui/courts/courts-page';
-import { sampleCourts } from '@/ui/courts/sample-data';
+import { StrictMode } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { GameScoreChange } from '@/ui/courts/use-live-scores';
 
-function renderPage() {
-  return render(<CourtsPage courts={sampleCourts} completedMatches={2} totalMatches={48} />);
+// router.refresh() を差し替えて、失敗時に呼ばれたかを確かめられるようにする
+const refreshMock = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshMock }) }));
+
+// Realtime の購読は本物の Supabase を必要とするので、courts-page のテストでは差し替える。
+// onGameScoreChange を外へ捕まえておき、テストから「届いた値」を直接流し込めるようにする。
+let capturedOnGameScoreChange: ((change: GameScoreChange) => void) | null = null;
+let mockConnectionStatus: 'connected' | 'disconnected' = 'connected';
+vi.mock('@/ui/courts/use-live-scores', () => ({
+  useLiveScores: ({ onGameScoreChange }: { onGameScoreChange: (c: GameScoreChange) => void }) => {
+    capturedOnGameScoreChange = onGameScoreChange;
+    return { connectionStatus: mockConnectionStatus };
+  },
+}));
+
+// これらは vi.mock 後に import する（ホイストされるので import 順は問題ない）
+const { CourtsPage } = await import('@/ui/courts/courts-page');
+const { sampleCourts } = await import('@/ui/courts/sample-data');
+
+function renderPage(props: Partial<Parameters<typeof CourtsPage>[0]> = {}) {
+  return render(
+    <CourtsPage courts={sampleCourts} completedMatches={2} totalMatches={48} canEdit {...props} />
+  );
 }
+
+/** 開発中と同じ StrictMode（React が描き直しや更新関数を 2 回呼ぶ）で描く。 */
+function renderPageInStrictMode() {
+  return render(
+    <CourtsPage courts={sampleCourts} completedMatches={2} totalMatches={48} canEdit />,
+    { wrapper: StrictMode }
+  );
+}
+
+/** 応答を後から自由なタイミングで返せる fetch のモック。 */
+function deferredFetch() {
+  const calls: { resolve: (res: Response) => void; reject: (err: unknown) => void }[] = [];
+  const fetchMock = vi.fn(
+    () =>
+      new Promise<Response>((resolve, reject) => {
+        calls.push({ resolve, reject });
+      })
+  );
+  return { fetchMock, calls };
+}
+
+function okResponse(body: unknown = { ok: true }) {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
+function errorResponse(message: string) {
+  return new Response(JSON.stringify({ error: message }), { status: 500 });
+}
+
+beforeEach(() => {
+  capturedOnGameScoreChange = null;
+  mockConnectionStatus = 'connected';
+  refreshMock.mockClear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('CourtsPage', () => {
   test('見出し「結果LIVE」が出る', () => {
@@ -20,12 +79,12 @@ describe('CourtsPage', () => {
     expect(screen.getByText('2/48 試合消化')).toBeInTheDocument();
   });
 
-  test('「まだ保存されません」の帯が出る', () => {
+  test('「まだ保存されません」の帯は出ない（保存できるようになったので）', () => {
     renderPage();
 
     expect(
-      screen.getByText('入れた点はまだ保存されません（画面を閉じると消えます）')
-    ).toBeInTheDocument();
+      screen.queryByText('入れた点はまだ保存されません（画面を閉じると消えます）')
+    ).not.toBeInTheDocument();
   });
 
   test('コートのカードが8枚出る', () => {
@@ -36,7 +95,17 @@ describe('CourtsPage', () => {
     }
   });
 
-  test('「＋」を押すと得点が1増える', () => {
+  test('観戦者（canEdit=false）には＋−ボタンが出ない', () => {
+    vi.stubGlobal('fetch', vi.fn());
+    renderPage({ canEdit: false });
+
+    expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1減らす/ })).not.toBeInTheDocument();
+  });
+
+  test('「＋」を押すと得点がすぐ1増える（保存の応答を待たない）', async () => {
+    const { fetchMock } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
     renderPage();
     const card = screen.getByTestId('court-card-1');
 
@@ -47,7 +116,28 @@ describe('CourtsPage', () => {
     expect(within(card).getByText('16')).toBeInTheDocument();
   });
 
+  test('「＋」を押すと POST /api/matches/{matchId}/scores に今の点数が送られる', async () => {
+    const { fetchMock } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    const card = screen.getByTestId('court-card-1');
+
+    fireEvent.click(within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/matches/sample-match-1/scores',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ gameNumber: 1, sideAScore: 16, sideBScore: 12 }),
+      })
+    );
+  });
+
   test('「−」を押すと得点が1減る', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse())
+    );
     renderPage();
     const card = screen.getByTestId('court-card-1');
 
@@ -58,6 +148,10 @@ describe('CourtsPage', () => {
   });
 
   test('「−」を押しても0より下にはならない', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse())
+    );
     renderPage();
     const card = screen.getByTestId('court-card-6');
 
@@ -69,6 +163,10 @@ describe('CourtsPage', () => {
   });
 
   test('コートごとに得点の増減が独立している（他のコートに影響しない）', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse())
+    );
     renderPage();
     const card1 = screen.getByTestId('court-card-1');
     const card2 = screen.getByTestId('court-card-2');
@@ -80,18 +178,137 @@ describe('CourtsPage', () => {
     expect(within(card2).getByText('20')).toBeInTheDocument();
   });
 
-  test('「ゲーム終了」を押すと、いまの得点がチップになり、次のゲーム（0-0）が始まる', () => {
+  test('保存に失敗すると、日本語のエラーが画面に出て router.refresh() が呼ばれる', async () => {
+    const { fetchMock, calls } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
     renderPage();
-    const card = screen.getByTestId('court-card-3');
+    const card = screen.getByTestId('court-card-1');
 
-    // コート3 は自分の試合。鈴木・高橋（A）14点 / 伊藤・渡辺（B）11点、1ゲーム目、終わったゲームは無い
-    expect(within(card).getByText('予選 2回戦・1ゲーム目')).toBeInTheDocument();
-    expect(within(card).queryByText(/第\d+ゲーム/)).not.toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
+    expect(within(card).getByText('16')).toBeInTheDocument();
 
-    fireEvent.click(within(card).getByRole('button', { name: 'ゲーム終了' }));
+    calls[0].resolve(
+      errorResponse('サーバー側でエラーが起きました。少し待ってからやり直してください。')
+    );
 
-    expect(within(card).getByText('第1ゲーム 14-11')).toBeInTheDocument();
-    expect(within(card).getByText('予選 2回戦・2ゲーム目')).toBeInTheDocument();
-    expect(within(card).getAllByText('0')).toHaveLength(2);
+    await waitFor(() =>
+      expect(
+        screen.getByText('サーバー側でエラーが起きました。少し待ってからやり直してください。')
+      ).toBeInTheDocument()
+    );
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  test('連打して先に送った分が失敗しても、あとから成功した新しい値のままになる（巻き戻らない）', async () => {
+    const { fetchMock, calls } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    const card = screen.getByTestId('court-card-1');
+    const plus = within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' });
+
+    fireEvent.click(plus); // 15 → 16（1 回目の送信）
+    fireEvent.click(plus); // 16 → 17（2 回目の送信）
+    expect(within(card).getByText('17')).toBeInTheDocument();
+    expect(calls).toHaveLength(2);
+
+    // 1 回目（古い値 16 を送った方）が後から失敗しても、2 回目（成功した 17）を巻き戻さない
+    calls[1].resolve(okResponse());
+    await waitFor(() => expect(calls[1]).toBeDefined());
+    calls[0].resolve(errorResponse('通信に失敗しました。'));
+
+    await waitFor(() => expect(refreshMock).toHaveBeenCalled());
+    expect(within(card).getByText('17')).toBeInTheDocument();
+  });
+
+  test('StrictMode で描いても、1 回押した点は 1 回しか送らない', () => {
+    const { fetchMock } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPageInStrictMode();
+    const card = screen.getByTestId('court-card-1');
+
+    fireEvent.click(within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(within(card).getByText('16')).toBeInTheDocument();
+  });
+
+  test('保存に失敗したあと、次の保存が成功するとエラーの帯が消える', async () => {
+    const { fetchMock, calls } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    const card = screen.getByTestId('court-card-1');
+    const plus = within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' });
+
+    fireEvent.click(plus);
+    calls[0].resolve(errorResponse('通信に失敗しました。'));
+    await waitFor(() => expect(screen.getByText('通信に失敗しました。')).toBeInTheDocument());
+
+    fireEvent.click(plus);
+    calls[1].resolve(okResponse());
+
+    await waitFor(() => expect(screen.queryByText('通信に失敗しました。')).not.toBeInTheDocument());
+  });
+
+  test('送信中に Realtime で古い値が届いても、送信中の得点は上書きされない', async () => {
+    const { fetchMock } = deferredFetch();
+    vi.stubGlobal('fetch', fetchMock);
+    renderPage();
+    const card = screen.getByTestId('court-card-1');
+
+    fireEvent.click(within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
+    expect(within(card).getByText('16')).toBeInTheDocument();
+
+    // 自分が送信している最中に、まだ古い値（15-12）の Realtime 通知が届いた
+    expect(capturedOnGameScoreChange).not.toBeNull();
+    act(() =>
+      capturedOnGameScoreChange!({
+        matchId: 'sample-match-1',
+        gameNumber: 1,
+        sideAScore: 15,
+        sideBScore: 12,
+      })
+    );
+
+    // 送信中の自分の値（16）のまま。古い値に巻き戻らない。
+    expect(within(card).getByText('16')).toBeInTheDocument();
+    expect(within(card).queryByText('15')).not.toBeInTheDocument();
+  });
+
+  test('自分が触っていない試合の Realtime 更新は、そのまま画面に反映される', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse())
+    );
+    renderPage();
+    const card = screen.getByTestId('court-card-2');
+
+    // コート2 は 山田・中川（A）20点から始まる
+    expect(within(card).getByText('20')).toBeInTheDocument();
+
+    expect(capturedOnGameScoreChange).not.toBeNull();
+    act(() =>
+      capturedOnGameScoreChange!({
+        matchId: 'sample-match-2',
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+      })
+    );
+
+    expect(within(card).getByText('21')).toBeInTheDocument();
+  });
+
+  test('Realtime がつながっているときは帯が出ない', () => {
+    mockConnectionStatus = 'connected';
+    renderPage();
+
+    expect(screen.queryByText(/画面を更新してください/)).not.toBeInTheDocument();
+  });
+
+  test('Realtime が切れると「画面を更新してください」の帯が出る', () => {
+    mockConnectionStatus = 'disconnected';
+    renderPage();
+
+    expect(screen.getByText(/画面を更新してください/)).toBeInTheDocument();
   });
 });

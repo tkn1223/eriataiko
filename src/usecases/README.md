@@ -46,7 +46,7 @@ await addPoint({ matches, log }, { ... });
 ```ts
 export async function POST(request: Request) {
   try {
-    const operator = await requireOperator();
+    const player = await requirePlayer();
     const body = await parseBody(request, schema);
     await addPoint(deps(), { ...body, by: operator });
     return NextResponse.json({ ok: true });

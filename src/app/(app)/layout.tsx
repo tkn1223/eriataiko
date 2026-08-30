@@ -12,7 +12,7 @@ import { getSession } from '@/server/session';
  * **観戦者も「入場した人」として通す。** 観戦の入口を押した人が大会の画面を
  * 見られないと、その入口が意味を持たない。
  *
- * これは**守りではなく入口の案内**。書き込みは requireOperator() が別に
+ * これは**守りではなく入口の案内**。書き込みは requirePlayer() が別に
  * 止めており、読み取りは元々誰でも見てよいデータ（docs/security.md）。
  */
 export default async function AppLayout({ children }: LayoutProps<'/'>) {

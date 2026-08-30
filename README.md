@@ -194,23 +194,28 @@ order by relrowsecurity, relname;
 // src/app/api/scores/route.ts
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { logWrite, parseBody, requireOperator, toErrorResponse } from '@/server/route-helpers';
+import { logWrite, parseBody, requirePlayer, toErrorResponse } from '@/server/route-helpers';
 import { getSupabaseAdminClient } from '@/db/admin';
 
 export async function POST(request: Request) {
   try {
-    const operator = await requireOperator();               // 未入場なら 401
+    const player = await requirePlayer();                   // 未入場なら 401
     const body = await parseBody(
       request,
-      z.object({ matchId: z.uuid(), scoreA: z.number().int().min(0), scoreB: z.number().int().min(0) })
+      z.object({ matchId: z.uuid(), gameNumber: z.number().int().positive(), scoreA: z.number().int().min(0), scoreB: z.number().int().min(0) })
     );
 
     const { error } = await getSupabaseAdminClient()
-      .from('scores')
-      .upsert({ match_id: body.matchId, score_a: body.scoreA, score_b: body.scoreB });
+      .from('game_scores')
+      .upsert({
+        match_id: body.matchId,
+        game_number: body.gameNumber,
+        side_a_score: body.scoreA,
+        side_b_score: body.scoreB,
+      });
     if (error) throw error;
 
-    await logWrite(operator, 'score.update', body);          // 監査ログ
+    await logWrite(player, 'score.update', body);            // 監査ログ
     return NextResponse.json({ ok: true });
   } catch (error) {
     return toErrorResponse(error);

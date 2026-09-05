@@ -29,6 +29,11 @@ export default defineConfig({
           environment: 'node',
           include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
           env: testEnv,
+          // **1 つのデータベースを全ファイルで共有しているので、ファイルは 1 つずつ流す。**
+          // 並行で流すと、片方が「いまの大会」を一時的に外している最中に
+          // もう片方がそれを当てにして落ちる（実際に tests/schema.test.ts が
+          // ときどき落ちた）。playwright.config.ts が workers: 1 なのと同じ理由。
+          fileParallelism: false,
         },
       },
       {

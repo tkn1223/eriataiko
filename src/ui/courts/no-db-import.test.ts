@@ -12,6 +12,7 @@ const SOURCE_FILES = [
   'src/ui/courts/courts-page.tsx',
   'src/ui/courts/sample-data.ts',
   'src/ui/courts/court-live-card.tsx',
+  'src/ui/courts/finish-confirm-sheet.tsx',
 ];
 
 describe('/courts の画面', () => {

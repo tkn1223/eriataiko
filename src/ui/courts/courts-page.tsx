@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { matchOutcome } from '@/domain/match-rules';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
 import type { Court, GameScore, LiveScore } from '@/ui/courts/sample-data';
@@ -18,7 +19,11 @@ function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
       ? [
           [
             court.courtNumber,
-            { finishedGames: court.live.finishedGames, currentGame: court.live.currentGame },
+            {
+              finishedGames: court.live.finishedGames,
+              currentGame: court.live.currentGame,
+              finished: false,
+            },
           ] as const,
         ]
       : []
@@ -61,15 +66,26 @@ export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
     });
   }
 
+  /**
+   * 確認画面の「OK」で呼ばれる。今のゲームを finishedGames に積み、次のゲームを 0-0 に戻す。
+   * ゲーム数が上限に達した、またはどちらかが必要なゲーム数を取ったら、そのコートを終了状態にする。
+   */
   function finishGame(courtNumber: number) {
+    const maxGameCount = courts.find((court) => court.courtNumber === courtNumber)?.live
+      ?.maxGameCount;
+    if (maxGameCount == null) return;
+
     setLiveScores((prev) => {
       const current = prev[courtNumber];
       if (!current) return prev;
+      const finishedGames = [...current.finishedGames, current.currentGame];
+
       return {
         ...prev,
         [courtNumber]: {
-          finishedGames: [...current.finishedGames, current.currentGame],
+          finishedGames,
           currentGame: [0, 0],
+          finished: matchOutcome(finishedGames, maxGameCount).finished,
         },
       };
     });

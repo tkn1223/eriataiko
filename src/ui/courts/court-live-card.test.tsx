@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import type { Court, LiveScore } from '@/ui/courts/sample-data';
+import type { Court, GameScore, LiveScore } from '@/ui/courts/sample-data';
 
 const baseLive: NonNullable<Court['live']> = {
   classLabel: '2部',
@@ -9,110 +9,97 @@ const baseLive: NonNullable<Court['live']> = {
   teamA: { number: 1, players: ['佐藤', '鈴木'] },
   teamB: { number: 2, players: ['高橋', '伊藤'] },
   isMine: false,
-  finishedGames: [],
-  currentGame: [10, 8],
+  scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
   maxGameCount: 1,
 };
 
 function renderLiveCard({
   live = baseLive,
   next = null,
-  finishedGames = live?.finishedGames ?? [],
-  currentGame = live?.currentGame ?? [0, 0],
+  scores = live?.scores ?? [],
   finished = false,
   onIncrement = () => {},
   onDecrement = () => {},
-  onFinishGame = () => {},
+  onFinishMatch = () => {},
 }: {
   live?: Court['live'];
   next?: Court['next'];
-  finishedGames?: [number, number][];
-  currentGame?: [number, number];
+  scores?: GameScore[];
   finished?: boolean;
-  onIncrement?: (side: 'A' | 'B') => void;
-  onDecrement?: (side: 'A' | 'B') => void;
-  onFinishGame?: () => void;
+  onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
+  onDecrement?: (gameNumber: number, side: 'A' | 'B') => void;
+  onFinishMatch?: () => void;
 } = {}) {
   const court: Court = { courtNumber: 3, live, next };
-  const liveScore: LiveScore | null = live ? { finishedGames, currentGame, finished } : null;
+  const liveScore: LiveScore | null = live ? { scores, finished } : null;
   return render(
     <CourtLiveCard
       court={court}
       liveScore={liveScore}
       onIncrement={onIncrement}
       onDecrement={onDecrement}
-      onFinishGame={onFinishGame}
+      onFinishMatch={onFinishMatch}
     />
   );
 }
 
 describe('CourtLiveCard', () => {
-  test('進行中のコートに「LIVE」と部・回戦・ゲーム目が出る', () => {
+  test('進行中のコートに「LIVE」と部・回戦が出る', () => {
     renderLiveCard();
 
     expect(screen.getByText('コート3')).toBeInTheDocument();
     expect(screen.getByText('LIVE')).toBeInTheDocument();
     expect(screen.getByText('2部')).toBeInTheDocument();
-    expect(screen.getByText('予選 1回戦・1ゲーム目')).toBeInTheDocument();
+    expect(screen.getByText('予選 1回戦')).toBeInTheDocument();
   });
 
-  test('終わったゲームの数だけゲーム目が進む', () => {
-    renderLiveCard({ finishedGames: [[21, 15]] });
-
-    expect(screen.getByText('予選 1回戦・2ゲーム目')).toBeInTheDocument();
-  });
-
-  test('各チームの行にペア名・「−」「＋」・得点が出る', () => {
+  test('両ペアの名前が出る', () => {
     renderLiveCard();
 
     expect(screen.getByText('佐藤・鈴木')).toBeInTheDocument();
     expect(screen.getByText('高橋・伊藤')).toBeInTheDocument();
-    expect(screen.getByText('10')).toBeInTheDocument();
-    expect(screen.getByText('8')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '佐藤・鈴木の得点を1増やす' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '佐藤・鈴木の得点を1減らす' })).toBeInTheDocument();
   });
 
-  test('「＋」を押すと onIncrement がそのチーム側で呼ばれる', () => {
+  test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', () => {
+    renderLiveCard({
+      live: { ...baseLive, maxGameCount: 3 },
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+    });
+
+    expect(screen.getByText('第1ゲーム')).toBeInTheDocument();
+    expect(screen.getByText('第2ゲーム')).toBeInTheDocument();
+    expect(screen.getByText('第3ゲーム')).toBeInTheDocument();
+  });
+
+  test('点が入っていない枠は0対0で出る', () => {
+    renderLiveCard({
+      live: { ...baseLive, maxGameCount: 2 },
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+    });
+
+    // 第2ゲームはまだ枠に点が無いので0対0
+    expect(screen.getAllByText('0', { exact: true })).toHaveLength(2);
+  });
+
+  test('どの枠にも「−」「＋」が出て、押せる', () => {
     const onIncrement = vi.fn();
-    renderLiveCard({ onIncrement });
-
-    fireEvent.click(screen.getByRole('button', { name: '高橋・伊藤の得点を1増やす' }));
-    expect(onIncrement).toHaveBeenCalledWith('B');
-  });
-
-  test('「−」を押すと onDecrement がそのチーム側で呼ばれる', () => {
     const onDecrement = vi.fn();
-    renderLiveCard({ onDecrement });
+    renderLiveCard({
+      live: { ...baseLive, maxGameCount: 2 },
+      scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
+      onIncrement,
+      onDecrement,
+    });
 
-    fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木の得点を1減らす' }));
-    expect(onDecrement).toHaveBeenCalledWith('A');
-  });
+    fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木の第1ゲームの得点を1増やす' }));
+    expect(onIncrement).toHaveBeenCalledWith(1, 'A');
 
-  test('終わったゲームが「第1ゲーム 21-15」のチップで出る', () => {
-    renderLiveCard({ finishedGames: [[21, 15]] });
+    fireEvent.click(screen.getByRole('button', { name: '高橋・伊藤の第1ゲームの得点を1減らす' }));
+    expect(onDecrement).toHaveBeenCalledWith(1, 'B');
 
-    expect(screen.getByText('第1ゲーム 21-15')).toBeInTheDocument();
-  });
-
-  test('終わったゲームが無いときはチップが出ない', () => {
-    renderLiveCard({ finishedGames: [] });
-
-    expect(screen.queryByText(/第\d+ゲーム/)).not.toBeInTheDocument();
-  });
-
-  test('どちらも21点未満のときは「ゲーム終了」がink色', () => {
-    renderLiveCard({ currentGame: [15, 12] });
-
-    expect(screen.getByRole('button', { name: 'ゲーム終了' })).toHaveClass('bg-ink');
-  });
-
-  test('どちらかが21点に達すると「ゲーム終了」の色が変わる', () => {
-    renderLiveCard({ currentGame: [21, 15] });
-
-    const button = screen.getByRole('button', { name: 'ゲーム終了' });
-    expect(button).toHaveClass('bg-accent');
-    expect(button).not.toHaveClass('bg-ink');
+    // まだ点の入っていない第2ゲームの枠も押せる
+    fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木の第2ゲームの得点を1増やす' }));
+    expect(onIncrement).toHaveBeenCalledWith(2, 'A');
   });
 
   test('自分の試合中のコートに「あなたの試合」の印が出る', () => {
@@ -184,86 +171,115 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText('次')).not.toBeInTheDocument();
   });
 
-  describe('「ゲーム終了」を押したとき', () => {
+  describe('「試合を終了する」を押したとき', () => {
     test('0対0で押すと「まだ点が入っていません」と出て、確認画面は出ない', () => {
-      renderLiveCard({ currentGame: [0, 0] });
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 1 },
+        scores: [],
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
 
       expect(screen.getByRole('status')).toHaveTextContent('まだ点が入っていません');
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    test('同点で押すと「同点では終了できません」と出て、確認画面は出ない', () => {
-      renderLiveCard({ currentGame: [15, 15] });
+    test('同点（勝ちゲーム数が同数）で押すと「同点では終了できません」と出て、確認画面は出ない', () => {
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 3 },
+        scores: [
+          { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+          { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
+        ],
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
 
       expect(screen.getByRole('status')).toHaveTextContent('同点では終了できません');
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    test('それ以外のときは確認画面が出て、まだ画面は変わらない', () => {
-      renderLiveCard({ currentGame: [21, 19] });
+    test('勝ちゲーム数に差が付いていれば確認画面が出て、まだ画面は変わらない', () => {
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 1 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
 
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      // まだゲームは確定していないので、得点はそのまま
+      expect(screen.getByText('この試合を終了します')).toBeInTheDocument();
+      // まだ確定していないので、カードの得点はそのまま
       expect(screen.getByText('21', { exact: true })).toBeInTheDocument();
       expect(screen.getByText('19', { exact: true })).toBeInTheDocument();
     });
 
-    test('確認画面に、そのゲームの得点と勝ったペアが出る', () => {
-      renderLiveCard({ currentGame: [21, 19] });
-
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
-
-      expect(screen.getByText('21 - 19', { exact: false })).toBeInTheDocument();
-      expect(screen.getByText(/このゲームの勝ち/)).toBeInTheDocument();
-    });
-
-    test('予選（上限1ゲーム）で押すと、確認画面の見出しが「この試合を終了します」になる', () => {
-      renderLiveCard({ live: { ...baseLive, maxGameCount: 1 }, currentGame: [21, 19] });
-
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
-
-      expect(screen.getByText('この試合を終了します')).toBeInTheDocument();
-      expect(screen.getByText(/試合の勝ち/)).toBeInTheDocument();
-    });
-
-    test('決勝（上限3ゲーム）の第1ゲームで押すと、確認画面の見出しが「第1ゲームを終了します」になる', () => {
+    test('確認画面に、各ゲームの得点と勝ったペアが出る', () => {
       renderLiveCard({
-        live: { ...baseLive, maxGameCount: 3 },
-        finishedGames: [],
-        currentGame: [21, 19],
+        live: { ...baseLive, maxGameCount: 1 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
       });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
 
-      expect(screen.getByText('第1ゲームを終了します')).toBeInTheDocument();
-      expect(screen.queryByText(/試合の勝ち/)).not.toBeInTheDocument();
+      expect(screen.getByText('21 - 19', { exact: false })).toBeInTheDocument();
+      expect(screen.getByText(/勝ち: 佐藤・鈴木/)).toBeInTheDocument();
+    });
+
+    test('確認画面に試合の勝ちペアとスコアが出る', () => {
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 3 },
+        scores: [
+          { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+          { gameNumber: 2, sideAScore: 21, sideBScore: 15 },
+        ],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toBeInTheDocument();
+      expect(screen.getByText(/2-0/)).toBeInTheDocument();
+    });
+
+    test('決勝（上限3ゲーム）を1ゲームだけで終了しても、確認画面に試合の勝ちペアが出る', () => {
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 3 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toBeInTheDocument();
+      expect(screen.getByText(/1-0/)).toBeInTheDocument();
     });
 
     test('「戻る」を押すと何も変わらずに閉じる', () => {
-      const onFinishGame = vi.fn();
-      renderLiveCard({ currentGame: [21, 19], onFinishGame });
+      const onFinishMatch = vi.fn();
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 1 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+        onFinishMatch,
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
       fireEvent.click(screen.getByRole('button', { name: '戻る' }));
 
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-      expect(onFinishGame).not.toHaveBeenCalled();
+      expect(onFinishMatch).not.toHaveBeenCalled();
     });
 
-    test('「OK」を押すと onFinishGame が呼ばれる', () => {
-      const onFinishGame = vi.fn();
-      renderLiveCard({ currentGame: [21, 19], onFinishGame });
+    test('「OK」を押すと onFinishMatch が呼ばれる', () => {
+      const onFinishMatch = vi.fn();
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 1 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+        onFinishMatch,
+      });
 
-      fireEvent.click(screen.getByRole('button', { name: 'ゲーム終了' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
 
-      expect(onFinishGame).toHaveBeenCalled();
+      expect(onFinishMatch).toHaveBeenCalled();
     });
   });
 
@@ -276,8 +292,7 @@ describe('CourtLiveCard', () => {
     function renderFinished() {
       return renderLiveCard({
         live: finishedLive,
-        finishedGames: [[21, 15]],
-        currentGame: [0, 0],
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         finished: true,
       });
     }
@@ -289,20 +304,12 @@ describe('CourtLiveCard', () => {
       expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
     });
 
-    test('「−」「＋」「ゲーム終了」が消える', () => {
+    test('「−」「＋」「試合を終了する」が消える', () => {
       renderFinished();
 
       expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /得点を1減らす/ })).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'ゲーム終了' })).not.toBeInTheDocument();
-    });
-
-    test('「◯ゲーム目」が消える', () => {
-      renderFinished();
-
-      // 終わったのに「2ゲーム目」と出ると、まだ続くように見える
-      expect(screen.getByText('予選 1回戦')).toBeInTheDocument();
-      expect(screen.queryByText(/ゲーム目/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
     });
 
     test('各ゲームの結果のチップが残る', () => {
@@ -318,6 +325,17 @@ describe('CourtLiveCard', () => {
       expect(screen.getByText(/1-0/)).toBeInTheDocument();
     });
 
+    test('決勝（上限3ゲーム）を1ゲームだけで終了しても「勝ち: 佐藤・鈴木（1-0）」が残る', () => {
+      renderLiveCard({
+        live: { ...baseLive, maxGameCount: 3 },
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+        finished: true,
+      });
+
+      expect(screen.getByText(/勝ち/)).toBeInTheDocument();
+      expect(screen.getByText(/1-0/)).toBeInTheDocument();
+    });
+
     test('「次」の試合はそのまま出る', () => {
       renderLiveCard({
         live: finishedLive,
@@ -327,8 +345,7 @@ describe('CourtLiveCard', () => {
           teamB: { number: 4, players: ['中村'] },
           isMine: false,
         },
-        finishedGames: [[21, 15]],
-        currentGame: [0, 0],
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         finished: true,
       });
 

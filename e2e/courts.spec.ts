@@ -4,6 +4,10 @@ import { enterAsViewer } from './helpers/enter';
 /**
  * /courts（結果LIVE）の画面確認。
  * *.test.tsx は jsdom で見た目の中身を、ここではスマホ幅での実際の見え方を確かめる。
+ *
+ * 見本データ（src/ui/courts/sample-data.ts）はこの仕様書に合わせて作ってある:
+ * コート1・2・4 は予選（上限1ゲーム）で得点入り、コート3 は予選で0対0、
+ * コート5 は決勝（上限3ゲーム）で2ゲーム目まで入り、コート6 は決勝で1-1の同点。
  */
 
 function courtCard(page: import('@playwright/test').Page, courtNumber: number) {
@@ -49,25 +53,50 @@ test('コートのカードが8枚出る', async ({ page }) => {
   }
 });
 
-test('進行中のコートに「LIVE」と部・回戦・ゲーム目が出る', async ({ page }) => {
+test('進行中のコートに「LIVE」と部・回戦が出る', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
   await expect(card.getByText('LIVE')).toBeVisible();
   await expect(card.getByText('1部')).toBeVisible();
-  await expect(card.getByText('予選 1回戦・1ゲーム目')).toBeVisible();
+  await expect(card.getByText('予選 1回戦')).toBeVisible();
 });
 
-test('各チームの行にペア名・−・＋・得点が出る', async ({ page }) => {
+test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', async ({ page }) => {
+  await page.goto('/courts');
+
+  // コート5 は決勝（上限3ゲーム）
+  const card = courtCard(page, 5);
+  await expect(card.getByText('第1ゲーム')).toBeVisible();
+  await expect(card.getByText('第2ゲーム')).toBeVisible();
+  await expect(card.getByText('第3ゲーム')).toBeVisible();
+});
+
+test('各ゲームの枠にペア名の色・−・＋・得点が出て、押せる', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
   await expect(card.getByText('佐々木・井上')).toBeVisible();
   await expect(card.getByText('田中・木村')).toBeVisible();
-  await expect(card.getByRole('button', { name: '佐々木・井上の得点を1増やす' })).toBeVisible();
-  await expect(card.getByRole('button', { name: '佐々木・井上の得点を1減らす' })).toBeVisible();
+  await expect(
+    card.getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+  ).toBeVisible();
+  await expect(
+    card.getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1減らす' })
+  ).toBeVisible();
   await expect(card.getByText('20', { exact: true })).toBeVisible();
   await expect(card.getByText('19', { exact: true })).toBeVisible();
+});
+
+test('まだ点が入っていない枠も押せる', async ({ page }) => {
+  await page.goto('/courts');
+
+  // コート5 は決勝（上限3ゲーム）。第3ゲームはまだ0対0
+  const card = courtCard(page, 5);
+  await card.getByRole('button', { name: '石川・前田の第3ゲームの得点を1増やす' }).click();
+
+  // 第3ゲームの枠に限って1になっている（他の枠は変わらない）
+  await expect(card.getByText('1', { exact: true })).toBeVisible();
 });
 
 test('「＋」を押すと得点が1増え、「−」で1減る。0より下にはならない', async ({ page }) => {
@@ -77,30 +106,14 @@ test('「＋」を押すと得点が1増え、「−」で1減る。0より下�
   // コート4 は 加藤・斎藤（B）5点から始まる
   await expect(card.getByText('5', { exact: true })).toBeVisible();
 
-  await card.getByRole('button', { name: '加藤・斎藤の得点を1増やす' }).click();
+  await card.getByRole('button', { name: '加藤・斎藤の第1ゲームの得点を1増やす' }).click();
   await expect(card.getByText('6', { exact: true })).toBeVisible();
 
-  const minus = card.getByRole('button', { name: '加藤・斎藤の得点を1減らす' });
+  const minus = card.getByRole('button', { name: '加藤・斎藤の第1ゲームの得点を1減らす' });
   for (let i = 0; i < 10; i += 1) {
     await minus.click();
   }
   await expect(card.getByText('0', { exact: true })).toBeVisible();
-});
-
-test('どちらかが21点に達すると「ゲーム終了」の色が変わる', async ({ page }) => {
-  await page.goto('/courts');
-
-  const card = courtCard(page, 1);
-  const finishButton = card.getByRole('button', { name: 'ゲーム終了' });
-
-  // コート1 は佐々木・井上（A）20点 対 田中・木村（B）19点から始まる
-  const before = await finishButton.evaluate((el) => getComputedStyle(el).backgroundColor);
-
-  await card.getByRole('button', { name: '佐々木・井上の得点を1増やす' }).click();
-  await expect(card.getByText('21', { exact: true })).toBeVisible();
-
-  const after = await finishButton.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(after).not.toBe(before);
 });
 
 test('空いているコートに「呼出待ち」または「予定なし」が状態どおりに出る', async ({ page }) => {
@@ -134,42 +147,56 @@ test('「まだ保存されません」の帯が出る', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('0対0のコートで「ゲーム終了」を押すと「まだ点が入っていません」と出て、確認画面は出ない', async ({
+test('0対0のコートで「試合を終了する」を押すと「まだ点が入っていません」と出て、確認画面は出ない', async ({
   page,
 }) => {
   await page.goto('/courts');
 
   // コート3 は 0対0 のまま始まる
   const card = courtCard(page, 3);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
 
   await expect(card.getByText('まだ点が入っていません')).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('同点で「ゲーム終了」を押すと「同点では終了できません」と出て、確認画面は出ない', async ({
+test('同点（勝ちゲーム数が同数）のコートで「試合を終了する」を押すと「同点では終了できません」と出て、確認画面は出ない', async ({
   page,
 }) => {
   await page.goto('/courts');
 
-  // コート2 は 山田・中川（A）14点 対 清水・岡本（B）11点から始まる。3点足して同点にする
-  const card = courtCard(page, 2);
-  const plus = card.getByRole('button', { name: '清水・岡本の得点を1増やす' });
-  await plus.click();
-  await plus.click();
-  await plus.click();
-
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  // コート6 は決勝（上限3ゲーム）。1-1 の同点。
+  const card = courtCard(page, 6);
+  await card.getByRole('button', { name: '試合を終了する' }).click();
 
   await expect(card.getByText('同点では終了できません')).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('「ゲーム終了」を押すと確認画面が出て、まだ画面は変わらない', async ({ page }) => {
+test('同点を解消してから押すと、確認画面が出る', async ({ page }) => {
+  await page.goto('/courts');
+
+  // コート6 は 1-1 の同点。第3ゲームに1点入れて 2-1 にする
+  const card = courtCard(page, 6);
+  await card.getByRole('button', { name: '試合を終了する' }).click();
+  await expect(card.getByText('同点では終了できません')).toBeVisible();
+
+  // 点を入れ直した時点で案内は消える。残ると「まだ押せない」と誤解させる
+  await card.getByRole('button', { name: '長谷川・五十嵐の第3ゲームの得点を1増やす' }).click();
+  await expect(card.getByText('同点では終了できません')).toHaveCount(0);
+
+  await card.getByRole('button', { name: '試合を終了する' }).click();
+
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('この試合を終了します')).toBeVisible();
+  await expect(card.getByText('同点では終了できません')).toHaveCount(0);
+});
+
+test('「試合を終了する」を押すと確認画面が出て、まだ画面は変わらない', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
 
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('この試合を終了します')).toBeVisible();
@@ -178,15 +205,24 @@ test('「ゲーム終了」を押すと確認画面が出て、まだ画面は�
   await expect(card.getByText('19', { exact: true })).toBeVisible();
 });
 
+test('確認画面に、各ゲームの得点と勝ったペアが出る', async ({ page }) => {
+  await page.goto('/courts');
+
+  const card = courtCard(page, 1);
+  await card.getByRole('button', { name: '試合を終了する' }).click();
+
+  await expect(page.getByText('20 - 19', { exact: false })).toBeVisible();
+  await expect(page.getByText('勝ち: 佐々木・井上', { exact: true })).toBeVisible();
+});
+
 test('確認画面の「戻る」を押すと何も変わらずに閉じる', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
   await page.getByRole('button', { name: '戻る' }).click();
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(card.getByText(/第\d+ゲーム/)).toHaveCount(0);
   await expect(card.getByText('LIVE')).toBeVisible();
 });
 
@@ -194,7 +230,7 @@ test('確認画面は背景タップでも閉じる', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
   await page.getByRole('button', { name: '背景' }).click();
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -204,42 +240,23 @@ test('確認画面はEscでも閉じる', async ({ page }) => {
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
   await page.keyboard.press('Escape');
 
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-test('「OK」を押すとそのゲームがチップに並び、次のゲームが0-0で始まる', async ({ page }) => {
-  await page.goto('/courts');
-
-  // コート5 は決勝（上限3ゲーム）。第1ゲーム21-19を取り終え、第2ゲームが5-8で進行中。
-  // ここでB（藤田・岡田）が第2ゲームを取っても1-1なので、試合はまだ終わらない。
-  const card = courtCard(page, 5);
-  await expect(card.getByText('決勝トーナメント 準決勝・2ゲーム目')).toBeVisible();
-
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
-  await expect(page.getByText('第2ゲームを終了します')).toBeVisible();
-  await page.getByRole('button', { name: 'OK' }).click();
-
-  await expect(card.getByText('第1ゲーム 21-19')).toBeVisible();
-  await expect(card.getByText('第2ゲーム 5-8')).toBeVisible();
-  await expect(card.getByText('決勝トーナメント 準決勝・3ゲーム目')).toBeVisible();
-  // まだ試合は終わっていないので「LIVE」のまま
-  await expect(card.getByText('LIVE')).toBeVisible();
-});
-
-test('予選（上限1ゲーム）は、確認画面の「OK」で1ゲーム終わると試合終了になる', async ({ page }) => {
+test('予選（上限1ゲーム）は、確認画面の「OK」で試合終了になる', async ({ page }) => {
   await page.goto('/courts');
 
   // コート1 は予選（上限1ゲーム）。佐々木・井上（A）20点 対 田中・木村（B）19点
   const card = courtCard(page, 1);
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
   await page.getByRole('button', { name: 'OK' }).click();
 
   await expect(card.getByText('終了')).toBeVisible();
   await expect(card.getByText('LIVE')).toHaveCount(0);
-  await expect(card.getByRole('button', { name: 'ゲーム終了' })).toHaveCount(0);
+  await expect(card.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
   await expect(card.getByText('第1ゲーム 20-19')).toBeVisible();
   await expect(card.getByText('勝ち:', { exact: false })).toBeVisible();
   await expect(card.getByText('1-0', { exact: false })).toBeVisible();
@@ -247,23 +264,25 @@ test('予選（上限1ゲーム）は、確認画面の「OK」で1ゲーム終�
   await expect(card.getByText('次')).toBeVisible();
 });
 
-test('決勝（上限3ゲーム）で1-1になったら第3ゲームが始まり、その勝者で試合終了になる', async ({
-  page,
-}) => {
+test('決勝（上限3ゲーム）は、2ゲーム先取で試合終了になる', async ({ page }) => {
   await page.goto('/courts');
 
-  // コート6 は決勝（上限3ゲーム）。1-1で第3ゲームが 長谷川・五十嵐（A）9点 対 小早川・日下部（B）7点 で進行中
-  const card = courtCard(page, 6);
-  await expect(card.getByText('決勝トーナメント 準決勝・3ゲーム目')).toBeVisible();
+  // コート5 は決勝。第1ゲーム 21-19 を A（石川・前田）が取り、第2ゲームは 5-8。
+  // A に4点足して 9-8 にすれば、この第2ゲームでも A が勝ち2-0になる。
+  const card = courtCard(page, 5);
+  const plus = card.getByRole('button', { name: '石川・前田の第2ゲームの得点を1増やす' });
+  for (let i = 0; i < 4; i += 1) {
+    await plus.click();
+  }
 
-  await card.getByRole('button', { name: 'ゲーム終了' }).click();
+  await card.getByRole('button', { name: '試合を終了する' }).click();
   await expect(page.getByText('この試合を終了します')).toBeVisible();
-  await expect(page.getByText('試合の勝ち', { exact: false })).toBeVisible();
+  await expect(page.getByText(/2-0/)).toBeVisible();
 
   await page.getByRole('button', { name: 'OK' }).click();
 
   await expect(card.getByText('終了')).toBeVisible();
-  await expect(card.getByText('第3ゲーム 9-7')).toBeVisible();
+  await expect(card.getByText('第2ゲーム 9-8')).toBeVisible();
 });
 
 // 手元に多いのは 390px（iPhone 12 以降）だが、375px（iPhone SE / 8）もまだ使われている
@@ -295,8 +314,10 @@ for (const width of [375, 390]) {
     await page.goto('/courts');
 
     // コート6 は決勝。長い名字どうし（長谷川・五十嵐 / 小早川・日下部）で、
-    // 試合の勝ちまで出るいちばん詰まった確認画面を実測する。
-    await courtCard(page, 6).getByRole('button', { name: 'ゲーム終了' }).click();
+    // 同点を解消してから開く、いちばん詰まった確認画面を実測する。
+    const card = courtCard(page, 6);
+    await card.getByRole('button', { name: '長谷川・五十嵐の第3ゲームの得点を1増やす' }).click();
+    await card.getByRole('button', { name: '試合を終了する' }).click();
 
     const splitAcrossLines = await chunksSplitAcrossLines(
       page.getByRole('dialog').locator('span, h2')
@@ -310,7 +331,8 @@ for (const width of [375, 390]) {
 
     // 終了したコートは「勝ち: 長谷川・五十嵐（2-1）」まで出る。ここも実際に終わらせて測る。
     const card = courtCard(page, 6);
-    await card.getByRole('button', { name: 'ゲーム終了' }).click();
+    await card.getByRole('button', { name: '長谷川・五十嵐の第3ゲームの得点を1増やす' }).click();
+    await card.getByRole('button', { name: '試合を終了する' }).click();
     await page.getByRole('button', { name: 'OK' }).click();
     await expect(card.getByText('終了', { exact: true })).toBeVisible();
 
@@ -325,9 +347,47 @@ for (const width of [375, 390]) {
     }));
     expect(scrollWidth).toBe(innerWidth);
   });
+
+  test(`${width}px 幅で、決勝（枠3つ）の2桁の得点が枠に収まり、カードからはみ出さない`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/courts');
+
+    // コート5 は決勝（上限3ゲーム）。枠が 3 つ並ぶうえ 21-19 と 2 桁が入る、いちばん詰まった形。
+    const card = courtCard(page, 5);
+
+    const tooNarrow = await card.locator('span.tabular').evaluateAll((boxes) =>
+      boxes
+        .map((box) => {
+          const range = document.createRange();
+          range.selectNodeContents(box);
+          return {
+            text: box.textContent,
+            textWidth: range.getBoundingClientRect().width,
+            boxWidth: box.getBoundingClientRect().width,
+          };
+        })
+        // 数字が枠より広いと、両どなりの「−」「＋」に食い込んで読みにくくなる
+        .filter((box) => box.textWidth > box.boxWidth)
+    );
+    expect(tooNarrow).toEqual([]);
+
+    const stickingOut = await card.evaluate((element) => {
+      const cardRect = element.getBoundingClientRect();
+      return Array.from(element.querySelectorAll('*'))
+        .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+        .filter(
+          ({ rect }) =>
+            rect.width > 0 && (rect.right > cardRect.right + 0.5 || rect.left < cardRect.left - 0.5)
+        )
+        .map(({ text }) => text);
+    });
+    expect(stickingOut).toEqual([]);
+  });
 }
 
-test('押せるところ（−・＋・ゲーム終了）はどれも44px以上', async ({ page }) => {
+test('押せるところ（−・＋・試合を終了する）はどれも44px以上', async ({ page }) => {
   await page.goto('/courts');
 
   // 1 つだけ測っても他のコートが小さいままなら意味が無いので、全カードのボタンを測る
@@ -348,7 +408,7 @@ test('押せるところ（−・＋・ゲーム終了）はどれも44px以上'
 test('確認画面の「OK」「戻る」はどちらも44px以上', async ({ page }) => {
   await page.goto('/courts');
 
-  await courtCard(page, 1).getByRole('button', { name: 'ゲーム終了' }).click();
+  await courtCard(page, 1).getByRole('button', { name: '試合を終了する' }).click();
 
   const tooSmall = await page
     .getByRole('dialog')
@@ -383,7 +443,7 @@ test('「＋」を速く連打しても押した回数どおりに増える', as
 
   // 得点係は 1 点ごとに間を空けて押してくれない。押しそこねると試合が止まる。
   const card = courtCard(page, 4);
-  const plus = card.getByRole('button', { name: '加藤・斎藤の得点を1増やす' });
+  const plus = card.getByRole('button', { name: '加藤・斎藤の第1ゲームの得点を1増やす' });
   await plus.scrollIntoViewIfNeeded();
 
   const box = (await plus.boundingBox())!;

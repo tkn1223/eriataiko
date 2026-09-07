@@ -5,10 +5,15 @@
  *
  * 21 点などの点数では自動終了しない（部によって何点先取かが違うため）。
  * 終わるかどうかは「ゲームを何本先取したか」だけで決まる。
+ *
+ * ゲーム 1 つぶんの得点は独自の型を持たず、src/domain/scoring.ts の GameScore
+ * （{ gameNumber, sideAScore, sideBScore }）をそのまま使う。
+ * 型が 2 つあると、どちらに合わせて直せばいいか分からなくなる（PR #52 レビュー指摘2）。
  */
 
-/** 1 ゲームの得点。[ペアA の点, ペアB の点]。 */
-export type GameScore = [number, number];
+import { playedGameScores, type GameScore } from '@/domain/scoring';
+
+export type { GameScore };
 
 /** 試合の判定結果。wonGames は [A の勝ちゲーム数, B の勝ちゲーム数]。 */
 export type MatchOutcome = {
@@ -32,25 +37,42 @@ export function gamesToWin(maxGameCount: number): number {
 
 /** 1 ゲームの得点から、そのゲームの勝者を返す。同点は null。 */
 export function winnerOfGame(score: GameScore): 'A' | 'B' | null {
-  const [scoreA, scoreB] = score;
-  if (scoreA > scoreB) return 'A';
-  if (scoreB > scoreA) return 'B';
+  if (score.sideAScore > score.sideBScore) return 'A';
+  if (score.sideBScore > score.sideAScore) return 'B';
   return null;
 }
 
 /**
- * 終わったゲームの一覧から、試合が終了したか・どちらが勝ったかを返す。
+ * 勝ちゲーム数が多いほうの側を返す。同数（同点）は null。
+ *
+ * 「試合終了の条件を満たしたか」とは別の判断。終了は人が押したときだけなので、
+ * 上限ゲーム数を消化していなくても（決勝で 1-0 のまま終了するなど）勝ちペアは決まる。
+ * 「同点かどうか」の判断もここに寄せ、canFinishMatch と表示で同じ物差しを使う。
+ */
+export function leadingSide(wonGames: [number, number]): 'A' | 'B' | null {
+  if (wonGames[0] > wonGames[1]) return 'A';
+  if (wonGames[1] > wonGames[0]) return 'B';
+  return null;
+}
+
+/**
+ * ゲームの一覧から、試合が終了したか・どちらが勝ったかを返す。
+ *
+ * 渡す配列は「上限ゲーム数ぶんの枠」をそのまま渡してよい（0 対 0 の枠が混ざっていてもよい）。
+ * playedGameScores で 0 対 0 の枠を除いてから数える（自前で除く処理は書かない。
+ * scoring.ts と「空のゲームは数えない」の扱いをそろえるため。PR #52 レビュー指摘2）。
  *
  * - どちらかが gamesToWin に達したら、その時点で試合終了
- * - 上限ゲーム数ぶん消化したら、勝ちゲーム数が多いほうの勝ちで試合終了
+ * - プレーされたゲームが上限ゲーム数ぶん消化したら、勝ちゲーム数が多いほうの勝ちで試合終了
  *   （同数なら winner は null。バドミントンでは実際には起きないが、型としては許す）
  */
-export function matchOutcome(finishedGames: GameScore[], maxGameCount: number): MatchOutcome {
+export function matchOutcome(scores: GameScore[], maxGameCount: number): MatchOutcome {
   const needed = gamesToWin(maxGameCount);
+  const playedGames = playedGameScores(scores);
 
   let wonByA = 0;
   let wonByB = 0;
-  for (const game of finishedGames) {
+  for (const game of playedGames) {
     const winner = winnerOfGame(game);
     if (winner === 'A') wonByA += 1;
     if (winner === 'B') wonByB += 1;
@@ -60,10 +82,34 @@ export function matchOutcome(finishedGames: GameScore[], maxGameCount: number): 
   if (wonByA >= needed) return { finished: true, winner: 'A', wonGames };
   if (wonByB >= needed) return { finished: true, winner: 'B', wonGames };
 
-  if (finishedGames.length >= maxGameCount) {
-    const winner = wonByA > wonByB ? 'A' : wonByB > wonByA ? 'B' : null;
-    return { finished: true, winner, wonGames };
+  if (playedGames.length >= maxGameCount) {
+    return { finished: true, winner: leadingSide(wonGames), wonGames };
   }
 
   return { finished: false, winner: null, wonGames };
+}
+
+/** `canFinishMatch` の返り値。理由は画面にそのまま出せる日本語。 */
+export type CanFinishMatchResult = { ok: true } | { ok: false; reason: string };
+
+/**
+ * 試合を「終了する」操作をしてよいかを判定する。
+ *
+ * ここで見るのは「勝ちゲーム数が同数（同点）で終了できない」の 1 点だけ。
+ * 「1 点も入っていない」は scoring.ts の hasAnyPoint が持つ別の理由の判定なので、
+ * ここには混ぜない（呼び出し側で先に hasAnyPoint を見てから、こちらを見る）。
+ *
+ * 人間が決めた方針: 同点（勝ちゲーム数が同数）では試合を終了できない。
+ * バドミントンに引き分けは無く、勝者が決まらないと順位の計算が崩れるため。
+ *
+ * usecases/finish-match.ts（保存の入口）と画面の両方がこの関数を呼ぶ。
+ * ルールが 1 か所にまとまっていることは match-rules.test.ts / finish-match.test.ts で確かめる
+ * （PR #52 レビュー指摘4）。
+ */
+export function canFinishMatch(scores: GameScore[], maxGameCount: number): CanFinishMatchResult {
+  const { wonGames } = matchOutcome(scores, maxGameCount);
+  if (leadingSide(wonGames) === null) {
+    return { ok: false, reason: '同点では終了できません' };
+  }
+  return { ok: true };
 }

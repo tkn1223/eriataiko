@@ -1,32 +1,32 @@
 'use client';
 
 import { useState } from 'react';
-import { matchOutcome, winnerOfGame } from '@/domain/match-rules';
+import { canFinishMatch, leadingSide, matchOutcome, winnerOfGame } from '@/domain/match-rules';
+import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
 import { YouTag } from '@/ui/components/you-tag';
-import type {
-  Court,
-  CourtTeam,
-  GameScore,
-  LiveScore,
-  NextMatch,
-  TeamNumber,
-} from '@/ui/courts/sample-data';
-import { FinishConfirmSheet } from '@/ui/courts/finish-confirm-sheet';
+import type { Court, CourtTeam, LiveScore, NextMatch, TeamNumber } from '@/ui/courts/sample-data';
+import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 
 type Props = {
   court: Court;
   /** 進行中のコートだけ渡される、ページが持つ得点の状態。 */
   liveScore: LiveScore | null;
-  onIncrement: (side: 'A' | 'B') => void;
-  onDecrement: (side: 'A' | 'B') => void;
-  /** 確認画面で「OK」が押されたときに呼ばれる。実際にゲームを確定する処理はページ側が持つ。 */
-  onFinishGame: () => void;
+  onIncrement: (gameNumber: number, side: 'A' | 'B') => void;
+  onDecrement: (gameNumber: number, side: 'A' | 'B') => void;
+  /** 確認画面で「OK」が押されたときに呼ばれる。実際に試合を終了する処理はページ側が持つ。 */
+  onFinishMatch: () => void;
 };
 
-/** 得点が入っているか（0対0でないか）。 */
-function hasAnyPoint(score: GameScore): boolean {
-  return score[0] > 0 || score[1] > 0;
+/** その枠（gameNumber）の得点。無ければまだ点が入っていない 0 対 0 の枠として扱う。 */
+function frameScore(scores: GameScore[], gameNumber: number): GameScore {
+  return (
+    scores.find((score) => score.gameNumber === gameNumber) ?? {
+      gameNumber,
+      sideAScore: 0,
+      sideBScore: 0,
+    }
+  );
 }
 
 /** 「2-0」のような、勝った側を先に書く表記にする。 */
@@ -45,12 +45,22 @@ const TEAM_BG_CLASS: Record<TeamNumber, string> = {
 /**
  * コート 1 面ぶんのカード。
  *
- * 進行中なら得点をその場で押せる形、空いていれば「呼出待ち」「予定なし」を出す。
+ * 上限ゲーム数ぶんの枠を最初から並べ、どの枠も押せる形にする
+ * （docs/specs/2026-09-04-finish-match.md、PR #52 レビュー指摘1）。
+ * 表に「そのゲームが終わった印」を持たない方針なので、「終わったゲーム」
+ * 「進行中のゲーム」を分けず、0 対 0 かどうかだけで見分ける。
+ *
  * 得点の状態はここでは持たない（同時に動く複数コートぶんをまとめて courts-page が持つ）。
  */
-export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFinishGame }: Props) {
-  // 「ゲーム終了」を押したときの確認画面。誤タップの歯止めがこれ 1 つしか無いので、
-  // ここで開く・閉じるを持つ（docs/specs/2026-09-04-finish-match.md）。
+export function CourtLiveCard({
+  court,
+  liveScore,
+  onIncrement,
+  onDecrement,
+  onFinishMatch,
+}: Props) {
+  // 「試合を終了する」を押したときの確認画面。誤タップの歯止めがこれ 1 つしか無いので、
+  // ここで開く・閉じるを持つ。
   const [sheetOpen, setSheetOpen] = useState(false);
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,44 +72,47 @@ export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFi
   const { live, next } = court;
   // 得点が渡ってこなかったときも試合そのものは出す。
   // ここで「予定なし」に化けると、進行中のコートが黙って消えてしまう。
-  const { finishedGames, currentGame, finished } = liveScore ?? {
-    finishedGames: live.finishedGames,
-    currentGame: live.currentGame,
-    finished: false,
-  };
-  const gameNumber = finishedGames.length + 1;
-  const [scoreA, scoreB] = currentGame;
-  const reachedTwentyOne = scoreA >= 21 || scoreB >= 21;
+  const { scores, finished } = liveScore ?? { scores: live.scores, finished: false };
 
   const teamAName = live.teamA.players.join('・');
   const teamBName = live.teamB.players.join('・');
 
-  // 終了したコートの「勝ち: ◯◯（2-0）」は、確定済みの finishedGames から求める。
-  const finishedOutcome = finished ? matchOutcome(finishedGames, live.maxGameCount) : null;
+  const frames = Array.from({ length: live.maxGameCount }, (_, index) =>
+    frameScore(scores, index + 1)
+  );
 
-  // 確認画面に出す内容は、まだ確定していない「今押したら」の想定で組み立てる。
-  // 同点のときは handleFinishGameClick が確認画面を開かないので、勝ちペアは必ずどちらかに決まる。
-  const pendingWinnerSide = winnerOfGame(currentGame);
-  const pendingWinnerName = pendingWinnerSide === 'B' ? teamBName : teamAName;
-  const pendingOutcome = matchOutcome([...finishedGames, currentGame], live.maxGameCount);
-  const matchWinnerName =
-    pendingOutcome.finished && pendingOutcome.winner
-      ? pendingOutcome.winner === 'A'
-        ? teamAName
-        : teamBName
-      : null;
-  const matchWinnerScoreText =
-    pendingOutcome.finished && pendingOutcome.winner
-      ? winnerFirstScoreText(pendingOutcome.wonGames, pendingOutcome.winner)
-      : null;
+  // 確認画面・終了後の「勝ち: ◯◯（2-0）」は、どちらもプレーされたゲームから同じ関数で求める。
+  // 勝ちペアは outcome.winner ではなく leadingSide で決める。終了は人が押したときだけなので、
+  // 決勝（上限3ゲーム）を 1-0 のまま終了することがあり、そのとき outcome.winner はまだ null。
+  // ここで null のまま出すと、確認画面にも終了後のカードにも勝ちペアが出ない。
+  const outcome = matchOutcome(scores, live.maxGameCount);
+  const winnerSide = leadingSide(outcome.wonGames);
+  const matchWinnerName = winnerSide === 'A' ? teamAName : winnerSide === 'B' ? teamBName : null;
+  const matchWinnerScoreText = winnerSide
+    ? winnerFirstScoreText(outcome.wonGames, winnerSide)
+    : null;
 
-  function handleFinishGameClick() {
-    if (!hasAnyPoint(currentGame)) {
+  // 確認画面にも終了後のチップにも「実際にプレーされたゲーム」だけを出す（0 対 0 の枠は出さない）。
+  const playedGames = playedGameScores(scores);
+
+  const confirmGames: FinishConfirmGame[] = playedGames.map((score) => {
+    const winner = winnerOfGame(score);
+    return {
+      gameNumber: score.gameNumber,
+      sideAScore: score.sideAScore,
+      sideBScore: score.sideBScore,
+      winnerLabel: winner === 'A' ? teamAName : winner === 'B' ? teamBName : '引き分け',
+    };
+  });
+
+  function handleFinishClick() {
+    if (!hasAnyPoint(scores)) {
       setNotice('まだ点が入っていません');
       return;
     }
-    if (scoreA === scoreB) {
-      setNotice('同点では終了できません');
+    const result = canFinishMatch(scores, live.maxGameCount);
+    if (!result.ok) {
+      setNotice(result.reason);
       return;
     }
     setNotice(null);
@@ -108,17 +121,17 @@ export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFi
 
   function handleOk() {
     setSheetOpen(false);
-    onFinishGame();
+    onFinishMatch();
   }
 
-  function handleIncrement(side: 'A' | 'B') {
+  function handleIncrement(gameNumber: number, side: 'A' | 'B') {
     setNotice(null);
-    onIncrement(side);
+    onIncrement(gameNumber, side);
   }
 
-  function handleDecrement(side: 'A' | 'B') {
+  function handleDecrement(gameNumber: number, side: 'A' | 'B') {
     setNotice(null);
-    onDecrement(side);
+    onDecrement(gameNumber, side);
   }
 
   return (
@@ -144,57 +157,48 @@ export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFi
 
       <div className="flex flex-wrap items-center gap-1.5">
         <ClassChip classLabel={live.classLabel} />
-        {/* 終了したコートで「2ゲーム目」と出すと、まだ次のゲームが続くように見えるので回戦だけにする。 */}
         <span className="text-[11px] font-bold whitespace-nowrap text-gray-400">
-          {finished ? live.roundLabel : `${live.roundLabel}・${gameNumber}ゲーム目`}
+          {live.roundLabel}
         </span>
         {live.isMine && <YouTag />}
       </div>
 
+      <TeamNameLine team={live.teamA} />
+      <TeamNameLine team={live.teamB} />
+
       {finished ? (
-        <>
-          <TeamNameLine team={live.teamA} />
-          <TeamNameLine team={live.teamB} />
-        </>
+        playedGames.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5">
+            {playedGames.map((score) => (
+              <li
+                key={score.gameNumber}
+                className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
+              >
+                {`第${score.gameNumber}ゲーム ${score.sideAScore}-${score.sideBScore}`}
+              </li>
+            ))}
+          </ul>
+        )
       ) : (
-        <>
-          <TeamRow
-            team={live.teamA}
-            score={scoreA}
-            onIncrement={() => handleIncrement('A')}
-            onDecrement={() => handleDecrement('A')}
-          />
-          <TeamRow
-            team={live.teamB}
-            score={scoreB}
-            onIncrement={() => handleIncrement('B')}
-            onDecrement={() => handleDecrement('B')}
-          />
-        </>
-      )}
-
-      {finishedGames.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {finishedGames.map((game, index) => (
-            <li
-              key={index}
-              className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
-            >
-              {`第${index + 1}ゲーム ${game[0]}-${game[1]}`}
-            </li>
+        <div className="flex flex-col gap-2">
+          {frames.map((frame) => (
+            <GameFrameRow
+              key={frame.gameNumber}
+              gameNumber={frame.gameNumber}
+              teamA={live.teamA}
+              teamB={live.teamB}
+              score={frame}
+              onIncrement={(side) => handleIncrement(frame.gameNumber, side)}
+              onDecrement={(side) => handleDecrement(frame.gameNumber, side)}
+            />
           ))}
-        </ul>
+        </div>
       )}
 
-      {finished && finishedOutcome?.winner && (
+      {finished && matchWinnerName && (
         <p className="text-[13px] font-black break-words">
-          勝ち:{' '}
-          <span className="whitespace-nowrap">
-            {finishedOutcome.winner === 'A' ? teamAName : teamBName}
-          </span>
-          <span className="tabular whitespace-nowrap">
-            {`（${winnerFirstScoreText(finishedOutcome.wonGames, finishedOutcome.winner)}）`}
-          </span>
+          勝ち: <span className="whitespace-nowrap">{matchWinnerName}</span>
+          <span className="tabular whitespace-nowrap">{`（${matchWinnerScoreText}）`}</span>
         </p>
       )}
 
@@ -208,22 +212,15 @@ export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFi
 
           <button
             type="button"
-            onClick={handleFinishGameClick}
-            className={`min-h-11 w-full rounded-[10px] py-[10px] text-[14px] font-bold text-white ${
-              reachedTwentyOne ? 'bg-accent' : 'bg-ink'
-            }`}
+            onClick={handleFinishClick}
+            className="bg-ink min-h-11 w-full rounded-[10px] py-[10px] text-[14px] font-bold text-white"
           >
-            ゲーム終了
+            試合を終了する
           </button>
 
           <FinishConfirmSheet
             open={sheetOpen}
-            gameNumber={gameNumber}
-            teamAName={teamAName}
-            teamBName={teamBName}
-            gameScore={currentGame}
-            winnerName={pendingWinnerName}
-            matchFinished={pendingOutcome.finished}
+            games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
             onOk={handleOk}
@@ -237,7 +234,7 @@ export function CourtLiveCard({ court, liveScore, onIncrement, onDecrement, onFi
   );
 }
 
-/** 終了したコートで、得点欄を持たずペア名だけ出す行。 */
+/** ペア名だけ出す行。得点は各ゲームの枠側に出すので、ここには持たない。 */
 function TeamNameLine({ team }: { team: CourtTeam }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -250,52 +247,89 @@ function TeamNameLine({ team }: { team: CourtTeam }) {
   );
 }
 
-function TeamRow({
-  team,
+/** 「第Nゲーム」の枠 1 つぶん。両ペアの「−」「＋」と得点を横に並べる。 */
+function GameFrameRow({
+  gameNumber,
+  teamA,
+  teamB,
   score,
   onIncrement,
   onDecrement,
 }: {
+  gameNumber: number;
+  teamA: CourtTeam;
+  teamB: CourtTeam;
+  score: GameScore;
+  onIncrement: (side: 'A' | 'B') => void;
+  onDecrement: (side: 'A' | 'B') => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-[12px] font-bold text-gray-400">{`第${gameNumber}ゲーム`}</span>
+      <div className="flex items-center gap-3">
+        <FrameScoreControl
+          team={teamA}
+          gameNumber={gameNumber}
+          value={score.sideAScore}
+          onIncrement={() => onIncrement('A')}
+          onDecrement={() => onDecrement('A')}
+        />
+        <FrameScoreControl
+          team={teamB}
+          gameNumber={gameNumber}
+          value={score.sideBScore}
+          onIncrement={() => onIncrement('B')}
+          onDecrement={() => onDecrement('B')}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** 1 枠・1 チームぶんの「−」「＋」と得点。44px 角のタップ領域を確保する。 */
+function FrameScoreControl({
+  team,
+  gameNumber,
+  value,
+  onIncrement,
+  onDecrement,
+}: {
   team: CourtTeam;
-  score: number;
+  gameNumber: number;
+  value: number;
   onIncrement: () => void;
   onDecrement: () => void;
 }) {
   const name = team.players.join('・');
 
   return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="flex min-w-0 items-center gap-1.5">
-        <span
-          aria-hidden="true"
-          className={`size-2.5 shrink-0 rounded-[3px] ${TEAM_BG_CLASS[team.number]}`}
-        />
-        <span className="min-w-0 text-[14px] font-bold break-words">{name}</span>
+    <span className="flex shrink-0 items-center gap-1">
+      <span
+        aria-hidden="true"
+        className={`size-2 shrink-0 rounded-[2px] ${TEAM_BG_CLASS[team.number]}`}
+      />
+      <button
+        type="button"
+        onClick={onDecrement}
+        aria-label={`${name}の第${gameNumber}ゲームの得点を1減らす`}
+        className="flex size-11 items-center justify-center rounded-[10px] border border-gray-300 text-[16px] font-bold text-gray-400"
+      >
+        −
+      </button>
+      {/* w-7（28px）は 2 桁の得点（実測 26.7px）が収まる幅。w-6 だと数字が枠からはみ出し、
+          両どなりの「−」「＋」に寄って読みにくくなる（375px で実測した）。 */}
+      <span className="tabular text-accent w-7 text-center text-[18px] font-extrabold">
+        {value}
       </span>
-
-      {/* ＋− は指の腹より大きい 46px 角。得点は桁が増えても位置が動かないよう幅を固定する。 */}
-      <span className="grid shrink-0 grid-cols-[46px_46px_auto] items-center gap-1.5">
-        <button
-          type="button"
-          onClick={onDecrement}
-          aria-label={`${name}の得点を1減らす`}
-          className="flex size-[46px] items-center justify-center rounded-[12px] border border-gray-300 text-[20px] font-bold text-gray-400"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          onClick={onIncrement}
-          aria-label={`${name}の得点を1増やす`}
-          className="text-ink flex size-[46px] items-center justify-center rounded-[12px] border border-gray-300 text-[20px] font-bold"
-        >
-          ＋
-        </button>
-        <span className="tabular text-accent min-w-[60px] text-right text-[36px] font-extrabold">
-          {score}
-        </span>
-      </span>
-    </div>
+      <button
+        type="button"
+        onClick={onIncrement}
+        aria-label={`${name}の第${gameNumber}ゲームの得点を1増やす`}
+        className="text-ink flex size-11 items-center justify-center rounded-[10px] border border-gray-300 text-[16px] font-bold"
+      >
+        ＋
+      </button>
+    </span>
   );
 }
 

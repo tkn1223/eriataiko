@@ -2,48 +2,44 @@
 
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 
+/** 確認画面に出す 1 ゲームぶんの内訳。 */
+export type FinishConfirmGame = {
+  gameNumber: number;
+  sideAScore: number;
+  sideBScore: number;
+  /** そのゲームの勝ちペア名。同点（実際には起きないが型としては許す）は「引き分け」。 */
+  winnerLabel: string;
+};
+
 type Props = {
   open: boolean;
-  /** 確定しようとしているゲームの番号（第◯ゲーム）。 */
-  gameNumber: number;
-  teamAName: string;
-  teamBName: string;
-  /** 確定しようとしているゲームの得点。[A の点, B の点]。 */
-  gameScore: [number, number];
-  /** このゲームの勝ちペア名。 */
-  winnerName: string;
-  /** このゲームで試合そのものも終わるか。 */
-  matchFinished: boolean;
-  /** 試合が終わるときの勝ちペア名。終わらないときは null。 */
+  /** 実際にプレーされたゲーム（0 対 0 の枠を除いたもの）だけを渡す。 */
+  games: FinishConfirmGame[];
+  /** 試合の勝ちペア名。 */
   matchWinnerName: string | null;
-  /** 試合が終わるときの「2-0」のような表記（勝った側が先）。終わらないときは null。 */
+  /** 「2-1」のような、勝った側が先の表記。 */
   matchWinnerScoreText: string | null;
   onOk: () => void;
   onClose: () => void;
 };
 
 /**
- * 「ゲーム終了」を押したときに出す確認画面。
+ * 「試合を終了する」を押したときに出す確認画面。
  *
- * 21 点などの自動終了は無いので、ここが誤タップを防ぐ唯一の歯止めになる
- * （docs/specs/2026-09-04-finish-match.md）。押しどころは大きく、
- * 長いペア名でも途中で切れないようにする（src/ui/me/my-page.tsx と同じ考え方）。
+ * 押せるボタンは「試合を終了する」1 つだけになったので、確認する対象も常に試合そのもの
+ * （docs/specs/2026-09-04-finish-match.md、PR #52 レビュー指摘1）。
+ * 21 点などの自動終了は無いので、ここが誤タップを防ぐ唯一の歯止めになる。
+ * 押しどころは大きく、長いペア名でも途中で切れないようにする
+ * （src/ui/me/my-page.tsx と同じ考え方）。
  */
 export function FinishConfirmSheet({
   open,
-  gameNumber,
-  teamAName,
-  teamBName,
-  gameScore,
-  winnerName,
-  matchFinished,
+  games,
   matchWinnerName,
   matchWinnerScoreText,
   onOk,
   onClose,
 }: Props) {
-  const [scoreA, scoreB] = gameScore;
-
   return (
     <BottomSheet
       open={open}
@@ -51,23 +47,23 @@ export function FinishConfirmSheet({
       onClose={onClose}
       header={
         <h2 id="finish-confirm-sheet-title" className="text-[16px] font-black">
-          {matchFinished ? 'この試合を終了します' : `第${gameNumber}ゲームを終了します`}
+          この試合を終了します
         </h2>
       }
     >
-      {/* 意味のかたまり（ペア名・得点）ごとに whitespace-nowrap で囲み、
+      {/* 意味のかたまり（ゲーム番号・得点・勝ちペア）ごとに whitespace-nowrap で囲み、
           途中や単語の中で改行されないようにする。折り返しはかたまりの間の空白でだけ起こる。 */}
-      <p className="tabular mb-3 text-[15px] font-bold break-words">
-        <span className="whitespace-nowrap">{teamAName}</span>{' '}
-        <span className="whitespace-nowrap">{`${scoreA} - ${scoreB}`}</span>{' '}
-        <span className="whitespace-nowrap">{teamBName}</span>
-      </p>
+      <ul className="mb-3 flex flex-col gap-1">
+        {games.map((game) => (
+          <li key={game.gameNumber} className="tabular text-[14px] font-bold break-words">
+            <span className="whitespace-nowrap">{`第${game.gameNumber}ゲーム`}</span>{' '}
+            <span className="whitespace-nowrap">{`${game.sideAScore} - ${game.sideBScore}`}</span>{' '}
+            <span className="whitespace-nowrap text-gray-500">{`勝ち: ${game.winnerLabel}`}</span>
+          </li>
+        ))}
+      </ul>
 
-      <p className="mb-1 text-[14px] font-bold break-words text-gray-500">
-        このゲームの勝ち: <span className="whitespace-nowrap">{winnerName}</span>
-      </p>
-
-      {matchFinished && matchWinnerName && matchWinnerScoreText && (
+      {matchWinnerName && matchWinnerScoreText && (
         <p className="mb-1 text-[14px] font-black break-words">
           試合の勝ち: <span className="whitespace-nowrap">{matchWinnerName}</span>
           <span className="tabular whitespace-nowrap">{`（${matchWinnerScoreText}）`}</span>

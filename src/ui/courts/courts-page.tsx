@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import type { GameScore } from '@/domain/scoring';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import type { Court, GameScore, LiveScore } from '@/ui/courts/sample-data';
+import type { Court, LiveScore } from '@/ui/courts/sample-data';
 
 type Props = {
   courts: Court[];
@@ -14,14 +15,7 @@ type Props = {
 /** 進行中のコートぶんだけ、見本データの値を得点の初期値にする。 */
 function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
   const entries = courts.flatMap((court) =>
-    court.live
-      ? [
-          [
-            court.courtNumber,
-            { finishedGames: court.live.finishedGames, currentGame: court.live.currentGame },
-          ] as const,
-        ]
-      : []
+    court.live ? [[court.courtNumber, { scores: court.live.scores, finished: false }] as const] : []
   );
 
   return Object.fromEntries(entries);
@@ -43,35 +37,40 @@ export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
   );
 
   /**
-   * 1 コートの得点を 1 点だけ動かす。
+   * 1 コート・1 ゲームの枠の得点を 1 点だけ動かす。
    *
    * 前の値から数える書き方（setState に関数を渡す）にしているので、
    * 「＋」を速く連打されても数えそこねない。
    */
-  function changeScore(courtNumber: number, side: 'A' | 'B', delta: 1 | -1) {
+  function changeScore(courtNumber: number, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
     setLiveScores((prev) => {
       const current = prev[courtNumber];
       if (!current) return prev;
-      const [a, b] = current.currentGame;
-      // 押し間違いでマイナスの点にならないよう 0 で止める
-      const currentGame: GameScore =
-        side === 'A' ? [Math.max(0, a + delta), b] : [a, Math.max(0, b + delta)];
 
-      return { ...prev, [courtNumber]: { ...current, currentGame } };
+      const index = current.scores.findIndex((score) => score.gameNumber === gameNumber);
+      const existing = current.scores[index] ?? { gameNumber, sideAScore: 0, sideBScore: 0 };
+      // 押し間違いでマイナスの点にならないよう 0 で止める
+      const updated: GameScore =
+        side === 'A'
+          ? { ...existing, sideAScore: Math.max(0, existing.sideAScore + delta) }
+          : { ...existing, sideBScore: Math.max(0, existing.sideBScore + delta) };
+
+      const scores =
+        index >= 0
+          ? current.scores.map((score, i) => (i === index ? updated : score))
+          : [...current.scores, updated];
+
+      return { ...prev, [courtNumber]: { ...current, scores } };
     });
   }
 
-  function finishGame(courtNumber: number) {
+  /** 確認画面の「OK」で呼ばれる。そのコートを終了状態にする。 */
+  function finishMatch(courtNumber: number) {
     setLiveScores((prev) => {
       const current = prev[courtNumber];
       if (!current) return prev;
-      return {
-        ...prev,
-        [courtNumber]: {
-          finishedGames: [...current.finishedGames, current.currentGame],
-          currentGame: [0, 0],
-        },
-      };
+
+      return { ...prev, [courtNumber]: { ...current, finished: true } };
     });
   }
 
@@ -100,9 +99,9 @@ export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
             key={court.courtNumber}
             court={court}
             liveScore={liveScores[court.courtNumber] ?? null}
-            onIncrement={(side) => changeScore(court.courtNumber, side, 1)}
-            onDecrement={(side) => changeScore(court.courtNumber, side, -1)}
-            onFinishGame={() => finishGame(court.courtNumber)}
+            onIncrement={(gameNumber, side) => changeScore(court.courtNumber, gameNumber, side, 1)}
+            onDecrement={(gameNumber, side) => changeScore(court.courtNumber, gameNumber, side, -1)}
+            onFinishMatch={() => finishMatch(court.courtNumber)}
           />
         ))}
       </div>

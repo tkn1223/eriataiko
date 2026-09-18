@@ -309,6 +309,29 @@ describe('buildMyPageView の試合カードの勝敗・得点', () => {
     ]);
   });
 
+  // ⚠️ 既知の食い違い（今回は直さない。PR #53 レビュー指摘2で「直し方は yosuke さんが決める」
+  // とされたもの）。上限ゲーム数（3）に満たないまま試合が終了（決勝で 1 ゲームだけ行って
+  // 終了、など）すると、matchOutcome は「まだ決着していない」扱いにするため、
+  // 実際にはリードしていても ● 負け表示・0 勝 0 敗になる。
+  // ここでは「今の実装がこう動く」ことを固定するだけで、これが正しい仕様だという主張ではない。
+  test('決勝で 1 ゲームだけ行って終了した試合は、いまの実装では ● 負け表示になる（既知の食い違い）', () => {
+    const view = buildMyPageView(
+      baseInput({
+        matches: [
+          doubles({
+            matchId: 'm1',
+            status: 'done',
+            maxGameCount: 3,
+            gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
+          }),
+        ],
+      })
+    );
+
+    expect(view.matches[0].won).toBe(false);
+    expect(view.record).toEqual({ wins: 0, losses: 0, gamesWon: 1, gamesLost: 0, pointDiff: 6 });
+  });
+
   test('未実施の試合には勝敗もゲーム数も付かない', () => {
     const view = buildMyPageView(
       baseInput({ matches: [doubles({ matchId: 'm1', status: 'waiting', gameScores: [] })] })

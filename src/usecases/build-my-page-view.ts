@@ -1,13 +1,15 @@
 import { buildPlayerRecord, type FinishedMatchRecord } from '@/domain/player-record';
-import { matchOutcome, type GameScore } from '@/domain/match-rules';
-import { playedGameScores } from '@/domain/scoring';
+import { matchOutcome } from '@/domain/match-rules';
+import { playedGameScores, type GameScore } from '@/domain/scoring';
 import type { ClassLabel, MyMatch, MyProfile, MyRecord, TeamNumber } from '@/ui/me/types';
 
 /**
  * `/me`（マイページ）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
  *
  * 仕様: docs/specs/2026-09-05-me-real-data.md
- * 層の分け方は `/courts`（結果LIVE）の `build-courts-view.ts` に揃えている。
+ * 層の分け方は AGENTS.md の「db が読む → usecases が画面の形に組む → page.tsx は呼ぶだけ」に従う
+ * （読み取りは `src/db/me.ts`。ゲームの得点・勝敗の型は `src/domain/scoring.ts` /
+ * `src/domain/match-rules.ts` の `GameScore` にそろえ、ここでは独自の型を作らない）。
  */
 
 export type MyPageViewPlayerRow = {
@@ -120,15 +122,16 @@ function compareMatches(a: MyPageViewMatchRow, b: MyPageViewMatchRow): number {
   return a.matchId < b.matchId ? -1 : a.matchId > b.matchId ? 1 : 0;
 }
 
+/** ゲーム番号順に並べる。`MyPageViewGameScoreRow` は `GameScore` と同じ形なのでそのまま使える。 */
 function toGameScores(scores: MyPageViewGameScoreRow[]): GameScore[] {
-  return [...scores]
-    .sort((a, b) => a.gameNumber - b.gameNumber)
-    .map((score): GameScore => [score.sideAScore, score.sideBScore]);
+  return [...scores].sort((a, b) => a.gameNumber - b.gameNumber);
 }
 
 /** 得点を「自分の点、相手の点」の順に組み替える。 */
 function toMyGameScores(scores: GameScore[], mySide: 'a' | 'b'): [number, number][] {
-  return scores.map(([scoreA, scoreB]) => (mySide === 'a' ? [scoreA, scoreB] : [scoreB, scoreA]));
+  return scores.map((score) =>
+    mySide === 'a' ? [score.sideAScore, score.sideBScore] : [score.sideBScore, score.sideAScore]
+  );
 }
 
 function toMyMatch(

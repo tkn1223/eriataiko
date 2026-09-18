@@ -1,4 +1,5 @@
-import { findMyPageData } from '@/db/me';
+import { findCurrentCompetitionId, findMyPageData } from '@/db/me';
+import { ConnectionErrorBlock } from '@/ui/components/connection-error-block';
 import { ErrorBlock } from '@/ui/components/error-block';
 import { getSession } from '@/server/session';
 import { buildMyPageView, type MyPageView } from '@/usecases/build-my-page-view';
@@ -9,11 +10,14 @@ import { ViewerNotice } from '@/ui/me/viewer-notice';
 export const dynamic = 'force-dynamic';
 
 /**
- * 読めなかったときの案内。
- * 「いまの大会が無い」と「その大会に自分が登録されていない」は、
- * どちらも本人には直せないうえ見分けが付かないので、両方を書いて運営に伝えてもらう。
+ * 「大会が設定されていない」「その大会にあなたの登録がない」ときの選手向けの案内。
+ *
+ * どちらも本人には直せないうえ見分けが付かないので同じ文言にする。
+ * **「Supabase につながらない」（開発者向け）とは見出しを分ける。** 当日これを見るのは選手なので、
+ * `.env.local` や `npm run` の案内を出さない（PR #53 レビュー指摘4）。
  */
-const NO_DATA_MESSAGE = '大会が設定されていないか、その大会にあなたの登録がありません';
+const NOT_FOUND_HEADING = '大会の情報が見つかりません';
+const NOT_FOUND_MESSAGE = '運営の方に確認してください。';
 
 /**
  * マイページ。読み取りは `createSupabaseServerClient()`（`src/db/me.ts` の中）。
@@ -28,29 +32,45 @@ export default async function MePage() {
   }
 
   let view: MyPageView | null = null;
-  let loadError: string | null = null;
+  let notFound = false;
+  let connectionError: string | null = null;
 
   // JSX は try/catch の外で作る（中で作ると、失敗しても catch に落ちない）。
   try {
-    const data = await findMyPageData(session.playerId);
-    if (!data) {
-      loadError = NO_DATA_MESSAGE;
+    const competitionId = await findCurrentCompetitionId();
+    if (!competitionId) {
+      notFound = true;
     } else {
-      view = buildMyPageView({
-        myParticipantId: data.myParticipantId,
-        profile: data.profile,
-        divisions: data.divisions,
-        matches: data.matches,
-      });
+      const data = await findMyPageData(session.playerId, competitionId);
+      if (!data) {
+        notFound = true;
+      } else {
+        view = buildMyPageView({
+          myParticipantId: data.myParticipantId,
+          profile: data.profile,
+          divisions: data.divisions,
+          matches: data.matches,
+        });
+      }
     }
   } catch (error) {
-    loadError = error instanceof Error ? error.message : String(error);
+    // 「大会や登録が無い」は想定内の分岐（上の notFound）で扱う。
+    // ここに落ちるのは接続そのものの失敗（開発者向け）。
+    connectionError = error instanceof Error ? error.message : String(error);
   }
 
-  if (!view) {
+  if (connectionError) {
     return (
       <div className="bg-paper min-h-dvh px-4 py-8">
-        <ErrorBlock message={loadError ?? NO_DATA_MESSAGE} />
+        <ConnectionErrorBlock message={connectionError} />
+      </div>
+    );
+  }
+
+  if (notFound || !view) {
+    return (
+      <div className="bg-paper min-h-dvh px-4 py-8">
+        <ErrorBlock heading={NOT_FOUND_HEADING} message={NOT_FOUND_MESSAGE} />
       </div>
     );
   }

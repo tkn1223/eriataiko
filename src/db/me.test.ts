@@ -1,12 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getSupabaseAdminClient } from '@/db/admin';
-import { findMyPageData } from '@/db/me';
+import { findCurrentCompetitionId, findMyPageData } from '@/db/me';
 
 /**
- * `findMyPageData` を本物のデータベースに当てて確かめる。
+ * `findMyPageData` / `findCurrentCompetitionId` を本物のデータベースに当てて確かめる。
  *
  * `build-my-page-view.test.ts` は組み立てのロジックを偽物の入力で確かめている。
  * ここでしか分からないのは **実際の表からどう読み出すか**。
+ *
+ * `findMyPageData` は大会の id を引数で受け取る形なので、このテストは
+ * 自分が作った大会の id をそのまま渡すだけで済む。共有の「いまの大会」
+ * （`competitions.is_current`）には一切触らない（PR #53 レビュー指摘3）。
+ * そのぶん、他のテストファイルと同時に流しても競合しない。
  *
  * 実行前に `npm run db:start` が必要。
  */
@@ -29,8 +34,6 @@ let doneMatchId: string;
 let waitingMatchId: string;
 /** 自分が出ていない試合。マイページに混ざらないことを確かめるために作る。 */
 let othersMatchId: string;
-/** 元々「いまの大会」だった大会の id。テストの後に必ず元へ戻す。 */
-let previousCurrentCompetitionId: string | null;
 
 beforeAll(async () => {
   const competition = await admin
@@ -180,34 +183,12 @@ beforeAll(async () => {
     { match_id: othersMatchId, game_number: 1, side_a_score: 21, side_b_score: 3 },
   ]);
   expect(gameScores.error, `得点の作成に失敗: ${gameScores.error?.message}`).toBeNull();
-
-  // is_current は「true の行が高々 1 件」という制約がある（tests/schema.test.ts）。
-  // 元の「いまの大会」を覚えておいてから、自分の大会に切り替える。
-  const current = await admin
-    .from('competitions')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
-  expect(current.error, `いまの大会の確認に失敗: ${current.error?.message}`).toBeNull();
-  previousCurrentCompetitionId = current.data?.id ?? null;
-
-  if (previousCurrentCompetitionId) {
-    const unset = await admin
-      .from('competitions')
-      .update({ is_current: false })
-      .eq('id', previousCurrentCompetitionId);
-    expect(unset.error, `元の大会を外すのに失敗: ${unset.error?.message}`).toBeNull();
-  }
-  const setCurrent = await admin
-    .from('competitions')
-    .update({ is_current: true })
-    .eq('id', competitionId);
-  expect(setCurrent.error, `いまの大会への切り替えに失敗: ${setCurrent.error?.message}`).toBeNull();
 });
 
 afterAll(async () => {
   // 大会を消せば、ぶら下がっているものは全部一緒に消える。選手（players）だけは
   // 大会にぶら下がっていないので、別に消す。
+  // このテストは is_current（「いまの大会」）に一切触らないので、後片付けもこれだけでよい。
   const { error } = await admin.from('competitions').delete().eq('id', competitionId);
   if (error) throw new Error(`後片付けに失敗（大会）: ${error.message}`);
 
@@ -216,34 +197,27 @@ afterAll(async () => {
     .delete()
     .in('id', [myPlayerId, partnerPlayerId, opponentPlayerId]);
   if (playersError) throw new Error(`後片付けに失敗（選手）: ${playersError.message}`);
+});
 
-  // 他のテストが「いまの大会」に頼っているので、必ず元に戻す。
-  if (previousCurrentCompetitionId) {
-    const { error: restoreError } = await admin
+describe('findCurrentCompetitionId', () => {
+  // 「いまの大会」を切り替えるとテストどうしが競合する（PR #53 レビュー指摘3）ので、
+  // ここでは書き換えず、サンプルデータに元から入っている「いまの大会」を読むだけにする。
+  test('is_current が true の大会の id を返す', async () => {
+    const current = await admin
       .from('competitions')
-      .update({ is_current: true })
-      .eq('id', previousCurrentCompetitionId);
-    if (restoreError) throw new Error(`いまの大会を戻すのに失敗: ${restoreError.message}`);
-  }
+      .select('id')
+      .eq('is_current', true)
+      .maybeSingle();
+    expect(current.error).toBeNull();
+    expect(current.data, 'サンプルデータに「いまの大会」が 1 件必要').not.toBeNull();
 
-  // 戻し漏れをここで声に出す。「いまの大会」が 0 件のまま残ると、
-  // 手元の入場（/enter）が全部こけて、原因が分からなくなる（実際になった）。
-  const { data: current, error: currentError } = await admin
-    .from('competitions')
-    .select('id')
-    .eq('is_current', true);
-  if (currentError) throw new Error(`いまの大会の確認に失敗: ${currentError.message}`);
-  if (current.length !== 1) {
-    throw new Error(
-      `「いまの大会」が ${current.length} 件になっています。` +
-        '手元のデータベースを npm run db:reset で作り直してください。'
-    );
-  }
+    expect(await findCurrentCompetitionId()).toBe(current.data!.id);
+  });
 });
 
 describe('findMyPageData', () => {
   test('自分の名前・チーム・部と、自分が出る試合が読める', async () => {
-    const data = await findMyPageData(myPlayerId);
+    const data = await findMyPageData(myPlayerId, competitionId);
 
     expect(data).not.toBeNull();
     expect(data!.profile.name).toBe(`${tag} 自分`);
@@ -255,13 +229,13 @@ describe('findMyPageData', () => {
   });
 
   test('自分が出ていない試合は読み込まれない', async () => {
-    const data = await findMyPageData(myPlayerId);
+    const data = await findMyPageData(myPlayerId, competitionId);
 
     expect(data!.matches.map((m) => m.matchId)).not.toContain(othersMatchId);
   });
 
   test('終了した試合には、対戦相手の名前と得点が入っている', async () => {
-    const data = await findMyPageData(myPlayerId);
+    const data = await findMyPageData(myPlayerId, competitionId);
     const done = data!.matches.find((m) => m.matchId === doneMatchId)!;
 
     expect(done.status).toBe('done');
@@ -273,7 +247,7 @@ describe('findMyPageData', () => {
   });
 
   test('未実施の試合には、コート番号と順番が入っている', async () => {
-    const data = await findMyPageData(myPlayerId);
+    const data = await findMyPageData(myPlayerId, competitionId);
     const waiting = data!.matches.find((m) => m.matchId === waitingMatchId)!;
 
     expect(waiting.status).toBe('waiting');
@@ -281,7 +255,7 @@ describe('findMyPageData', () => {
     expect(waiting.orderInCourt).toBe(3);
   });
 
-  test('いまの大会に自分の参加者情報が無ければ null が返る', async () => {
+  test('指定した大会に自分の参加者情報が無ければ null が返る', async () => {
     const noSuchPlayer = await admin
       .from('players')
       .insert({ player_number: 899999, name: `${tag} 出ない人` })
@@ -290,25 +264,9 @@ describe('findMyPageData', () => {
     expect(noSuchPlayer.error).toBeNull();
 
     try {
-      expect(await findMyPageData(noSuchPlayer.data!.id)).toBeNull();
+      expect(await findMyPageData(noSuchPlayer.data!.id, competitionId)).toBeNull();
     } finally {
       await admin.from('players').delete().eq('id', noSuchPlayer.data!.id);
-    }
-  });
-});
-
-describe('いまの大会が無いとき', () => {
-  test('null が返る', async () => {
-    const clearCurrent = await admin
-      .from('competitions')
-      .update({ is_current: false })
-      .eq('is_current', true);
-    expect(clearCurrent.error).toBeNull();
-
-    try {
-      expect(await findMyPageData(myPlayerId)).toBeNull();
-    } finally {
-      await admin.from('competitions').update({ is_current: true }).eq('id', competitionId);
     }
   });
 });

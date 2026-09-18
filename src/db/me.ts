@@ -12,8 +12,9 @@ import type {
  * `/me`（マイページ）が読む DB の行。**読み取りだけ**（`createSupabaseServerClient()`）。
  *
  * 表と列がいくつも絡む（matches → matchups、match_players → participants → players）ので、
- * 1 回の入れ子クエリにはせず、素朴に何回かに分けて読んで JS 側で組み立てる
- * （`src/db/courts.ts` / `src/db/matches.ts` と同じ方針）。
+ * 1 回の入れ子クエリにはせず、素朴に何回かに分けて読んで JS 側で組み立てる。
+ * PostgREST の入れ子クエリは列名や version 依存の書き方になりやすく、事故ったときに
+ * どこで間違えたか分かりにくい。素朴に分けたほうが 1 つずつ確かめられる。
  *
  * 一覧の上限（AGENTS.md の「一覧を読むクエリには .limit() を付ける」）は、
  * 100 人・48 試合という大会の規模を踏まえた余裕を持った数にしている。
@@ -40,16 +41,36 @@ export type MyPageData = {
 type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
 
 /**
+ * 「いまの大会」の id。`is_current` が true の 1 件（無ければ null）。
+ *
+ * `page.tsx` が開いたときに 1 回だけ呼ぶ。ここで決めた大会の id を
+ * `findMyPageData` に渡す形にして、大会をどれにするかの判断を 1 か所にまとめている
+ * （PR #53 レビュー指摘3。前は `findMyPageData` の中で毎回読んでいた）。
+ */
+export async function findCurrentCompetitionId(): Promise<string | null> {
+  const supabase = createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from('competitions')
+    .select('id')
+    .eq('is_current', true)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
+/**
  * `/me` が要るものをまとめて読む。
  *
- * いまの大会が無い、またはその大会に自分の参加者情報が無ければ null を返す
- * （呼び出し側が「大会が設定されていません」にあたる日本語を出す）。
+ * どの大会かは呼び出し側（`page.tsx`）が `findCurrentCompetitionId` で決めて渡す。
+ * その大会に自分の参加者情報が無ければ null を返す
+ * （呼び出し側が「大会の情報が見つかりません」にあたる日本語を出す）。
  */
-export async function findMyPageData(playerId: string): Promise<MyPageData | null> {
+export async function findMyPageData(
+  playerId: string,
+  competitionId: string
+): Promise<MyPageData | null> {
   const supabase = createSupabaseServerClient();
-
-  const competitionId = await findCurrentCompetitionId(supabase);
-  if (!competitionId) return null;
 
   const participant = await findMyParticipant(supabase, competitionId, playerId);
   if (!participant) return null;
@@ -70,17 +91,6 @@ export async function findMyPageData(playerId: string): Promise<MyPageData | nul
     divisions,
     matches,
   };
-}
-
-async function findCurrentCompetitionId(supabase: SupabaseReadClient): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('competitions')
-    .select('id')
-    .eq('is_current', true)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.id ?? null;
 }
 
 type MyParticipant = {

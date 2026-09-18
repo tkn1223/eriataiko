@@ -1,5 +1,5 @@
 import { EntryGate, type Entrant, type EnterDivision, type EnterTeam } from '@/ui/enter/entry-gate';
-import { ErrorBlock } from '@/ui/components/error-block';
+import { ConnectionErrorBlock } from '@/ui/components/connection-error-block';
 import { isPasscodeRequired } from '@/config/env.server';
 import { TOURNAMENT_NAME } from '@/config/tournament';
 import { getSession, type Session } from '@/server/session';
@@ -91,7 +91,7 @@ export default async function EnterPage() {
   if (loadError) {
     return (
       <div className="bg-paper min-h-dvh px-4 py-8">
-        <ErrorBlock message={loadError} />
+        <ConnectionErrorBlock message={loadError} />
       </div>
     );
   }

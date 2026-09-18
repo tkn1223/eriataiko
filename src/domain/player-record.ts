@@ -4,7 +4,8 @@
  * 経緯: docs/specs/2026-09-05-me-real-data.md
  */
 
-import { matchOutcome, type GameScore } from '@/domain/match-rules';
+import { matchOutcome } from '@/domain/match-rules';
+import { playedGameScores, type GameScore } from '@/domain/scoring';
 
 /** 終了した 1 試合ぶんの記録。マイページの成績集計に渡す最小限の形。 */
 export type FinishedMatchRecord = {
@@ -23,15 +24,6 @@ export type PlayerRecord = {
   pointDiff: number;
 };
 
-/**
- * 実際にプレーされたゲームだけを残す（0 対 0 のゲームを除く）。
- * `src/domain/scoring.ts` の `playedGameScores` と同じ考え方
- * （バドミントンに 0 対 0 で終わるゲームは無い）。
- */
-function playedGames(scores: GameScore[]): GameScore[] {
-  return scores.filter(([scoreA, scoreB]) => scoreA > 0 || scoreB > 0);
-}
-
 /** 試合が終了した試合の一覧から「◯勝◯敗」「ゲーム ◯-◯」「得失点 ±◯」を計算する。 */
 export function buildPlayerRecord(matches: FinishedMatchRecord[]): PlayerRecord {
   let wins = 0;
@@ -41,7 +33,10 @@ export function buildPlayerRecord(matches: FinishedMatchRecord[]): PlayerRecord 
   let pointDiff = 0;
 
   for (const match of matches) {
-    const played = playedGames(match.gameScores);
+    // 0 対 0 のゲーム（＝まだ行われていない枠）を除く判断は、`playedGameScores`
+    // （src/domain/scoring.ts）だけに任せる。matchOutcome も内部で同じ関数を使うので、
+    // ここで自前に除く処理を書くと二重管理になる（PR #53 レビュー指摘2）。
+    const played = playedGameScores(match.gameScores);
     const outcome = matchOutcome(played, match.maxGameCount);
     const [wonByA, wonByB] = outcome.wonGames;
     const isSideA = match.mySide === 'A';
@@ -52,8 +47,8 @@ export function buildPlayerRecord(matches: FinishedMatchRecord[]): PlayerRecord 
     if (outcome.winner === match.mySide) wins += 1;
     else if (outcome.winner !== null) losses += 1;
 
-    for (const [scoreA, scoreB] of played) {
-      pointDiff += isSideA ? scoreA - scoreB : scoreB - scoreA;
+    for (const game of played) {
+      pointDiff += isSideA ? game.sideAScore - game.sideBScore : game.sideBScore - game.sideAScore;
     }
   }
 

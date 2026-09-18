@@ -93,4 +93,29 @@ myページは見た目だけ先に作り（`docs/specs/2026-08-16-me-page.md`�
 - 進行表・対戦表のデータ接続
 - ヘッダーの大会名を `competitions` から出す
 - 進行中の行は開いた時点の得点で止まる（自動更新しないため）。「開いた時点の得点です」の一言を添えるかは、自動更新の方法と一緒に決める
-- 大会が無いときのエラー画面の見出しが「Supabase に繋がりません」と `.env` の案内になる（`ErrorBlock` 共通の文言）。本文は正しいが見出しが原因とずれるので、入場画面と合わせて文言を分ける
+- **決勝で 1 ゲームだけ行って終了した試合が ● 負け・0 勝 0 敗になる食い違い。**
+  `matchOutcome`（`src/domain/match-rules.ts`）は「上限ゲーム数を消化したか」で決着を判断するため、
+  上限に満たないうちに人が「試合を終了する」を押すと、実際にはリードしていても
+  勝敗が付かない扱いになる。直し方は yosuke さんが決める（今回のレビューでは据え置き）。
+
+## PR #53 レビューで直したこと（2026-09-18）
+
+- **存在しないファイルを指すコメントを直した。** `src/db/me.ts` と `src/usecases/build-my-page-view.ts` に
+  あった、結果LIVE の取り下げられた作業にしかないファイルへの参照を消し、
+  実際の方針を自分の言葉で書く形に直した。
+- **「0 対 0 は数えない」の判断を 1 か所にまとめた。** `src/domain/player-record.ts` が自前で持っていた
+  `playedGames` を消し、`src/domain/scoring.ts` の `playedGameScores` だけを使うようにした。
+  あわせて `GameScore` 型を `src/domain/scoring.ts` の形（`{ gameNumber, sideAScore, sideBScore }`）に統一し、
+  `src/usecases/build-my-page-view.ts` の型エラーも解消した。**勝敗判定の振る舞いは変えていない**
+  （上の「決勝で 1 ゲームだけ〜」の食い違いも含め、今の結果をテストで固定した）。
+- **`src/db/me.test.ts` が「いまの大会」（`competitions.is_current`）を書き換えるのをやめた。**
+  `findMyPageData` が大会の id を引数で受け取る形にし（「いまの大会はどれか」を読む
+  `findCurrentCompetitionId` は `page.tsx` が開いたときに 1 回だけ呼ぶ）、テストは自分が作った
+  大会の id を直接渡すだけにした。これに合わせて `vitest.config.mts` の `fileParallelism: false`
+  （このテストのためだけに入れていた）を外した。
+- **`ErrorBlock` の見出し・本文・補足を呼ぶ側が決められるようにした。**
+  「Supabase に本当につながらない」（開発者向け、`.env.local` や `npm run` の案内つき）と、
+  「大会や自分の登録が見つからない」（選手向け、案内は「運営の方に確認してください。」だけ）を
+  見出しで区別する。入場画面（`src/app/enter/page.tsx`）は今までと同じ文言のまま。
+  開発者向けの見出しと補足は `src/ui/components/connection-error-block.tsx` にまとめた
+  （`'use client'` の付いたファイルから文言を書き出すと、Server Component からは値として読めないため）。

@@ -76,6 +76,7 @@
 | `docs/specs/2026-09-19-courts-real-data.md` | 新規（仕様） |
 | `src/db/courts.ts` / `.test.ts` | 新規 |
 | `src/usecases/build-courts-view.ts` / `.test.ts` | 新規 |
+| `src/usecases/load-courts-page.ts` / `.test.ts` | 新規（page.tsx の分岐。大会が無い／つながらないを DB を壊さずに確かめるため） |
 | `src/ui/courts/types.ts` | 新規（型を `sample-data.ts` から移す） |
 | `src/ui/courts/sample-data.ts` | 削除 |
 | `src/ui/courts/courts-page.tsx` / `court-live-card.tsx` と各テスト | 変更（観戦者は見るだけ） |

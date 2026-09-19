@@ -52,15 +52,16 @@ export async function findCourtsData(
 ): Promise<CourtsData> {
   const supabase = createSupabaseServerClient();
 
-  const [divisions, stages, myParticipantId] = await Promise.all([
+  // 大会 id だけで読めるものは同時に読む（体育館の細い電波で待ち時間を積み重ねないため）。
+  const [divisions, stages, teamNumberByTeamId, myParticipantId] = await Promise.all([
     findDivisions(supabase, competitionId),
     findStages(supabase, competitionId),
+    findTeamNumberByTeamId(supabase, competitionId),
     playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
   ]);
 
   const stageIds = stages.map((s) => s.id);
   const matchups = await findMatchups(supabase, stageIds);
-  const teamNumberByTeamId = await findTeamNumberByTeamId(supabase, competitionId);
 
   const matchupIds = matchups.map((m) => m.id);
   const matchRows = await findMatches(supabase, matchupIds);

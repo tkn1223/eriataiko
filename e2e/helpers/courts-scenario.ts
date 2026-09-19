@@ -42,13 +42,30 @@ const DIVISION_3_ID = 'd0000000-0000-4000-8000-000000000003'; // 3部
 // ---------------------------------------------------------------------
 
 /** seed.sql（1〜16, 99）とも長い名前のテスト（899801〜）とも db テスト（899901〜）ともぶつからない番号。 */
-const BASE_PLAYER_NUMBERS = [899951, 899952, 899953, 899954, 899955, 899956] as const;
-const [SCORE_A1, SCORE_A2, SCORE_B1, SCORE_B2, SLOT_A1, SLOT_A2] = BASE_PLAYER_NUMBERS;
+const BASE_PLAYER_NUMBERS = [
+  899951, 899952, 899953, 899954, 899955, 899956, 899957, 899958, 899959, 899960,
+] as const;
+const [
+  SCORE_A1,
+  SCORE_A2,
+  SCORE_B1,
+  SCORE_B2,
+  SLOT_A1,
+  SLOT_A2,
+  LONG_A1,
+  LONG_A2,
+  LONG_B1,
+  LONG_B2,
+] = BASE_PLAYER_NUMBERS;
 
 /** 対戦（matchups）を後片付けで見分けるための sort_order。seed（10〜60）とはぶつからない。 */
-const BASE_SORT_ORDERS = [970, 971, 972] as const;
-const [SCORE_MATCHUP_SORT_ORDER, ZERO_SCORE_MATCHUP_SORT_ORDER, SLOT_MATCHUP_SORT_ORDER] =
-  BASE_SORT_ORDERS;
+const BASE_SORT_ORDERS = [970, 971, 972, 973] as const;
+const [
+  SCORE_MATCHUP_SORT_ORDER,
+  ZERO_SCORE_MATCHUP_SORT_ORDER,
+  SLOT_MATCHUP_SORT_ORDER,
+  LONG_NAME_MATCHUP_SORT_ORDER,
+] = BASE_SORT_ORDERS;
 
 /** 「＋」「−」の一般的な動作確認に使うコート。得点の入った状態（2-0）から始まる。 */
 export const SCORE_COURT_NUMBER = 2;
@@ -58,14 +75,24 @@ export const ZERO_SCORE_COURT_NUMBER = 3;
 export const SLOT_LABEL_COURT_NUMBER = 5;
 /** 進行中も次も無い、素の「予定なし」を確認するコート（このシナリオでは何も作らない）。 */
 export const EMPTY_COURT_NUMBER = 6;
+/**
+ * 空白入りの長い名前どうしの試合（進行中と、同じ顔ぶれの次の試合）。
+ * seed の名前は「さとう」など短いものばかりで、**狭い画面で崩れるのは長い名前のとき**
+ * （myページで「とペア」が切れる崩れを実際に見つけた。e2e/helpers/long-name-player.ts）。
+ * 名簿には半角空白の名前も全角空白の名前もあるので、両方を混ぜる。
+ * 枠 3 つに 2 桁の得点を入れ、いちばん詰まった形で 375px を実測する。
+ */
+export const LONG_NAME_COURT_NUMBER = 7;
 
 export const SCORE_TEAM_A_NAMES = ['関口', '橋本'];
 export const SCORE_TEAM_B_NAMES = ['村上', '福田'];
 export const SLOT_TEAM_A_NAMES = ['中島', '前田'];
 export const SLOT_LABEL_TEXT = '予選4位';
+export const LONG_TEAM_A_NAMES = ['五十嵐　十四郎', '長谷川 一二三'];
+export const LONG_TEAM_B_NAMES = ['佐々木 太郎', '小早川　日下部'];
 
-/** 基本シナリオが作る予選リーグの試合数（seed の 3 試合 + ここで足す 2 試合）。 */
-export const BASE_LEAGUE_TOTAL_MATCHES = 5;
+/** 基本シナリオが作る予選リーグの試合数（seed の 3 試合 + ここで足す 4 試合）。 */
+export const BASE_LEAGUE_TOTAL_MATCHES = 7;
 /** 基本シナリオの間、終わっている予選リーグの試合数（seed の 1 試合のまま）。 */
 export const BASE_LEAGUE_COMPLETED_MATCHES = 1;
 
@@ -85,6 +112,10 @@ export async function createCourtsBaseScenario(): Promise<void> {
       { player_number: SCORE_B2, name: SCORE_TEAM_B_NAMES[1] },
       { player_number: SLOT_A1, name: SLOT_TEAM_A_NAMES[0] },
       { player_number: SLOT_A2, name: SLOT_TEAM_A_NAMES[1] },
+      { player_number: LONG_A1, name: LONG_TEAM_A_NAMES[0] },
+      { player_number: LONG_A2, name: LONG_TEAM_A_NAMES[1] },
+      { player_number: LONG_B1, name: LONG_TEAM_B_NAMES[0] },
+      { player_number: LONG_B2, name: LONG_TEAM_B_NAMES[1] },
     ])
     .select('id, player_number');
   if (players.error) throw new Error(`選手を作れませんでした: ${players.error.message}`);
@@ -96,9 +127,9 @@ export async function createCourtsBaseScenario(): Promise<void> {
       BASE_PLAYER_NUMBERS.map((playerNumber) => ({
         competition_id: COMPETITION_ID,
         player_id: playerIdByNumber.get(playerNumber)!,
-        team_id: ([SCORE_A1, SCORE_A2] as number[]).includes(playerNumber)
+        team_id: ([SCORE_A1, SCORE_A2, LONG_A1, LONG_A2] as number[]).includes(playerNumber)
           ? TEAM_AIHOKU_ID
-          : ([SCORE_B1, SCORE_B2] as number[]).includes(playerNumber)
+          : ([SCORE_B1, SCORE_B2, LONG_B1, LONG_B2] as number[]).includes(playerNumber)
             ? TEAM_AISEI_ID
             : TEAM_AINAN_ID,
       }))
@@ -133,6 +164,13 @@ export async function createCourtsBaseScenario(): Promise<void> {
         side_a_team_id: TEAM_AINAN_ID,
         side_b_slot_label: SLOT_LABEL_TEXT,
         sort_order: SLOT_MATCHUP_SORT_ORDER,
+      },
+      {
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: '予選 6回戦',
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: LONG_NAME_MATCHUP_SORT_ORDER,
       },
     ])
     .select('id, sort_order');
@@ -169,8 +207,26 @@ export async function createCourtsBaseScenario(): Promise<void> {
         court_number: SLOT_LABEL_COURT_NUMBER,
         order_in_court: 1,
       },
+      {
+        matchup_id: matchupIdBySortOrder.get(LONG_NAME_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_3_ID,
+        order_in_matchup: 1,
+        status: 'live',
+        max_game_count: 3,
+        court_number: LONG_NAME_COURT_NUMBER,
+        order_in_court: 1,
+      },
+      {
+        matchup_id: matchupIdBySortOrder.get(LONG_NAME_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_3_ID,
+        order_in_matchup: 2,
+        status: 'waiting',
+        max_game_count: 3,
+        court_number: LONG_NAME_COURT_NUMBER,
+        order_in_court: 2,
+      },
     ])
-    .select('id, matchup_id');
+    .select('id, matchup_id, order_in_matchup');
   if (matches.error) throw new Error(`試合を作れませんでした: ${matches.error.message}`);
   const scoreMatchId = matches.data.find(
     (m) => m.matchup_id === matchupIdBySortOrder.get(SCORE_MATCHUP_SORT_ORDER)
@@ -181,6 +237,11 @@ export async function createCourtsBaseScenario(): Promise<void> {
   const slotMatchId = matches.data.find(
     (m) => m.matchup_id === matchupIdBySortOrder.get(SLOT_MATCHUP_SORT_ORDER)
   )!.id;
+  const longNameMatchIds = matches.data
+    .filter((m) => m.matchup_id === matchupIdBySortOrder.get(LONG_NAME_MATCHUP_SORT_ORDER))
+    .sort((a, b) => a.order_in_matchup - b.order_in_matchup)
+    .map((m) => m.id);
+  const [longNameLiveMatchId] = longNameMatchIds;
 
   const matchPlayers = await admin.from('match_players').insert([
     {
@@ -234,13 +295,23 @@ export async function createCourtsBaseScenario(): Promise<void> {
     // slotMatchId は side b（相手）がまだ決まっていないので、a だけ入れる。
     { match_id: slotMatchId, side: 'a', participant_id: participantOf(SLOT_A1), order_in_pair: 1 },
     { match_id: slotMatchId, side: 'a', participant_id: participantOf(SLOT_A2), order_in_pair: 2 },
+    // 長い名前の試合は、進行中と次の両方に同じ 4 人を入れる（「次」の行の崩れも見るため）。
+    ...longNameMatchIds.flatMap((matchId) => [
+      { match_id: matchId, side: 'a', participant_id: participantOf(LONG_A1), order_in_pair: 1 },
+      { match_id: matchId, side: 'a', participant_id: participantOf(LONG_A2), order_in_pair: 2 },
+      { match_id: matchId, side: 'b', participant_id: participantOf(LONG_B1), order_in_pair: 1 },
+      { match_id: matchId, side: 'b', participant_id: participantOf(LONG_B2), order_in_pair: 2 },
+    ]),
   ]);
   if (matchPlayers.error)
     throw new Error(`出場者を作れませんでした: ${matchPlayers.error.message}`);
 
-  const gameScores = await admin
-    .from('game_scores')
-    .insert([{ match_id: scoreMatchId, game_number: 1, side_a_score: 2, side_b_score: 0 }]);
+  const gameScores = await admin.from('game_scores').insert([
+    { match_id: scoreMatchId, game_number: 1, side_a_score: 2, side_b_score: 0 },
+    { match_id: longNameLiveMatchId, game_number: 1, side_a_score: 21, side_b_score: 19 },
+    { match_id: longNameLiveMatchId, game_number: 2, side_a_score: 18, side_b_score: 21 },
+    { match_id: longNameLiveMatchId, game_number: 3, side_a_score: 20, side_b_score: 20 },
+  ]);
   if (gameScores.error) throw new Error(`得点を作れませんでした: ${gameScores.error.message}`);
 }
 

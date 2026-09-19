@@ -3,6 +3,17 @@ import { describe, expect, test, vi } from 'vitest';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
 import type { Court, CourtTeam, GameScore, LiveScore } from '@/ui/courts/types';
 
+/**
+ * ペア名は 1 人ずつ別の要素に分けて出す（名前の途中で折り返さないため。court-live-card.tsx の PairName）。
+ * getByText は要素の直下の文字しか見ないので、「佐藤・鈴木」のような全体の文字で探すための条件。
+ * 見つかるのは、その文字をまるごと持ついちばん内側の要素。
+ */
+function wholeText(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.textContent === text &&
+    !Array.from(element.children).some((child) => child.textContent === text);
+}
+
 function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
   return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
 }
@@ -63,8 +74,8 @@ describe('CourtLiveCard', () => {
   test('両ペアの名前が出る', () => {
     renderLiveCard();
 
-    expect(screen.getByText('佐藤・鈴木')).toBeInTheDocument();
-    expect(screen.getByText('高橋・伊藤')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('佐藤・鈴木'))).toBeInTheDocument();
+    expect(screen.getByText(wholeText('高橋・伊藤'))).toBeInTheDocument();
   });
 
   test('出場者がまだ決まっていない側は、空枠ラベルが名前の代わりに出る', () => {
@@ -73,7 +84,7 @@ describe('CourtLiveCard', () => {
     });
 
     expect(screen.getByText('予選4位')).toBeInTheDocument();
-    expect(screen.queryByText('高橋・伊藤')).not.toBeInTheDocument();
+    expect(screen.queryByText(wholeText('高橋・伊藤'))).not.toBeInTheDocument();
   });
 
   test('ペア名の横にチーム色が出る。チームが決まっていない側は灰色', () => {
@@ -82,7 +93,9 @@ describe('CourtLiveCard', () => {
     });
 
     // 色の四角は名前のすぐ前に置いてある（TeamNameLine）
-    expect(screen.getByText('佐藤・鈴木').previousElementSibling).toHaveClass('bg-team-1');
+    expect(screen.getByText(wholeText('佐藤・鈴木')).previousElementSibling).toHaveClass(
+      'bg-team-1'
+    );
     expect(screen.getByText('予選4位').previousElementSibling).toHaveClass('bg-gray-300');
   });
 
@@ -152,7 +165,7 @@ describe('CourtLiveCard', () => {
 
     expect(screen.getByText('次')).toBeInTheDocument();
     expect(screen.getByText('1部')).toBeInTheDocument();
-    expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
   });
 
   test('次の試合の出場者がまだ決まっていなければ、空枠ラベルが出る', () => {
@@ -165,7 +178,7 @@ describe('CourtLiveCard', () => {
       },
     });
 
-    expect(screen.getByText('山田 vs 予選2位')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('山田 vs 予選2位'))).toBeInTheDocument();
   });
 
   test('次の試合が無いコートには「次」が出ない', () => {
@@ -184,7 +197,7 @@ describe('CourtLiveCard', () => {
       },
     });
 
-    expect(screen.getByText('山田 vs 中村')).toHaveClass('text-accent');
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toHaveClass('text-accent');
   });
 
   test('進行中の試合が無いコートに「呼出待ち」が次の試合と一緒に出る', () => {
@@ -199,7 +212,7 @@ describe('CourtLiveCard', () => {
     });
 
     expect(screen.getByText('呼出待ち')).toBeInTheDocument();
-    expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
   });
 
@@ -409,7 +422,7 @@ describe('CourtLiveCard', () => {
       });
 
       expect(screen.getByText('次')).toBeInTheDocument();
-      expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+      expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     });
   });
 });

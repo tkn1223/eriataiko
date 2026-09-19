@@ -12,6 +12,9 @@ import {
   FINAL_KNOCKOUT_COMPLETED_MATCHES,
   FINAL_KNOCKOUT_TOTAL_MATCHES,
   FINAL_TEAM_A_NAMES,
+  LONG_NAME_COURT_NUMBER,
+  LONG_TEAM_A_NAMES,
+  LONG_TEAM_B_NAMES,
   SCORE_COURT_NUMBER,
   SCORE_TEAM_A_NAMES,
   SCORE_TEAM_B_NAMES,
@@ -57,6 +60,41 @@ async function chunksSplitAcrossLines(chunks: import('@playwright/test').Locator
       })
       .map((element) => element.textContent)
   );
+}
+
+/**
+ * 1 人ぶんの名前（「長谷川 一二三」など）が 2 行にまたがっていないかを実測する。
+ *
+ * ペア名は「五十嵐　十四郎・長谷川 一二三」のように 1 つの文字列で出すので、要素ごとに見る
+ * chunksSplitAcrossLines では「ペアの途中（・のあと）で折り返した」のか「1 人の名前の
+ * 途中で切れた」のかを見分けられない。前者は読めるが、後者は別の人に読めてしまう。
+ * そこで文字列の中から 1 人ぶんの範囲を取り出し、その範囲の行の上端がいくつあるかで見る。
+ */
+async function personNamesSplitAcrossLines(
+  scope: import('@playwright/test').Locator,
+  personNames: string[]
+) {
+  return scope.evaluate((root, names) => {
+    const split: string[] = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent ?? '';
+      for (const name of names) {
+        let start = text.indexOf(name);
+        while (start >= 0) {
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, start + name.length);
+          const lineTops = new Set(
+            Array.from(range.getClientRects(), (rect) => Math.round(rect.top))
+          );
+          if (lineTops.size > 1) split.push(name);
+          start = text.indexOf(name, start + name.length);
+        }
+      }
+    }
+    return split;
+  }, personNames);
 }
 
 test.beforeAll(createCourtsBaseScenario);
@@ -372,6 +410,53 @@ for (const width of [375, 390]) {
     }));
     expect(innerWidth).toBe(width);
     expect(scrollWidth).toBe(innerWidth);
+  });
+
+  test(`${width}px 幅で、空白入りの長い名前でもカードからはみ出さず、1 人の名前が途中で切れない`, async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/courts');
+
+    const card = courtCard(page, LONG_NAME_COURT_NUMBER);
+    // 進行中（両ペア）と「次」の行の両方に、同じ長い名前が出ている前提を先に確かめる
+    await expect(card.getByText(LONG_TEAM_A_NAMES.join('・'), { exact: true })).toBeVisible();
+    await expect(
+      card.getByText(`${LONG_TEAM_A_NAMES.join('・')} vs ${LONG_TEAM_B_NAMES.join('・')}`)
+    ).toBeVisible();
+
+    const stickingOut = await card.evaluate((element) => {
+      const cardRect = element.getBoundingClientRect();
+      return Array.from(element.querySelectorAll('*'))
+        .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+        .filter(
+          ({ rect }) =>
+            rect.width > 0 && (rect.right > cardRect.right + 0.5 || rect.left < cardRect.left - 0.5)
+        )
+        .map(({ text }) => text);
+    });
+    expect(stickingOut).toEqual([]);
+
+    expect(
+      await personNamesSplitAcrossLines(card, [...LONG_TEAM_A_NAMES, ...LONG_TEAM_B_NAMES])
+    ).toEqual([]);
+
+    // 2 桁の得点が枠（w-7）からはみ出さない
+    const tooNarrow = await card.locator('span.tabular').evaluateAll((boxes) =>
+      boxes
+        .map((box) => {
+          const range = document.createRange();
+          range.selectNodeContents(box);
+          return {
+            text: box.textContent,
+            textWidth: range.getBoundingClientRect().width,
+            boxWidth: box.getBoundingClientRect().width,
+          };
+        })
+        .filter((box) => box.textWidth > box.boxWidth)
+    );
+    expect(tooNarrow).toEqual([]);
   });
 
   test(`${width}px 幅で、ペア名が途中で切れない`, async ({ page }) => {

@@ -217,6 +217,66 @@ describe('useScoreSync', () => {
     expect(result.current.statusByMatchId['m']?.rejectedMessage).toBeNull();
   });
 
+  test('別の試合・別のゲームは、それぞれ独立に送る（片方の送信中でももう片方は待たない）', async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(() => new Promise(() => {}));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => {
+      result.current.sync({ matchId: 'm1', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      result.current.sync({ matchId: 'm1', gameNumber: 2, sideAScore: 1, sideBScore: 0 });
+      result.current.sync({ matchId: 'm2', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  test('送り直しを待っている間に押しても、保存できるまで「送り直しています」は消えない', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockImplementationOnce(() => new Promise(() => {}));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => {
+      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 2, sideBScore: 0 });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.current.statusByMatchId['m']?.retryingMessage).toBe(
+      '保存できていません・送り直しています'
+    );
+  });
+
+  test('画面を離れたら、送り直しをやめる（返事待ちの送信が戻ってきても次を送らない）', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch);
+    let rejectFirst!: (error: Error) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectFirst = reject;
+        })
+    );
+    const { result, unmount } = renderHook(() => useScoreSync());
+
+    act(() => {
+      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+    });
+    unmount();
+    rejectFirst(new Error('network down'));
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   describe('beforeunload（送れていない点があるまま閉じようとしたときの確認）', () => {
     function dispatchBeforeUnload(): boolean {
       const event = new Event('beforeunload', { cancelable: true });

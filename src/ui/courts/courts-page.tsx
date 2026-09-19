@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import type { GameScore } from '@/domain/scoring';
+import { useRef, useState } from 'react';
+import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
 import { activeMatchId, type Court, type LiveScore } from '@/ui/courts/types';
@@ -27,7 +27,14 @@ const PLAYER_UNSAVED_NOTICE = '試合の終了はまだ記録されません（�
 /** 進行中のコートぶんだけ、渡された値を得点の初期値にする。 */
 function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
   const entries = courts.flatMap((court) =>
-    court.live ? [[court.courtNumber, { scores: court.live.scores, finished: false }] as const] : []
+    court.live
+      ? [
+          [
+            court.courtNumber,
+            { scores: court.live.scores, finished: false, started: true },
+          ] as const,
+        ]
+      : []
   );
 
   return Object.fromEntries(entries);
@@ -57,23 +64,29 @@ export function CourtsPage({
   );
   const { sync, statusByMatchId } = useScoreSync();
 
-  /**
-   * 1 コート・1 ゲームの枠の得点を 1 点だけ動かす。
-   *
-   * 押した時点の画面の状態（`liveScores`）から次の値を先に計算し、その値をそのまま
-   * `setLiveScores` にも `sync`（保存の入口）にも渡す。
-   *
-   * **`setState` に渡す関数の中で計算しない。** React は関数の中身を「あとで」呼ぶことがあり
-   * （呼んだ直後に読めるとは限らない）、そこで計算した値を外に持ち出して `sync` に渡そうとすると、
-   * 実際にブラウザで動かしたときにだけ送信が飛ばない不具合になった（e2e で見つかった）。
-   * ＋を連打しても数えそこねないのは、タップ 1 回ごとに画面が再描画されてから次のタップが来る
-   * （＝このたびに `liveScores` が最新になっている）ことで足りている。
-   */
+  // 押した直後の得点を、描画を待たずに読める形でも持つ（画面に出すのは上の state）。
+  //
+  // 描画のたびに作り直される `liveScores` から次の値を計算すると、描き直される前に
+  // 2 回目のタップが届いたとき、2 回とも同じ古い値から計算して 1 点落ちる
+  // （e2e/courts.spec.ts の tapTenTimesAtOnce で 10 回押して 1 しか増えないのを確かめた）。
+  // `setLiveScores(prev => ...)` の中で計算すれば数えそこねないが、そこで計算した値を
+  // 外に持ち出して保存の入口に送ると、関数が呼ばれるのが「あとで」になることがあり送信が飛んだ。
+  // そこで、押した時点でここから計算し、同じ値を state と保存の両方に渡す。
+  // ここを書き換えるのは下の 2 つの関数（押したときに呼ばれる）だけ。
+  const latestScoresRef = useRef(liveScores);
+
+  function commitLiveScores(next: Record<number, LiveScore>) {
+    latestScoresRef.current = next;
+    setLiveScores(next);
+  }
+
+  /** 1 コート・1 ゲームの枠の得点を 1 点だけ動かし、その点数を保存の入口に送る。 */
   function changeScore(courtNumber: number, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
     const court = courts.find((c) => c.courtNumber === courtNumber);
     const matchId = court ? activeMatchId(court, canInput) : null;
 
-    const current = liveScores[courtNumber] ?? { scores: [], finished: false };
+    const latest = latestScoresRef.current;
+    const current = latest[courtNumber] ?? { scores: [], finished: false, started: false };
     const index = current.scores.findIndex((score) => score.gameNumber === gameNumber);
     const existing = current.scores[index] ?? { gameNumber, sideAScore: 0, sideBScore: 0 };
     // 押し間違いでマイナスの点にならないよう 0 で止める
@@ -85,8 +98,11 @@ export function CourtsPage({
       index >= 0
         ? current.scores.map((score, i) => (i === index ? updated : score))
         : [...current.scores, updated];
+    // 入口は 1 点入った時点で試合を LIVE にし、0 対 0 に戻しても呼出待ちには戻さない
+    // （src/usecases/save-score.ts）。画面もそれに合わせ、一度入ったら LIVE のままにする。
+    const started = current.started || hasAnyPoint(scores);
 
-    setLiveScores((prev) => ({ ...prev, [courtNumber]: { ...current, scores } }));
+    commitLiveScores({ ...latest, [courtNumber]: { ...current, scores, started } });
 
     if (matchId) {
       sync({
@@ -100,12 +116,11 @@ export function CourtsPage({
 
   /** 確認画面の「OK」で呼ばれる。そのコートを終了状態にする（保存は 1-d の宿題）。 */
   function finishMatch(courtNumber: number) {
-    setLiveScores((prev) => {
-      const current = prev[courtNumber];
-      if (!current) return prev;
+    const latest = latestScoresRef.current;
+    const current = latest[courtNumber];
+    if (!current) return;
 
-      return { ...prev, [courtNumber]: { ...current, finished: true } };
-    });
+    commitLiveScores({ ...latest, [courtNumber]: { ...current, finished: true } });
   }
 
   return (

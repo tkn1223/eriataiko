@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CourtsPage } from '@/ui/courts/courts-page';
 import type { Court, CourtTeam } from '@/ui/courts/types';
@@ -379,6 +379,29 @@ describe('CourtsPage', () => {
       });
     });
 
+    test('描き直される前に「＋」を10回押しても1点も落とさず、最後に送る点数も10増えた値になる', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-4');
+      const plus = within(card).getByRole('button', {
+        name: '加藤・斎藤の第1ゲームの得点を1増やす',
+      });
+
+      // 1 つの act の中で押すと、10 回押し終わるまで描き直されない（いちばん厳しい連打）
+      act(() => {
+        for (let i = 0; i < 10; i += 1) fireEvent.click(plus);
+      });
+
+      expect(within(card).getByText('15', { exact: true })).toBeInTheDocument();
+      await waitFor(() => {
+        const calls = vi.mocked(fetch).mock.calls;
+        expect(JSON.parse(calls[calls.length - 1][1]?.body as string)).toEqual({
+          gameNumber: 1,
+          sideAScore: 8,
+          sideBScore: 15,
+        });
+      });
+    });
+
     test('保存に失敗すると「保存できていません」の案内が出る', async () => {
       vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
       renderPage();
@@ -417,6 +440,21 @@ describe('CourtsPage', () => {
       expect(within(card).getByText('LIVE')).toBeInTheDocument();
       expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
       expect(within(card).getByText('1', { exact: true })).toBeInTheDocument();
+    });
+
+    test('1点入れてから0対0に戻しても、LIVEの見た目のまま（入口の側も呼出待ちに戻さない）', () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1減らす' })
+      );
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
     });
 
     test('最初の1点も保存の入口に送られる', async () => {

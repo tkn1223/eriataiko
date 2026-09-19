@@ -496,7 +496,7 @@ const [WAITING_A1, WAITING_A2, WAITING_B1, WAITING_B2, REJECT_A1, REJECT_A2, REJ
 const SAVE_SORT_ORDERS = [990, 991] as const;
 const [WAITING_ONLY_MATCHUP_SORT_ORDER, REJECT_MATCHUP_SORT_ORDER] = SAVE_SORT_ORDERS;
 
-/** createSaveScenario が作った、REJECT_COURT_NUMBER の試合の id。setRejectMatchStatus が使う。 */
+/** createSaveScenario が作った、REJECT_COURT_NUMBER の試合の id。markRejectMatchDone が使う。 */
 let rejectMatchId: string | null = null;
 
 export async function createSaveScenario(): Promise<void> {
@@ -662,18 +662,15 @@ export async function deleteSaveScenario(): Promise<void> {
 }
 
 /**
- * REJECT_COURT_NUMBER の試合の状態を書き換える。「他の人が先に試合を終了させた」を再現し、
+ * REJECT_COURT_NUMBER の試合を終了済みにする。「他の人が先に試合を終了させた」を再現し、
  * 入口が 409 を返す（`docs/specs/2026-08-29-score-input-backend.md`）ことを確かめるのに使う。
+ * 元に戻す関数は無い。createSaveScenario がテストごとに作り直すため。
  */
-export async function setRejectMatchStatus(status: 'live' | 'done'): Promise<void> {
+export async function markRejectMatchDone(): Promise<void> {
   if (!rejectMatchId) throw new Error('createSaveScenario を先に呼んでください');
   const { error } = await admin
     .from('matches')
-    .update(
-      status === 'done'
-        ? { status, finished_at: new Date().toISOString() }
-        : { status, finished_at: null }
-    )
+    .update({ status: 'done', finished_at: new Date().toISOString() })
     .eq('id', rejectMatchId);
   if (error) throw new Error(`試合の状態を書き換えられませんでした: ${error.message}`);
 }
@@ -704,16 +701,20 @@ export async function findMatchStatus(matchId: string): Promise<string | null> {
   return data?.status ?? null;
 }
 
-/** court_number からその試合の id を引く（呼出待ちの試合が LIVE に昇格したあとの id を取るのに使う）。 */
+/**
+ * court_number からその試合の id を引く（呼出待ちの試合が LIVE に昇格したあとの id を取るのに使う）。
+ * 同じコートに試合が 2 つ以上あると、どちらを見ているか分からないまま通ってしまうので、
+ * 1 つに決まらなければ止める。
+ */
 export async function findMatchIdByCourtNumber(courtNumber: number): Promise<string> {
   const { data, error } = await admin
     .from('matches')
     .select('id')
     .eq('court_number', courtNumber)
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) {
-    throw new Error(`コート${courtNumber}の試合が見つかりませんでした: ${error?.message}`);
+    .limit(2);
+  if (error) throw new Error(`コート${courtNumber}の試合を読めませんでした: ${error.message}`);
+  if (data.length !== 1) {
+    throw new Error(`コート${courtNumber}の試合が 1 つに決まりません（${data.length} 件）`);
   }
-  return data.id;
+  return data[0].id;
 }

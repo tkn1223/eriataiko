@@ -61,6 +61,12 @@ export type LiveScore = {
   scores: GameScore[];
   /** 試合が終わったか。終わったコートは得点を押せなくする。 */
   finished: boolean;
+  /**
+   * 1 点でも入ったことがあるか。呼出待ちから入力を始めたコートを、0 対 0 に戻しても
+   * LIVE の見た目のままにするのに使う（入口の側も一度 LIVE にした試合は呼出待ちに戻さない）。
+   * 進行中として読み込んだコートは最初から true。
+   */
+  started: boolean;
 };
 
 export type NextMatch = {

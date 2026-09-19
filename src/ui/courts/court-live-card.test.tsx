@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import { hasAnyPoint } from '@/domain/scoring';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
 import type { Court, CourtTeam, GameScore, LiveScore, ScoreSyncStatus } from '@/ui/courts/types';
 
@@ -34,6 +35,7 @@ function renderLiveCard({
   next = null,
   scores = live?.scores ?? [],
   finished = false,
+  started = live !== null || hasAnyPoint(scores),
   canInput = true,
   syncStatus = null,
   onIncrement = () => {},
@@ -44,6 +46,7 @@ function renderLiveCard({
   next?: Court['next'];
   scores?: GameScore[];
   finished?: boolean;
+  started?: boolean;
   canInput?: boolean;
   syncStatus?: ScoreSyncStatus | null;
   onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
@@ -54,7 +57,7 @@ function renderLiveCard({
   // 呼出待ち（live が無い）でも、選手が次の試合に点を入れ始めていれば
   // liveScore を持つ（courts-page.tsx が実際に作る状態と合わせる）。
   const hasLiveScore = live !== null || (canInput && next !== null);
-  const liveScore: LiveScore | null = hasLiveScore ? { scores, finished } : null;
+  const liveScore: LiveScore | null = hasLiveScore ? { scores, finished, started } : null;
   return render(
     <CourtLiveCard
       court={court}
@@ -252,6 +255,13 @@ describe('CourtLiveCard', () => {
 
     test('最初の1点が入るとLIVEの見た目に切り替わる', () => {
       renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] });
+
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+      expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('一度点が入ったあと0対0に戻しても、LIVEの見た目のまま（入口の側も呼出待ちに戻さない）', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }], started: true });
 
       expect(screen.getByText('LIVE')).toBeInTheDocument();
       expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();

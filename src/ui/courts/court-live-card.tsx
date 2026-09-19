@@ -147,10 +147,15 @@ export function CourtLiveCard({
 
   // 得点が渡ってこなかったときも試合そのものは出す。
   // ここで「予定なし」に化けると、進行中のコートが黙って消えてしまう。
-  const { scores, finished } = liveScore ?? { scores: live.scores, finished: false };
+  const { scores, finished, started } = liveScore ?? {
+    scores: live.scores,
+    finished: false,
+    started: court.live !== null,
+  };
   // 呼出待ちから昇格した試合は、まだ 1 点も入っていない間は「呼出待ち」の見た目のまま。
-  // 最初の 1 点で LIVE に切り替わる（同じ判定を入口側も使う。src/usecases/save-score.ts）。
-  const isPromotedWaiting = !court.live && !hasAnyPoint(scores);
+  // 最初の 1 点で LIVE に切り替わり、そのあと 0 対 0 に戻しても LIVE のまま
+  // （入口側も同じ。src/usecases/save-score.ts）。
+  const isPromotedWaiting = !court.live && !started;
 
   const teamAName = teamDisplayName(live.teamA);
   const teamBName = teamDisplayName(live.teamB);

@@ -25,7 +25,7 @@ import {
   SCORE_COURT_NUMBER,
   SCORE_TEAM_A_NAMES,
   SCORE_TEAM_B_NAMES,
-  setRejectMatchStatus,
+  markRejectMatchDone,
   SLOT_LABEL_COURT_NUMBER,
   SLOT_LABEL_TEXT,
   SLOT_TEAM_A_NAMES,
@@ -106,6 +106,19 @@ async function personNamesSplitAcrossLines(
     }
     return split;
   }, personNames);
+}
+
+/**
+ * 「＋」を 10 回、**間に描画を挟まずに**押す。
+ *
+ * Playwright の tap / click を 1 回ずつ await すると、押すたびに画面が描き直されてから
+ * 次が押されるので、「描き直される前に 2 回目が来る」取りこぼしを見逃す（実際に見逃していた）。
+ * ブラウザの中で 10 回続けて click を送り、いちばん厳しい連打を再現する。
+ */
+async function tapTenTimesAtOnce(button: import('@playwright/test').Locator) {
+  await button.evaluate((element: HTMLElement) => {
+    for (let i = 0; i < 10; i += 1) element.click();
+  });
 }
 
 test.beforeAll(createCourtsBaseScenario);
@@ -266,6 +279,11 @@ test.describe('観戦者', () => {
 });
 
 test.describe('選手として入った人の操作', () => {
+  // ＋−を押すと保存されるので（1-b）、テストごとに作り直して前のテストの点を持ち越さない。
+  // 最後にもう一度作り直し、このあとのテストには作ったままの点を見せる。
+  test.beforeEach(createCourtsBaseScenario);
+  test.afterAll(createCourtsBaseScenario);
+
   test('「＋」を押すと得点が1増え、「−」で1減る。0より下にはならない', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
@@ -352,12 +370,7 @@ test.describe('選手として入った人の操作', () => {
     const plus = card.getByRole('button', {
       name: `${SCORE_TEAM_B_NAMES.join('・')}の第1ゲームの得点を1増やす`,
     });
-    await plus.scrollIntoViewIfNeeded();
-
-    const box = (await plus.boundingBox())!;
-    for (let i = 0; i < 10; i += 1) {
-      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-    }
+    await tapTenTimesAtOnce(plus);
 
     // 村上・福田（B）は0点から始まる
     await expect(card.getByText('10', { exact: true })).toBeVisible();
@@ -499,7 +512,8 @@ for (const width of [375, 390]) {
  * 「決勝トーナメント」に変わってしまうため。
  */
 test.describe('決勝トーナメントが始まったとき', () => {
-  test.beforeAll(createFinalScenario);
+  // ＋を押すと保存されるので（1-b）、テストごとに作り直して前のテストの点を持ち越さない
+  test.beforeEach(createFinalScenario);
   test.afterAll(deleteFinalScenario);
 
   test('ラベルと試合消化数が「決勝トーナメント」に切り替わる', async ({ page }) => {
@@ -656,14 +670,15 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
 /**
  * ＋−を押したら保存する（1-b）。
- * 専用の試合（`createSaveScenario`）を使う。基本シナリオとは別に beforeAll/afterAll を持つ
- * （決勝シナリオと同じやり方。e2e/helpers/courts-scenario.ts）。
+ * 専用の試合（`createSaveScenario`）を使う。基本シナリオとは別に、テストごとに作り直して
+ * 最後に消す（決勝シナリオと同じやり方。e2e/helpers/courts-scenario.ts）。
+ * 作り直すので、どのテストも前のテストが押した点や試合の状態を当てにしない。
  *
  * 送信そのものを失敗させる確認（`page.route`）や、DB の値を直接読む確認は、
  * この describe の中だけで行う。
  */
 test.describe('保存（1-b）', () => {
-  test.beforeAll(createSaveScenario);
+  test.beforeEach(createSaveScenario);
   test.afterAll(deleteSaveScenario);
 
   test('呼出待ちのコートに次の試合の枠が出て、最初の1点でLIVEになり、保存される。開き直してもLIVEのまま', async ({
@@ -703,7 +718,6 @@ test.describe('保存（1-b）', () => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
-    // 前のテストで A 側だけ動かしているので、ここでは触っていない B 側を使う
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamBName = WAITING_ONLY_TEAM_B_NAMES.join('・');
     const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
@@ -716,16 +730,12 @@ test.describe('保存（1-b）', () => {
     await minus.click();
     await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
 
-    // － を押しても 0 より下にはならない
+    // － を押しても 0 より下にはならない（A 側も 0 なので、B 側の数字を「－」のとなりで見る）
     await minus.click();
-    await expect(card.getByText('0', { exact: true })).toBeVisible();
+    await expect(minus.locator('xpath=following-sibling::span[1]')).toHaveText('0');
     await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
 
-    await plus.scrollIntoViewIfNeeded();
-    const box = (await plus.boundingBox())!;
-    for (let i = 0; i < 10; i += 1) {
-      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-    }
+    await tapTenTimesAtOnce(plus);
 
     await expect(card.getByText('10', { exact: true })).toBeVisible();
     await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(10);
@@ -744,8 +754,8 @@ test.describe('保存（1-b）', () => {
     await page.route('**/api/matches/*/scores', (route) => route.abort());
     await plus.click();
 
-    // 数字は押した分だけ残る（このテストの直前で 1 のはずなので 2 になる）
-    await expect(card.getByText('2', { exact: true })).toBeVisible();
+    // 数字は押した分だけ残る（0 から 1 になる）
+    await expect(card.getByText('1', { exact: true })).toBeVisible();
     await expect(card.getByRole('status')).toContainText('保存できていません');
 
     await page.unroute('**/api/matches/*/scores');
@@ -756,7 +766,7 @@ test.describe('保存（1-b）', () => {
     const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
     await expect
       .poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideAScore), { timeout: 15_000 })
-      .toBe(2);
+      .toBe(1);
   });
 
   test('入口に断られたとき（終了済み）は、その理由がコートに出る', async ({ page }) => {
@@ -766,12 +776,10 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, REJECT_COURT_NUMBER);
     const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
-    await setRejectMatchStatus('done');
+    await markRejectMatchDone();
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
 
     await expect(card.getByRole('status')).toContainText('終了した試合です');
-
-    await setRejectMatchStatus('live');
   });
 
   test('送れていない点があるまま画面を閉じようとすると確認が出る', async ({ page }) => {
@@ -781,7 +789,7 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, REJECT_COURT_NUMBER);
     const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
-    await setRejectMatchStatus('done');
+    await markRejectMatchDone();
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
     await expect(card.getByRole('status')).toBeVisible();
 
@@ -791,8 +799,6 @@ test.describe('保存（1-b）', () => {
       return event.defaultPrevented;
     });
     expect(defaultPrevented).toBe(true);
-
-    await setRejectMatchStatus('live');
   });
 
   test('送れていない点が無ければ、画面を閉じようとしても確認は出ない', async ({ page }) => {
@@ -818,7 +824,7 @@ test.describe('保存（1-b）', () => {
       const card = courtCard(page, REJECT_COURT_NUMBER);
       const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
-      await setRejectMatchStatus('done');
+      await markRejectMatchDone();
       await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
       await expect(card.getByRole('status')).toBeVisible();
 
@@ -827,8 +833,6 @@ test.describe('保存（1-b）', () => {
         innerWidth: window.innerWidth,
       }));
       expect(scrollWidth).toBe(innerWidth);
-
-      await setRejectMatchStatus('live');
     });
   }
 });

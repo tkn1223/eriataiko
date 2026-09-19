@@ -4,15 +4,23 @@ import { useState } from 'react';
 import type { GameScore } from '@/domain/scoring';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import type { Court, LiveScore } from '@/ui/courts/sample-data';
+import type { Court, LiveScore } from '@/ui/courts/types';
 
 type Props = {
   courts: Court[];
+  /** いまの段のラベル（例: '予選リーグ' → 決勝が始まると '決勝トーナメント'）。 */
+  stageLabel: string;
   completedMatches: number;
   totalMatches: number;
+  /**
+   * 得点を押せる人（選手として入った人）かどうか。false（観戦者・未入場）のときは
+   * どのコートも「−」「＋」「試合を終了する」を出さず、得点は数字で見せるだけ
+   * （docs/specs/2026-09-19-courts-real-data.md の「決めたこと」3）。
+   */
+  canInput: boolean;
 };
 
-/** 進行中のコートぶんだけ、見本データの値を得点の初期値にする。 */
+/** 進行中のコートぶんだけ、渡された値を得点の初期値にする。 */
 function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
   const entries = courts.flatMap((court) =>
     court.live ? [[court.courtNumber, { scores: court.live.scores, finished: false }] as const] : []
@@ -25,13 +33,19 @@ function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
  * 結果LIVE画面（トップ）。
  *
  * 表示だけを担当する。データの出どころ（DB かダミーか）は知らない。
- * 本物のデータをつなぐときは、渡す props を差し替えるだけでよい。
+ * 渡す props は `page.tsx` が DB から組み立てる（`src/usecases/build-courts-view.ts`）。
  *
  * 得点は複数のコートで同時に動く。進行表（1 件だけ選んで開く作り）と違い、
- * コート番号をキーにした状態をここで持つ。まだ保存する表が無いので、
+ * コート番号をキーにした状態をここで持つ。まだ保存する入口につないでいないので、
  * 画面を閉じる（更新する）と消える（帯で明示する）。
  */
-export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
+export function CourtsPage({
+  courts,
+  stageLabel,
+  completedMatches,
+  totalMatches,
+  canInput,
+}: Props) {
   const [liveScores, setLiveScores] = useState<Record<number, LiveScore>>(() =>
     initialLiveScores(courts)
   );
@@ -80,7 +94,7 @@ export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
 
       <div className="mb-[14px] flex flex-wrap items-center gap-2">
         <span className="bg-ink inline-flex items-center rounded-full px-3 py-1 text-[13px] font-extrabold text-white">
-          予選リーグ
+          {stageLabel}
         </span>
         <span className="tabular text-[13px] font-bold text-gray-400">
           {completedMatches}/{totalMatches} 試合消化
@@ -99,6 +113,7 @@ export function CourtsPage({ courts, completedMatches, totalMatches }: Props) {
             key={court.courtNumber}
             court={court}
             liveScore={liveScores[court.courtNumber] ?? null}
+            canInput={canInput}
             onIncrement={(gameNumber, side) => changeScore(court.courtNumber, gameNumber, side, 1)}
             onDecrement={(gameNumber, side) => changeScore(court.courtNumber, gameNumber, side, -1)}
             onFinishMatch={() => finishMatch(court.courtNumber)}

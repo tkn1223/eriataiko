@@ -5,9 +5,14 @@ import {
   BASE_LEAGUE_TOTAL_MATCHES,
   createCourtsBaseScenario,
   createFinalScenario,
+  createSaveScenario,
   deleteCourtsBaseScenario,
   deleteFinalScenario,
+  deleteSaveScenario,
   EMPTY_COURT_NUMBER,
+  findMatchIdByCourtNumber,
+  findMatchStatus,
+  findSavedGameScore,
   FINAL_COURT_NUMBER,
   FINAL_KNOCKOUT_COMPLETED_MATCHES,
   FINAL_KNOCKOUT_TOTAL_MATCHES,
@@ -15,12 +20,18 @@ import {
   LONG_NAME_COURT_NUMBER,
   LONG_TEAM_A_NAMES,
   LONG_TEAM_B_NAMES,
+  REJECT_COURT_NUMBER,
+  REJECT_TEAM_A_NAMES,
   SCORE_COURT_NUMBER,
   SCORE_TEAM_A_NAMES,
   SCORE_TEAM_B_NAMES,
+  setRejectMatchStatus,
   SLOT_LABEL_COURT_NUMBER,
   SLOT_LABEL_TEXT,
   SLOT_TEAM_A_NAMES,
+  WAITING_ONLY_COURT_NUMBER,
+  WAITING_ONLY_TEAM_A_NAMES,
+  WAITING_ONLY_TEAM_B_NAMES,
   ZERO_SCORE_COURT_NUMBER,
 } from './helpers/courts-scenario';
 
@@ -190,13 +201,21 @@ test('「予選リーグ」のラベルと、いまの段の試合消化数が�
   ).toBeVisible();
 });
 
-test('「まだ保存されません」の帯が出る', async ({ page }) => {
+test('選手には「試合の終了はまだ記録されません」の帯が出る', async ({ page }) => {
+  await enterAsPlayer(page, '愛知南', 'たろう');
+  await page.goto('/courts');
+
+  await expect(page.getByText('試合の終了はまだ記録されません（点は保存されます）')).toBeVisible();
+});
+
+test('観戦者には帯が出ない', async ({ page }) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
+  await expect(page.getByText('試合の終了はまだ記録されません（点は保存されます）')).toHaveCount(0);
   await expect(
     page.getByText('入れた点はまだ保存されません（画面を閉じると消えます）')
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test.describe('あなたの試合', () => {
@@ -504,6 +523,22 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await expect(card.getByText('第3ゲーム')).toBeVisible();
   });
 
+  test('決勝の第2ゲームに入れた点は、第2ゲームとして保存される（第1ゲームは変わらない）', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, FINAL_COURT_NUMBER);
+    const teamAName = FINAL_TEAM_A_NAMES.join('・');
+    await card.getByRole('button', { name: `${teamAName}の第2ゲームの得点を1増やす` }).click();
+
+    const matchId = await findMatchIdByCourtNumber(FINAL_COURT_NUMBER);
+    await expect.poll(async () => (await findSavedGameScore(matchId, 2))?.sideAScore).toBe(16);
+    // 第1ゲーム（21-19）は触っていないので変わらない
+    expect(await findSavedGameScore(matchId, 1)).toEqual({ sideAScore: 21, sideBScore: 19 });
+  });
+
   test('同点（勝ちゲーム数が同数）のコートで「試合を終了する」を押すと「同点では終了できません」と出る', async ({
     page,
   }) => {
@@ -615,6 +650,185 @@ test.describe('決勝トーナメントが始まったとき', () => {
         innerWidth: window.innerWidth,
       }));
       expect(scrollWidth).toBe(innerWidth);
+    });
+  }
+});
+
+/**
+ * ＋−を押したら保存する（1-b）。
+ * 専用の試合（`createSaveScenario`）を使う。基本シナリオとは別に beforeAll/afterAll を持つ
+ * （決勝シナリオと同じやり方。e2e/helpers/courts-scenario.ts）。
+ *
+ * 送信そのものを失敗させる確認（`page.route`）や、DB の値を直接読む確認は、
+ * この describe の中だけで行う。
+ */
+test.describe('保存（1-b）', () => {
+  test.beforeAll(createSaveScenario);
+  test.afterAll(deleteSaveScenario);
+
+  test('呼出待ちのコートに次の試合の枠が出て、最初の1点でLIVEになり、保存される。開き直してもLIVEのまま', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(card.getByText('第1ゲーム')).toBeVisible();
+
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+
+    await expect(card.getByText('LIVE')).toBeVisible();
+    await expect(card.getByText('呼出待ち')).toHaveCount(0);
+
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    await expect.poll(() => findMatchStatus(matchId)).toBe('live');
+    await expect
+      .poll(() => findSavedGameScore(matchId, 1))
+      .toEqual({
+        sideAScore: 1,
+        sideBScore: 0,
+      });
+
+    await page.reload();
+    const reloadedCard = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    await expect(reloadedCard.getByText('LIVE')).toBeVisible();
+    await expect(reloadedCard.getByText('1', { exact: true })).toBeVisible();
+  });
+
+  test('－を押しても保存され、0より下にはならない。＋を10回連打すると保存される点数も10増える', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    // 前のテストで A 側だけ動かしているので、ここでは触っていない B 側を使う
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamBName = WAITING_ONLY_TEAM_B_NAMES.join('・');
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    const plus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1増やす` });
+    const minus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1減らす` });
+
+    // ＋で 1、－で 0 に戻る。どちらも保存される
+    await plus.click();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(1);
+    await minus.click();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
+
+    // － を押しても 0 より下にはならない
+    await minus.click();
+    await expect(card.getByText('0', { exact: true })).toBeVisible();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
+
+    await plus.scrollIntoViewIfNeeded();
+    const box = (await plus.boundingBox())!;
+    for (let i = 0; i < 10; i += 1) {
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    }
+
+    await expect(card.getByText('10', { exact: true })).toBeVisible();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(10);
+  });
+
+  test('保存に失敗すると案内が出て、つながり直すと自動で送り直されてDBに最新値が入る', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+    const plus = card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` });
+
+    await page.route('**/api/matches/*/scores', (route) => route.abort());
+    await plus.click();
+
+    // 数字は押した分だけ残る（このテストの直前で 1 のはずなので 2 になる）
+    await expect(card.getByText('2', { exact: true })).toBeVisible();
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+
+    await page.unroute('**/api/matches/*/scores');
+
+    // 自動で送り直され、案内が消える（最大 10 秒間隔なので余裕を見て待つ）
+    await expect(card.getByRole('status')).toHaveCount(0, { timeout: 15_000 });
+
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    await expect
+      .poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideAScore), { timeout: 15_000 })
+      .toBe(2);
+  });
+
+  test('入口に断られたとき（終了済み）は、その理由がコートに出る', async ({ page }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, REJECT_COURT_NUMBER);
+    const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+    await setRejectMatchStatus('done');
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+
+    await expect(card.getByRole('status')).toContainText('終了した試合です');
+
+    await setRejectMatchStatus('live');
+  });
+
+  test('送れていない点があるまま画面を閉じようとすると確認が出る', async ({ page }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, REJECT_COURT_NUMBER);
+    const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+    await setRejectMatchStatus('done');
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+    await expect(card.getByRole('status')).toBeVisible();
+
+    const defaultPrevented = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(defaultPrevented).toBe(true);
+
+    await setRejectMatchStatus('live');
+  });
+
+  test('送れていない点が無ければ、画面を閉じようとしても確認は出ない', async ({ page }) => {
+    await enterAsViewer(page);
+    await page.goto('/courts');
+
+    const defaultPrevented = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(defaultPrevented).toBe(false);
+  });
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、保存できていない案内が出た状態でも横にはみ出さない`, async ({
+      page,
+    }) => {
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/courts');
+
+      const card = courtCard(page, REJECT_COURT_NUMBER);
+      const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+      await setRejectMatchStatus('done');
+      await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+      await expect(card.getByRole('status')).toBeVisible();
+
+      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(scrollWidth).toBe(innerWidth);
+
+      await setRejectMatchStatus('live');
     });
   }
 });

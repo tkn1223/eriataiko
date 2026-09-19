@@ -91,6 +91,7 @@ function toLiveMatch(
   classLabelById: Map<string, ClassLabel>
 ): LiveMatch {
   return {
+    matchId: match.matchId,
     classLabel: classLabelOf(match, classLabelById),
     roundLabel: match.roundName,
     teamA: toCourtTeam(match.sideA),
@@ -107,10 +108,13 @@ function toNextMatch(
   classLabelById: Map<string, ClassLabel>
 ): NextMatch {
   return {
+    matchId: match.matchId,
     classLabel: classLabelOf(match, classLabelById),
+    roundLabel: match.roundName,
     teamA: toCourtTeam(match.sideA),
     teamB: toCourtTeam(match.sideB),
     isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
+    maxGameCount: match.maxGameCount,
   };
 }
 

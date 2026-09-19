@@ -94,6 +94,21 @@ describe('buildCourtsView', () => {
     expect(court1.live!.teamB.players).toEqual(['高橋', '伊藤']);
     expect(court1.live!.scores).toEqual([{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }]);
     expect(court1.live!.maxGameCount).toBe(1);
+    expect(court1.live!.matchId).toBe('match-1');
+  });
+
+  test('次の試合には、あとで保存に使う matchId・回戦・枠の数も出る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({ matchId: 'm-next', status: 'waiting', maxGameCount: 3, roundName: '準決勝' }),
+        ],
+      })
+    );
+
+    expect(view.courts[0].next!.matchId).toBe('m-next');
+    expect(view.courts[0].next!.roundLabel).toBe('準決勝');
+    expect(view.courts[0].next!.maxGameCount).toBe(3);
   });
 
   test('チーム番号は1〜4に折り返される', () => {

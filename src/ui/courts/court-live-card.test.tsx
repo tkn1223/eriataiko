@@ -76,6 +76,16 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText('高橋・伊藤')).not.toBeInTheDocument();
   });
 
+  test('ペア名の横にチーム色が出る。チームが決まっていない側は灰色', () => {
+    renderLiveCard({
+      live: { ...baseLive, teamB: team({ teamNumber: null, players: [], slotLabel: '予選4位' }) },
+    });
+
+    // 色の四角は名前のすぐ前に置いてある（TeamNameLine）
+    expect(screen.getByText('佐藤・鈴木').previousElementSibling).toHaveClass('bg-team-1');
+    expect(screen.getByText('予選4位').previousElementSibling).toHaveClass('bg-gray-300');
+  });
+
   test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', () => {
     renderLiveCard({
       live: { ...baseLive, maxGameCount: 3 },

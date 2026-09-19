@@ -22,7 +22,7 @@ import type { ScoreSyncStatus } from '@/ui/courts/types';
  *
  * **書き方について**: このアプリは React Compiler 向けの ESLint ルール
  * （`react-hooks/refs` など）を有効にしている。「描画（レンダー）の最中に ref を読み書きしない」
- * が特に強いルールなので、進行中の送信をたくさん覚えておく置き場（下の `createStore`）は
+ * が特に強いルールなので、進行中の送信をたくさん覚えておく置き場（下の `createScoreSyncStore`）は
  * `useRef` ではなく、描画から見える値の受け渡しだけを担う `useSyncExternalStore` を通す。
  *
  * 仕様: docs/specs/2026-09-19-save-score-from-courts.md
@@ -120,14 +120,20 @@ type ScoreSyncStore = {
   subscribe: (listener: Listener) => () => void;
   /** いまの時点で「まだ保存できていない値」があるか（beforeunload の判定で使う）。 */
   hasUnsentNow: () => boolean;
-  /** アンマウント時に、待機中の送り直しタイマーを片付ける。 */
-  disposeTimers: () => void;
+  /**
+   * 画面に出ている間だけ送る。`stop` は画面を離れたときに呼び、待っている送り直しを止め、
+   * 返事待ちの送信が戻ってきても次を送らないようにする。`start` で再開する
+   * （開発時の React は画面を一度外して付け直すので、止めたままにはしない）。
+   */
+  start: () => void;
+  stop: () => void;
 };
 
 function createScoreSyncStore(): ScoreSyncStore {
   const games = new Map<string, GameSyncState>();
   const listeners = new Set<Listener>();
   let snapshot: Record<string, ScoreSyncStatus> = {};
+  let running = true;
 
   function recomputeSnapshot() {
     const next: Record<string, ScoreSyncStatus> = {};
@@ -158,6 +164,9 @@ function createScoreSyncStore(): ScoreSyncStore {
       const current = games.get(key);
       if (!current) return;
       current.inFlight = false;
+      // 画面を離れたあとに戻ってきた返事では、次の送信もタイマーも仕掛けない
+      // （仕掛けると、閉じた画面から裏で送り続けてしまう）。
+      if (!running) return;
 
       if (result.ok) {
         current.attempt = 0;
@@ -165,10 +174,7 @@ function createScoreSyncStore(): ScoreSyncStore {
         current.rejectedMessage = null;
         current.savedAsOf = sending;
         // 送っている間にさらに値が変わっていれば、最新の値をもう 1 回送る
-        if (!sameScore(current.savedAsOf, current.desired)) {
-          attemptSend(key);
-          return;
-        }
+        if (!sameScore(current.savedAsOf, current.desired)) attemptSend(key);
         notify();
         return;
       }
@@ -213,12 +219,13 @@ function createScoreSyncStore(): ScoreSyncStore {
         game.desired = { sideAScore: input.sideAScore, sideBScore: input.sideBScore };
       }
 
-      // 新しい操作が来たら、それまでの送り直し待ちはやめて、いますぐ試す
+      // 新しい操作が来たら、それまでの送り直し待ちはやめて、いますぐ試す。
+      // 「送り直しています」は保存できるまで消さない（押しただけで消すと、まだ届いていないのに
+      // 保存できたように見える）。断られた理由は、今回の値で送り直して改めて判断する。
       if (game.retryTimer) {
         clearTimeout(game.retryTimer);
         game.retryTimer = null;
       }
-      game.retryingMessage = null;
       game.rejectedMessage = null;
 
       if (!game.inFlight) attemptSend(key);
@@ -241,9 +248,19 @@ function createScoreSyncStore(): ScoreSyncStore {
       return false;
     },
 
-    disposeTimers() {
+    start() {
+      running = true;
+      // 止めている間に取りやめた送り直しを、付け直したときに再開する
+      for (const [key, game] of games) {
+        if (!game.inFlight && game.retryingMessage) attemptSend(key);
+      }
+    },
+
+    stop() {
+      running = false;
       for (const game of games.values()) {
         if (game.retryTimer) clearTimeout(game.retryTimer);
+        game.retryTimer = null;
       }
     },
   };
@@ -269,7 +286,8 @@ export function useScoreSync(): UseScoreSyncResult {
   );
 
   useEffect(() => {
-    return () => store.disposeTimers();
+    store.start();
+    return () => store.stop();
   }, [store]);
 
   useEffect(() => {

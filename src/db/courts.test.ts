@@ -254,6 +254,8 @@ describe('findCourtsData', () => {
     expect(live.roundName).toBe('予選 1回戦');
     expect(live.courtNumber).toBe(90);
     expect(live.sideA.teamNumber).toBe(1);
+    // a 側・b 側のチームを取り違えていないか（折り返す前の生の値のまま）
+    expect(live.sideB.teamNumber).toBe(6);
     expect(live.sideA.players.map((p) => p.name).sort()).toEqual(
       [`${tag} 自分`, `${tag} 相方`].sort()
     );

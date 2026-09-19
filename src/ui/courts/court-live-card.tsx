@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { canFinishMatch, leadingSide, matchOutcome, winnerOfGame } from '@/domain/match-rules';
 import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
@@ -43,6 +43,25 @@ function winnerFirstScoreText(wonGames: [number, number], winner: 'A' | 'B'): st
 /** 決まっていれば選手名、まだなら対戦の空枠ラベル（「予選1位」など）を出す。 */
 function teamDisplayName(team: CourtTeam): string {
   return team.players.length > 0 ? team.players.join('・') : (team.slotLabel ?? '');
+}
+
+/**
+ * ペア名を画面に出す。1 人ぶんの名前の中では折り返さず、「・」や「vs」の区切りでだけ折り返す。
+ *
+ * 日本語は文字のどこでも折り返せるうえ、名簿には「小早川　日下部」「長谷川 一二三」のように
+ * 空白入りの名前がある。何もしないと 375px の「次」の行で「小早川」と「日下部」が別の行に分かれ、
+ * 2 人の名前に読めてしまった（e2e/courts.spec.ts で実測）。1 人の名前は 1 行に収まる長さなので、
+ * 人ごとに nowrap にしてもはみ出さない。
+ * 文字列としてのペア名（読み上げ用のラベル・確認画面）は teamDisplayName を使う。
+ */
+function PairName({ team }: { team: CourtTeam }) {
+  if (team.players.length === 0) return <>{team.slotLabel ?? ''}</>;
+  return team.players.map((name, index) => (
+    <Fragment key={index}>
+      {index > 0 && '・'}
+      <span className="whitespace-nowrap">{name}</span>
+    </Fragment>
+  ));
 }
 
 /** チーム番号 → 背景色クラス（globals.css の @theme で定義した --color-team-1〜4）。 */
@@ -257,7 +276,9 @@ function TeamNameLine({ team }: { team: CourtTeam }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
       <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-[3px] ${teamBgClass(team)}`} />
-      <span className="min-w-0 text-[14px] font-bold break-words">{teamDisplayName(team)}</span>
+      <span className="min-w-0 text-[14px] font-bold break-words">
+        <PairName team={team} />
+      </span>
     </span>
   );
 }
@@ -377,7 +398,7 @@ function NextRow({ next }: { next: NextMatch }) {
         </span>
         <ClassChip classLabel={next.classLabel} />
         <span className={`text-[13px] font-bold ${next.isMine ? 'text-accent' : ''}`}>
-          {teamDisplayName(next.teamA)} vs {teamDisplayName(next.teamB)}
+          <PairName team={next.teamA} /> vs <PairName team={next.teamB} />
         </span>
       </div>
     </div>

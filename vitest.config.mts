@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { loadTestEnv } from './tests/load-env.mjs';
@@ -22,7 +23,14 @@ export default defineConfig({
           tsconfigPaths: true,
           // 'server-only' はクライアントから import されたら落ちる仕組みなので、
           // テスト（node）からも落ちてしまう。テスト中だけ空にする。
-          alias: { 'server-only': new URL('./tests/empty-module.ts', import.meta.url).pathname },
+          //
+          // **fileURLToPath を使う。** URL の pathname は日本語や空白を
+          // %E8%A9%A6 のような形に変えてしまい、そんな名前のファイルは無いので
+          // 「server-only が見つからない」でテストが 9 本まとめて落ちる
+          // （フォルダ名が日本語の作業場所で実際に起きた）。
+          alias: {
+            'server-only': fileURLToPath(new URL('./tests/empty-module.ts', import.meta.url)),
+          },
         },
         test: {
           name: 'logic',

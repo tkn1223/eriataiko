@@ -216,6 +216,94 @@ describe('大会', () => {
   });
 });
 
+describe('会場', () => {
+  // 会場は大会にぶら下がらない（毎年使い回す）ので、大会を消しても残る。
+  // このテストで作ったものは、このテストの中で消す。
+  const hallName = `${tag} 体育館`;
+
+  afterAll(async () => {
+    await admin.from('competitions').update({ hall_id: null }).eq('id', ids.competitionId);
+    await admin.from('halls').delete().like('name', `${tag}%`);
+  });
+
+  test('会場を作って大会に紐づけられる', async () => {
+    const hallId = await insertOne('halls', { name: hallName, court_count: 8 });
+
+    const { error } = await admin
+      .from('competitions')
+      .update({ hall_id: hallId, court_count: 6 })
+      .eq('id', ids.competitionId);
+    expect(error, `大会に会場を紐づけられない: ${error?.message}`).toBeNull();
+
+    const { data } = await admin
+      .from('competitions')
+      .select('hall_id, court_count')
+      .eq('id', ids.competitionId)
+      .single();
+    expect(data).toEqual({ hall_id: hallId, court_count: 6 });
+  });
+
+  test('同じ名前の会場は 2 つ作れない', async () => {
+    const { error } = await admin.from('halls').insert({ name: hallName, court_count: 8 });
+    expect(error, '同じ名前の会場が 2 つ入ってしまった').not.toBeNull();
+  });
+
+  test('会場の面数は 0 や負の数にできない', async () => {
+    const { error } = await admin.from('halls').insert({ name: `${tag} 面数ゼロ`, court_count: 0 });
+    expect(error).not.toBeNull();
+  });
+
+  test('大会の面数は 0 や負の数にできない', async () => {
+    const { error } = await admin
+      .from('competitions')
+      .update({ court_count: 0 })
+      .eq('id', ids.competitionId);
+    expect(error).not.toBeNull();
+  });
+
+  test('会場が決まっていない大会も作れる（あとから埋められる）', async () => {
+    const { error } = await admin
+      .from('competitions')
+      .insert({ name: `${tag} 会場未定`, held_on: '2029-01-22' });
+    expect(error).toBeNull();
+    await admin.from('competitions').delete().eq('name', `${tag} 会場未定`);
+  });
+
+  test('大会が使っている会場は消せない（記録なので残す）', async () => {
+    const { data: hall } = await admin.from('halls').select('id').eq('name', hallName).single();
+
+    const { error } = await admin.from('halls').delete().eq('id', hall!.id);
+    expect(error, '使われている会場が消せてしまった').not.toBeNull();
+  });
+});
+
+describe('チーム', () => {
+  // 画面のチーム色は team_number から引く（globals.css の --color-team-1..4）。
+  // 4 色しか無いので、5 チーム目が入ると画面によって扱いが割れる
+  // （入場画面は色を付けない / 結果LIVE は 1 チーム目と同じ色に折り返す）。
+  test('3 チーム目・4 チーム目は作れる', async () => {
+    const { error } = await admin.from('teams').insert([
+      { competition_id: ids.competitionId, team_number: 3, name: `${tag} チーム3` },
+      { competition_id: ids.competitionId, team_number: 4, name: `${tag} チーム4` },
+    ]);
+    expect(error, `4 チーム目まで入らない: ${error?.message}`).toBeNull();
+  });
+
+  test('5 チーム目は作れない（画面の色が 4 色しかない）', async () => {
+    const { error } = await admin
+      .from('teams')
+      .insert({ competition_id: ids.competitionId, team_number: 5, name: `${tag} チーム5` });
+    expect(error, '5 チーム目が入ってしまった').not.toBeNull();
+  });
+
+  test('チーム番号は 0 や負の数にできない', async () => {
+    const { error } = await admin
+      .from('teams')
+      .insert({ competition_id: ids.competitionId, team_number: 0, name: `${tag} チーム0` });
+    expect(error).not.toBeNull();
+  });
+});
+
 describe('対戦（決勝の空枠）', () => {
   test('チームが未定でも「予選1位」の空枠として保存できる', async () => {
     const { error } = await admin.from('matchups').insert({

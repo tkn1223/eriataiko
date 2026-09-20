@@ -1,7 +1,8 @@
 import { buildPlayerRecord, type FinishedMatchRecord } from '@/domain/player-record';
+import { classLabelsByDivisionId, foldTeamNumber } from '@/domain/class-labels';
 import { leadingSide, matchOutcome } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
-import type { ClassLabel, MyMatch, MyProfile, MyRecord, TeamNumber } from '@/ui/me/types';
+import type { ClassLabel, MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
 
 /**
  * `/me`（マイページ）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -10,6 +11,10 @@ import type { ClassLabel, MyMatch, MyProfile, MyRecord, TeamNumber } from '@/ui/
  * 層の分け方は AGENTS.md の「db が読む → usecases が画面の形に組む → page.tsx は呼ぶだけ」に従う
  * （読み取りは `src/db/me.ts`。ゲームの得点・勝敗の型は `src/domain/scoring.ts` /
  * `src/domain/match-rules.ts` の `GameScore` にそろえ、ここでは独自の型を作らない）。
+ *
+ * 部のラベル決めとチーム色の折り返しは `src/domain/class-labels.ts` の共通関数を使う
+ * （結果LIVE の `build-courts-view.ts` と同じ判断を 2 か所にコピーしない。
+ * docs/specs/2026-09-19-courts-real-data.md）。
  */
 
 export type MyPageViewPlayerRow = {
@@ -64,28 +69,6 @@ export type MyPageView = {
   record: MyRecord;
   matches: MyMatch[];
 };
-
-const CLASS_LABELS: readonly ClassLabel[] = ['1部', '2部', '3部'];
-
-/**
- * `divisions.sort_order` の小さい順に 1部/2部/3部を当てる。4 つ目以降は 3部。
- * 部の名前ではなく並び順で決める（AGENTS.md / 仕様の「決めたこと」と同じ考え方）。
- */
-function classLabelsByDivisionId(divisions: MyPageViewDivisionRow[]): Map<string, ClassLabel> {
-  const sorted = [...divisions].sort((a, b) => a.sortOrder - b.sortOrder);
-  const labelById = new Map<string, ClassLabel>();
-  sorted.forEach((division, index) => {
-    const label = CLASS_LABELS[index] ?? CLASS_LABELS[CLASS_LABELS.length - 1];
-    labelById.set(division.id, label);
-  });
-  return labelById;
-}
-
-/** `teams.team_number` を 1〜4 の 4 色に折り返す（5 チーム目以降は 1 から繰り返す）。 */
-function foldTeamNumber(teamNumber: number | null): TeamNumber | null {
-  if (teamNumber === null) return null;
-  return (((teamNumber - 1) % 4) + 1) as TeamNumber;
-}
 
 function findMySide(match: MyPageViewMatchRow, myParticipantId: string): 'a' | 'b' | null {
   const me = match.players.find((p) => p.participantId === myParticipantId);

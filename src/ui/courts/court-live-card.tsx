@@ -1,17 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { canFinishMatch, leadingSide, matchOutcome, winnerOfGame } from '@/domain/match-rules';
 import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
 import { YouTag } from '@/ui/components/you-tag';
-import type { Court, CourtTeam, LiveScore, NextMatch, TeamNumber } from '@/ui/courts/sample-data';
+import type { Court, CourtTeam, LiveScore, NextMatch, TeamNumber } from '@/ui/courts/types';
 import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 
 type Props = {
   court: Court;
   /** 進行中のコートだけ渡される、ページが持つ得点の状態。 */
   liveScore: LiveScore | null;
+  /**
+   * 得点を押せる人（選手として入った人）かどうか。false（観戦者）のときは
+   * 「−」「＋」「試合を終了する」を出さず、得点は数字で見せるだけにする
+   * （docs/specs/2026-09-19-courts-real-data.md の「決めたこと」3）。
+   */
+  canInput: boolean;
   onIncrement: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (gameNumber: number, side: 'A' | 'B') => void;
   /** 確認画面で「OK」が押されたときに呼ばれる。実際に試合を終了する処理はページ側が持つ。 */
@@ -34,6 +40,30 @@ function winnerFirstScoreText(wonGames: [number, number], winner: 'A' | 'B'): st
   return winner === 'A' ? `${wonGames[0]}-${wonGames[1]}` : `${wonGames[1]}-${wonGames[0]}`;
 }
 
+/** 決まっていれば選手名、まだなら対戦の空枠ラベル（「予選1位」など）を出す。 */
+function teamDisplayName(team: CourtTeam): string {
+  return team.players.length > 0 ? team.players.join('・') : (team.slotLabel ?? '');
+}
+
+/**
+ * ペア名を画面に出す。1 人ぶんの名前の中では折り返さず、「・」や「vs」の区切りでだけ折り返す。
+ *
+ * 日本語は文字のどこでも折り返せるうえ、名簿には「小早川　日下部」「長谷川 一二三」のように
+ * 空白入りの名前がある。何もしないと 375px の「次」の行で「小早川」と「日下部」が別の行に分かれ、
+ * 2 人の名前に読めてしまった（e2e/courts.spec.ts で実測）。1 人の名前は 1 行に収まる長さなので、
+ * 人ごとに nowrap にしてもはみ出さない。
+ * 文字列としてのペア名（読み上げ用のラベル・確認画面）は teamDisplayName を使う。
+ */
+function PairName({ team }: { team: CourtTeam }) {
+  if (team.players.length === 0) return <>{team.slotLabel ?? ''}</>;
+  return team.players.map((name, index) => (
+    <Fragment key={index}>
+      {index > 0 && '・'}
+      <span className="whitespace-nowrap">{name}</span>
+    </Fragment>
+  ));
+}
+
 /** チーム番号 → 背景色クラス（globals.css の @theme で定義した --color-team-1〜4）。 */
 const TEAM_BG_CLASS: Record<TeamNumber, string> = {
   1: 'bg-team-1',
@@ -41,6 +71,11 @@ const TEAM_BG_CLASS: Record<TeamNumber, string> = {
   3: 'bg-team-3',
   4: 'bg-team-4',
 };
+
+/** チームがまだ決まっていない側は灰色にする（崩れないよう色は必ず何か置く）。 */
+function teamBgClass(team: CourtTeam): string {
+  return team.teamNumber ? TEAM_BG_CLASS[team.teamNumber] : 'bg-gray-300';
+}
 
 /**
  * コート 1 面ぶんのカード。
@@ -55,6 +90,7 @@ const TEAM_BG_CLASS: Record<TeamNumber, string> = {
 export function CourtLiveCard({
   court,
   liveScore,
+  canInput,
   onIncrement,
   onDecrement,
   onFinishMatch,
@@ -74,8 +110,8 @@ export function CourtLiveCard({
   // ここで「予定なし」に化けると、進行中のコートが黙って消えてしまう。
   const { scores, finished } = liveScore ?? { scores: live.scores, finished: false };
 
-  const teamAName = live.teamA.players.join('・');
-  const teamBName = live.teamB.players.join('・');
+  const teamAName = teamDisplayName(live.teamA);
+  const teamBName = teamDisplayName(live.teamB);
 
   const frames = Array.from({ length: live.maxGameCount }, (_, index) =>
     frameScore(scores, index + 1)
@@ -188,6 +224,7 @@ export function CourtLiveCard({
               teamA={live.teamA}
               teamB={live.teamB}
               score={frame}
+              canInput={canInput}
               onIncrement={(side) => handleIncrement(frame.gameNumber, side)}
               onDecrement={(side) => handleDecrement(frame.gameNumber, side)}
             />
@@ -202,7 +239,7 @@ export function CourtLiveCard({
         </p>
       )}
 
-      {!finished && (
+      {!finished && canInput && (
         <>
           {notice && (
             <p role="status" className="text-live text-[13px] font-bold">
@@ -238,21 +275,21 @@ export function CourtLiveCard({
 function TeamNameLine({ team }: { team: CourtTeam }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span
-        aria-hidden="true"
-        className={`size-2.5 shrink-0 rounded-[3px] ${TEAM_BG_CLASS[team.number]}`}
-      />
-      <span className="min-w-0 text-[14px] font-bold break-words">{team.players.join('・')}</span>
+      <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-[3px] ${teamBgClass(team)}`} />
+      <span className="min-w-0 text-[14px] font-bold break-words">
+        <PairName team={team} />
+      </span>
     </span>
   );
 }
 
-/** 「第Nゲーム」の枠 1 つぶん。両ペアの「−」「＋」と得点を横に並べる。 */
+/** 「第Nゲーム」の枠 1 つぶん。両ペアの得点を横に並べる。押せるのは canInput のときだけ。 */
 function GameFrameRow({
   gameNumber,
   teamA,
   teamB,
   score,
+  canInput,
   onIncrement,
   onDecrement,
 }: {
@@ -260,6 +297,7 @@ function GameFrameRow({
   teamA: CourtTeam;
   teamB: CourtTeam;
   score: GameScore;
+  canInput: boolean;
   onIncrement: (side: 'A' | 'B') => void;
   onDecrement: (side: 'A' | 'B') => void;
 }) {
@@ -267,17 +305,19 @@ function GameFrameRow({
     <div className="flex flex-col gap-1">
       <span className="text-[12px] font-bold text-gray-400">{`第${gameNumber}ゲーム`}</span>
       <div className="flex items-center gap-3">
-        <FrameScoreControl
+        <FrameScoreValue
           team={teamA}
           gameNumber={gameNumber}
           value={score.sideAScore}
+          canInput={canInput}
           onIncrement={() => onIncrement('A')}
           onDecrement={() => onDecrement('A')}
         />
-        <FrameScoreControl
+        <FrameScoreValue
           team={teamB}
           gameNumber={gameNumber}
           value={score.sideBScore}
+          canInput={canInput}
           onIncrement={() => onIncrement('B')}
           onDecrement={() => onDecrement('B')}
         />
@@ -286,28 +326,44 @@ function GameFrameRow({
   );
 }
 
-/** 1 枠・1 チームぶんの「−」「＋」と得点。44px 角のタップ領域を確保する。 */
-function FrameScoreControl({
+/**
+ * 1 枠・1 チームぶんの得点。
+ *
+ * `canInput` が true（選手）のときだけ「−」「＋」を出す。観戦者は数字を見るだけ
+ * （docs/specs/2026-09-19-courts-real-data.md の「決めたこと」3）。
+ * 44px 角のタップ領域を確保するのは押せるときだけでよい。
+ */
+function FrameScoreValue({
   team,
   gameNumber,
   value,
+  canInput,
   onIncrement,
   onDecrement,
 }: {
   team: CourtTeam;
   gameNumber: number;
   value: number;
+  canInput: boolean;
   onIncrement: () => void;
   onDecrement: () => void;
 }) {
-  const name = team.players.join('・');
+  if (!canInput) {
+    return (
+      <span className="flex shrink-0 items-center gap-1">
+        <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team)}`} />
+        <span className="tabular text-accent w-7 text-center text-[18px] font-extrabold">
+          {value}
+        </span>
+      </span>
+    );
+  }
+
+  const name = teamDisplayName(team);
 
   return (
     <span className="flex shrink-0 items-center gap-1">
-      <span
-        aria-hidden="true"
-        className={`size-2 shrink-0 rounded-[2px] ${TEAM_BG_CLASS[team.number]}`}
-      />
+      <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team)}`} />
       <button
         type="button"
         onClick={onDecrement}
@@ -342,7 +398,7 @@ function NextRow({ next }: { next: NextMatch }) {
         </span>
         <ClassChip classLabel={next.classLabel} />
         <span className={`text-[13px] font-bold ${next.isMine ? 'text-accent' : ''}`}>
-          {next.teamA.players.join('・')} vs {next.teamB.players.join('・')}
+          <PairName team={next.teamA} /> vs <PairName team={next.teamB} />
         </span>
       </div>
     </div>

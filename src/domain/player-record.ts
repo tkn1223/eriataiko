@@ -4,7 +4,7 @@
  * 経緯: docs/specs/2026-09-05-me-real-data.md
  */
 
-import { matchOutcome } from '@/domain/match-rules';
+import { leadingSide, matchOutcome } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 
 /** 終了した 1 試合ぶんの記録。マイページの成績集計に渡す最小限の形。 */
@@ -44,8 +44,14 @@ export function buildPlayerRecord(matches: FinishedMatchRecord[]): PlayerRecord 
     gamesWon += isSideA ? wonByA : wonByB;
     gamesLost += isSideA ? wonByB : wonByA;
 
-    if (outcome.winner === match.mySide) wins += 1;
-    else if (outcome.winner !== null) losses += 1;
+    // 勝敗は outcome.winner ではなく leadingSide で決める。**終了は人が押したときだけ**なので、
+    // 決勝（上限3ゲーム）を 1-0 のまま終了することがあり、そのとき outcome.winner はまだ null。
+    // null のまま数えると、21-15 で勝った人が 0 勝 0 敗になる（PR #53 レビュー）。
+    // ゲーム数が同数のときだけ null が返るが、同点では終了できないので終わった試合では起きない
+    // （match-rules.ts の canFinishMatch。画面と保存の入口の両方が通す）。
+    const winner = leadingSide(outcome.wonGames);
+    if (winner === match.mySide) wins += 1;
+    else if (winner !== null) losses += 1;
 
     for (const game of played) {
       pointDiff += isSideA ? game.sideAScore - game.sideBScore : game.sideBScore - game.sideAScore;

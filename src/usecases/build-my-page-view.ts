@@ -1,5 +1,5 @@
 import { buildPlayerRecord, type FinishedMatchRecord } from '@/domain/player-record';
-import { matchOutcome } from '@/domain/match-rules';
+import { leadingSide, matchOutcome } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 import type { ClassLabel, MyMatch, MyProfile, MyRecord, TeamNumber } from '@/ui/me/types';
 
@@ -175,7 +175,11 @@ function toMyMatch(
     const [wonByA, wonByB] = outcome.wonGames;
     base.gamesWon = mySide === 'a' ? wonByA : wonByB;
     base.gamesLost = mySide === 'a' ? wonByB : wonByA;
-    base.won = outcome.winner === (mySide === 'a' ? 'A' : 'B');
+    // 勝ちは outcome.winner ではなく leadingSide で決める。結果LIVE
+    // （court-live-card.tsx）は #52 からこの数え方で、ここだけ取り残されていた。
+    // 決勝を 1-0 のまま終了すると outcome.winner は null のままなので、
+    // 21-15 で勝った人の画面に ● が付いていた（PR #53 レビュー）。
+    base.won = leadingSide(outcome.wonGames) === (mySide === 'a' ? 'A' : 'B');
   }
 
   return base;

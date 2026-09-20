@@ -68,12 +68,11 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
     expect(record).toEqual({ wins: 0, losses: 0, gamesWon: 1, gamesLost: 1, pointDiff: 0 });
   });
 
-  // ⚠️ 既知の食い違い（今回は直さない。PR #53 レビュー指摘2で「直し方は yosuke さんが決める」とされたもの）。
-  // 上限ゲーム数（3）に満たないうちに試合が終了（決勝で 1 ゲームだけ行って終了、など）すると、
-  // matchOutcome は「まだ決着していない」扱いにするので、実際には勝っていても
-  // 0 勝 0 敗のまま数えられない。ここでは「今の実装がこう動く」ことを固定するだけで、
-  // これが正しい仕様だと主張するテストではない。
-  test('上限ゲーム数に満たないまま終了した試合は、いまの実装では勝ちにも負けにも数えない', () => {
+  // 決勝（上限 3 ゲーム）で 1 ゲームだけ行って終了を押す試合は、当日ふつうに起きる
+  // （相手が足をひねった、時間が押した）。**人が終了を押した時点で試合は終わっている。**
+  // 「2 ゲーム先取に届いていないから勝者なし」と答えると、21-15 で勝った人が
+  // 0 勝 0 敗のまま数えられない（PR #53 レビュー「一緒に考えてほしいこと」）。
+  test('上限ゲーム数に満たないまま終了した試合も、ゲームを多く取ったほうの勝ちにする', () => {
     const record = buildPlayerRecord([
       {
         maxGameCount: 3,
@@ -82,7 +81,19 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
       },
     ]);
 
-    expect(record).toEqual({ wins: 0, losses: 0, gamesWon: 1, gamesLost: 0, pointDiff: 6 });
+    expect(record).toEqual({ wins: 1, losses: 0, gamesWon: 1, gamesLost: 0, pointDiff: 6 });
+  });
+
+  test('上限ゲーム数に満たないまま終了した試合で、取られたほうは負けに数える', () => {
+    const record = buildPlayerRecord([
+      {
+        maxGameCount: 3,
+        gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
+        mySide: 'B',
+      },
+    ]);
+
+    expect(record).toEqual({ wins: 0, losses: 1, gamesWon: 0, gamesLost: 1, pointDiff: -6 });
   });
 
   test('複数試合の成績をまとめて集計する', () => {

@@ -25,7 +25,11 @@ import type {
 const MAX_DIVISIONS = 20;
 const MAX_STAGES = 20;
 const MAX_MATCHES = 100;
-/** ダブルスで 4 人。組み替えの行が残っても切れないよう倍にしておく。 */
+/**
+ * 1 試合の出場者は多くても 4 行（側 a/b × ペアの中の順番 1/2）。
+ * 表の `unique (match_id, side, order_in_pair)` が 5 行目を弾くので、この数を超えることはない。
+ * 上限そのものは、万一の取り込みミスで黙って切り落とさないための保険として倍にしてある。
+ */
 const MAX_PLAYERS_PER_MATCH = 8;
 /** 決勝でも 3 ゲーム。上限ゲーム数を増やす運用にも耐えるよう余裕を持たせる。 */
 const MAX_GAME_SCORES_PER_MATCH = 10;

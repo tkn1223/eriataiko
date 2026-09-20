@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { findCurrentCompetition } from '@/db/competition';
 import { createSupabaseServerClient } from '@/db/server';
 import type {
   MyPageViewDivisionRow,
@@ -48,15 +49,9 @@ type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
  * （PR #53 レビュー指摘3。前は `findMyPageData` の中で毎回読んでいた）。
  */
 export async function findCurrentCompetitionId(): Promise<string | null> {
-  const supabase = createSupabaseServerClient();
-  const { data, error } = await supabase
-    .from('competitions')
-    .select('id')
-    .eq('is_current', true)
-    .limit(1)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.id ?? null;
+  // 読むのは `src/db/competition.ts` に 1 か所だけ置く。ヘッダーも同じものを読むので、
+  // ここで自前に読むと 1 画面で 2 回読むことになる。
+  return (await findCurrentCompetition())?.id ?? null;
 }
 
 /**

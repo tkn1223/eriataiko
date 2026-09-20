@@ -54,12 +54,12 @@ beforeAll(async () => {
     .from('teams')
     .insert([
       { competition_id: competitionId, team_number: 1, name: `${tag} チームA` },
-      { competition_id: competitionId, team_number: 6, name: `${tag} チームB` },
+      { competition_id: competitionId, team_number: 3, name: `${tag} チームB` },
     ])
     .select('id, team_number');
   expect(teams.error, `チームの作成に失敗: ${teams.error?.message}`).toBeNull();
   teamAId = teams.data!.find((t) => t.team_number === 1)!.id;
-  teamBId = teams.data!.find((t) => t.team_number === 6)!.id;
+  teamBId = teams.data!.find((t) => t.team_number === 3)!.id;
 
   const stages = await admin
     .from('stages')
@@ -254,8 +254,9 @@ describe('findCourtsData', () => {
     expect(live.roundName).toBe('予選 1回戦');
     expect(live.courtNumber).toBe(90);
     expect(live.sideA.teamNumber).toBe(1);
-    // a 側・b 側のチームを取り違えていないか（折り返す前の生の値のまま）
-    expect(live.sideB.teamNumber).toBe(6);
+    // a 側・b 側のチームを取り違えていないか
+    // （チーム番号は 1〜4 だけ。5 以上は 20260920000000_halls_and_team_limit.sql が弾く）
+    expect(live.sideB.teamNumber).toBe(3);
     expect(live.sideA.players.map((p) => p.name).sort()).toEqual(
       [`${tag} 自分`, `${tag} 相方`].sort()
     );

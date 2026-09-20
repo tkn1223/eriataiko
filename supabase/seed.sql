@@ -10,10 +10,17 @@
 -- 選手の番号は 1〜16 の小さい数字を使う（テストは 899998 以上を使う）。
 
 -- ---------------------------------------------------------------------
--- 大会・部・チーム
+-- 会場・大会・部・チーム
 -- ---------------------------------------------------------------------
-insert into public.competitions (id, name, held_on, is_current) values
-  ('c0000000-0000-4000-8000-000000000001', 'えりあ太鼓カップ 2027', '2027-01-22', true)
+-- 会場は大会にぶら下がらない（毎年使い回す）ので、先に入れる。
+insert into public.halls (id, name, court_count) values
+  ('e0000000-0000-4000-8000-000000000001', 'えりあ市総合体育館', 8)
+on conflict (id) do nothing;
+
+-- court_count は「今年押さえた面数」。会場の 8 面のうち 8 面を使う年。
+insert into public.competitions (id, name, held_on, is_current, hall_id, court_count) values
+  ('c0000000-0000-4000-8000-000000000001', 'えりあ太鼓カップ 2027', '2027-01-22', true,
+   'e0000000-0000-4000-8000-000000000001', 8)
 on conflict (id) do nothing;
 
 insert into public.divisions (id, competition_id, name, sort_order) values

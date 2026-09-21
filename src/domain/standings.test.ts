@@ -99,6 +99,8 @@ describe('buildStandings（順位表）', () => {
   const teamB = { teamId: 'team-b' };
   const teamC = { teamId: 'team-c' };
   const teamD = { teamId: 'team-d' };
+  const teamE = { teamId: 'team-e' };
+  const teamF = { teamId: 'team-f' };
 
   function matchup(sideATeamId: string, sideBTeamId: string, matches: MatchInput[]): MatchupInput {
     return { sideATeamId, sideBTeamId, matches };
@@ -147,9 +149,35 @@ describe('buildStandings（順位表）', () => {
     expect(b.pointDiff).toBe(-(21 - 10 + (15 - 21) + (21 - 18)));
   });
 
-  test('並びは まず 勝敗 で決まる（ゲーム・得失点で負けていても勝敗が多いほうが上）', () => {
+  test('2 勝 2 敗のチームは、まだ 1 試合もしていない 0 勝 0 敗のチームより上に来る', () => {
+    // 「勝ち数 − 負け数」で並べるとどちらも 0 で並び、ゲーム数・得失点も 0 でそろうため同順位になる。
+    // 途中経過でそう見えないよう、並びの 1 つ目は「勝ち数」だけを見る。
+    // teamF は対戦が 1 つも終わっていないチーム（まだ 0 勝 0 敗）。
+    const rows = buildStandings(
+      [teamA, teamB, teamC, teamD, teamE, teamF],
+      [
+        matchup('team-a', 'team-b', [doneMatch(21, 10)]),
+        matchup('team-a', 'team-c', [doneMatch(21, 10)]),
+        matchup('team-a', 'team-d', [doneMatch(10, 21)]),
+        matchup('team-a', 'team-e', [doneMatch(10, 21)]),
+      ]
+    );
+
+    const a = rows.find((row) => row.teamId === 'team-a')!;
+    const f = rows.find((row) => row.teamId === 'team-f')!;
+
+    expect([a.wins, a.losses]).toEqual([2, 2]);
+    expect([f.wins, f.losses]).toEqual([0, 0]);
+    // 「勝ち数 − 負け数」では並ばない: 2 チームとも 0 でそろい、ゲーム数も得失点も同じ
+    expect(a.wins - a.losses).toBe(f.wins - f.losses);
+    expect(a.gamesWon - a.gamesLost).toBe(f.gamesWon - f.gamesLost);
+    expect(a.pointDiff).toBe(f.pointDiff);
+    expect(a.rank).toBeLessThan(f.rank);
+  });
+
+  test('並びは まず 勝ち数 で決まる（ゲーム・得失点で負けていても勝ち数が多いほうが上）', () => {
     // A: 2 勝 0 敗だが、どの試合も 21-19 の接戦。B: 1 勝 0 敗で、ゲームも得失点も A より上。
-    // 勝敗を先に見ていないと B が上に来るので、この 1 件で「勝敗が最優先」だけを確かめられる。
+    // 勝ち数を先に見ていないと B が上に来るので、この 1 件で「勝ち数が最優先」だけを確かめられる。
     const rows = buildStandings(
       [teamA, teamB, teamC, teamD],
       [
@@ -162,13 +190,13 @@ describe('buildStandings（順位表）', () => {
     const a = rows.find((row) => row.teamId === 'team-a')!;
     const b = rows.find((row) => row.teamId === 'team-b')!;
 
-    expect(a.wins - a.losses).toBeGreaterThan(b.wins - b.losses);
+    expect(a.wins).toBeGreaterThan(b.wins);
     expect(a.gamesWon - a.gamesLost).toBeLessThan(b.gamesWon - b.gamesLost);
     expect(a.pointDiff).toBeLessThan(b.pointDiff);
     expect(rows.indexOf(a)).toBeLessThan(rows.indexOf(b));
   });
 
-  test('勝敗が同じなら ゲーム で決まる（得失点で負けていてもゲームが多いほうが上）', () => {
+  test('勝ち数が同じなら ゲーム で決まる（得失点で負けていてもゲームが多いほうが上）', () => {
     // A・B とも 1 勝 1 敗。A はゲームで勝るが、負けた試合が 0-21 なので得失点では B に劣る。
     const rows = buildStandings(
       [teamA, teamB, teamC, teamD],
@@ -183,13 +211,13 @@ describe('buildStandings（順位表）', () => {
     const a = rows.find((row) => row.teamId === 'team-a')!;
     const b = rows.find((row) => row.teamId === 'team-b')!;
 
-    expect(a.wins - a.losses).toBe(b.wins - b.losses);
+    expect(a.wins).toBe(b.wins);
     expect(a.gamesWon - a.gamesLost).toBeGreaterThan(b.gamesWon - b.gamesLost);
     expect(a.pointDiff).toBeLessThan(b.pointDiff);
     expect(rows.indexOf(a)).toBeLessThan(rows.indexOf(b));
   });
 
-  test('勝敗もゲームも同じなら 得失点 で決まる', () => {
+  test('勝ち数もゲームも同じなら 得失点 で決まる', () => {
     // A・B とも 1 勝 1 敗、ゲームも 2-2 で並ぶが、A のほうが得失点で勝る
     const rows = buildStandings(
       [teamA, teamB, teamC, teamD],
@@ -204,7 +232,7 @@ describe('buildStandings（順位表）', () => {
     const a = rows.find((row) => row.teamId === 'team-a')!;
     const b = rows.find((row) => row.teamId === 'team-b')!;
 
-    expect(a.wins - a.losses).toBe(b.wins - b.losses);
+    expect(a.wins).toBe(b.wins);
     expect(a.gamesWon - a.gamesLost).toBe(b.gamesWon - b.gamesLost);
     expect(a.pointDiff).toBeGreaterThan(b.pointDiff);
     expect(rows.indexOf(a)).toBeLessThan(rows.indexOf(b));

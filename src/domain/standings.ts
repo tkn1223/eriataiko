@@ -154,9 +154,15 @@ function addMatchup(
   totals.pointDiff += pointDiff;
 }
 
-/** 勝敗の順位づけに使う物差し。勝ち − 負け → ゲーム勝ち − 負け → 得失点。 */
+/**
+ * 順位づけに使う物差し。勝ち数 → ゲーム勝ち − 負け → 得失点。
+ *
+ * 1 つ目に「勝ち数 − 負け数」を使わないのは、途中経過で 2 勝 2 敗と
+ * まだ 1 試合もしていない 0 勝 0 敗が同じ順位に見えてしまうため（yosuke さん判断）。
+ * 予選は全チームが同じ数だけ対戦するので、終わったときの並びはどちらでも変わらない。
+ */
 function rankKey(totals: Totals): [number, number, number] {
-  return [totals.wins - totals.losses, totals.gamesWon - totals.gamesLost, totals.pointDiff];
+  return [totals.wins, totals.gamesWon - totals.gamesLost, totals.pointDiff];
 }
 
 /**

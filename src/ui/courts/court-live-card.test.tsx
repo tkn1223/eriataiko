@@ -1,13 +1,30 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import { hasAnyPoint } from '@/domain/scoring';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import type { Court, GameScore, LiveScore } from '@/ui/courts/sample-data';
+import type { Court, CourtTeam, GameScore, LiveScore, ScoreSyncStatus } from '@/ui/courts/types';
+
+/**
+ * ペア名は 1 人ずつ別の要素に分けて出す（名前の途中で折り返さないため。court-live-card.tsx の PairName）。
+ * getByText は要素の直下の文字しか見ないので、「佐藤・鈴木」のような全体の文字で探すための条件。
+ * 見つかるのは、その文字をまるごと持ついちばん内側の要素。
+ */
+function wholeText(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.textContent === text &&
+    !Array.from(element.children).some((child) => child.textContent === text);
+}
+
+function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
+  return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
+}
 
 const baseLive: NonNullable<Court['live']> = {
+  matchId: 'match-live-1',
   classLabel: '2部',
   roundLabel: '予選 1回戦',
-  teamA: { number: 1, players: ['佐藤', '鈴木'] },
-  teamB: { number: 2, players: ['高橋', '伊藤'] },
+  teamA: team({ teamNumber: 1, players: ['佐藤', '鈴木'] }),
+  teamB: team({ teamNumber: 2, players: ['高橋', '伊藤'] }),
   isMine: false,
   scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
   maxGameCount: 1,
@@ -18,6 +35,9 @@ function renderLiveCard({
   next = null,
   scores = live?.scores ?? [],
   finished = false,
+  started = live !== null || hasAnyPoint(scores),
+  canInput = true,
+  syncStatus = null,
   onIncrement = () => {},
   onDecrement = () => {},
   onFinishMatch = () => {},
@@ -26,16 +46,24 @@ function renderLiveCard({
   next?: Court['next'];
   scores?: GameScore[];
   finished?: boolean;
+  started?: boolean;
+  canInput?: boolean;
+  syncStatus?: ScoreSyncStatus | null;
   onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement?: (gameNumber: number, side: 'A' | 'B') => void;
   onFinishMatch?: () => void;
 } = {}) {
   const court: Court = { courtNumber: 3, live, next };
-  const liveScore: LiveScore | null = live ? { scores, finished } : null;
+  // 呼出待ち（live が無い）でも、選手が次の試合に点を入れ始めていれば
+  // liveScore を持つ（courts-page.tsx が実際に作る状態と合わせる）。
+  const hasLiveScore = live !== null || (canInput && next !== null);
+  const liveScore: LiveScore | null = hasLiveScore ? { scores, finished, started } : null;
   return render(
     <CourtLiveCard
       court={court}
       liveScore={liveScore}
+      canInput={canInput}
+      syncStatus={syncStatus}
       onIncrement={onIncrement}
       onDecrement={onDecrement}
       onFinishMatch={onFinishMatch}
@@ -56,8 +84,29 @@ describe('CourtLiveCard', () => {
   test('両ペアの名前が出る', () => {
     renderLiveCard();
 
-    expect(screen.getByText('佐藤・鈴木')).toBeInTheDocument();
-    expect(screen.getByText('高橋・伊藤')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('佐藤・鈴木'))).toBeInTheDocument();
+    expect(screen.getByText(wholeText('高橋・伊藤'))).toBeInTheDocument();
+  });
+
+  test('出場者がまだ決まっていない側は、空枠ラベルが名前の代わりに出る', () => {
+    renderLiveCard({
+      live: { ...baseLive, teamB: team({ teamNumber: null, players: [], slotLabel: '予選4位' }) },
+    });
+
+    expect(screen.getByText('予選4位')).toBeInTheDocument();
+    expect(screen.queryByText(wholeText('高橋・伊藤'))).not.toBeInTheDocument();
+  });
+
+  test('ペア名の横にチーム色が出る。チームが決まっていない側は灰色', () => {
+    renderLiveCard({
+      live: { ...baseLive, teamB: team({ teamNumber: null, players: [], slotLabel: '予選4位' }) },
+    });
+
+    // 色の四角は名前のすぐ前に置いてある（TeamNameLine）
+    expect(screen.getByText(wholeText('佐藤・鈴木')).previousElementSibling).toHaveClass(
+      'bg-team-1'
+    );
+    expect(screen.getByText('予選4位').previousElementSibling).toHaveClass('bg-gray-300');
   });
 
   test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', () => {
@@ -114,19 +163,35 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
+  function nextMatch(
+    overrides: Partial<NonNullable<Court['next']>> = {}
+  ): NonNullable<Court['next']> {
+    return {
+      matchId: 'match-next-1',
+      classLabel: '1部',
+      roundLabel: '予選 2回戦',
+      teamA: team({ teamNumber: 3, players: ['山田'] }),
+      teamB: team({ teamNumber: 4, players: ['中村'] }),
+      isMine: false,
+      maxGameCount: 1,
+      ...overrides,
+    };
+  }
+
   test('次の試合があるコートには「次」と部・ペア名が出る', () => {
-    renderLiveCard({
-      next: {
-        classLabel: '1部',
-        teamA: { number: 3, players: ['山田'] },
-        teamB: { number: 4, players: ['中村'] },
-        isMine: false,
-      },
-    });
+    renderLiveCard({ next: nextMatch() });
 
     expect(screen.getByText('次')).toBeInTheDocument();
     expect(screen.getByText('1部')).toBeInTheDocument();
-    expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
+  });
+
+  test('次の試合の出場者がまだ決まっていなければ、空枠ラベルが出る', () => {
+    renderLiveCard({
+      next: nextMatch({ teamB: team({ teamNumber: null, players: [], slotLabel: '予選2位' }) }),
+    });
+
+    expect(screen.getByText(wholeText('山田 vs 予選2位'))).toBeInTheDocument();
   });
 
   test('次の試合が無いコートには「次」が出ない', () => {
@@ -136,32 +201,22 @@ describe('CourtLiveCard', () => {
   });
 
   test('次が自分の試合のときは名前がaccent色で強調される', () => {
-    renderLiveCard({
-      next: {
-        classLabel: '1部',
-        teamA: { number: 3, players: ['山田'] },
-        teamB: { number: 4, players: ['中村'] },
-        isMine: true,
-      },
-    });
+    renderLiveCard({ next: nextMatch({ isMine: true }) });
 
-    expect(screen.getByText('山田 vs 中村')).toHaveClass('text-accent');
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toHaveClass('text-accent');
   });
 
-  test('進行中の試合が無いコートに「呼出待ち」が次の試合と一緒に出る', () => {
+  test('進行中の試合が無いコートに「呼出待ち」が次の試合と一緒に出る（観戦者）', () => {
     renderLiveCard({
       live: null,
-      next: {
-        classLabel: '1部',
-        teamA: { number: 1, players: ['山田'] },
-        teamB: { number: 2, players: ['中村'] },
-        isMine: false,
-      },
+      next: nextMatch({ teamA: team({ teamNumber: 1, players: ['山田'] }) }),
+      canInput: false,
     });
 
     expect(screen.getByText('呼出待ち')).toBeInTheDocument();
-    expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+    expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
   });
 
   test('進行中の試合も次の試合も無いコートに「予定なし」が出る', () => {
@@ -169,6 +224,107 @@ describe('CourtLiveCard', () => {
 
     expect(screen.getByText('予定なし')).toBeInTheDocument();
     expect(screen.queryByText('次')).not.toBeInTheDocument();
+  });
+
+  describe('呼出待ちのコート（選手・canInput が true）', () => {
+    function renderWaiting(overrides: Partial<Parameters<typeof renderLiveCard>[0]> = {}) {
+      return renderLiveCard({
+        live: null,
+        next: nextMatch({ maxGameCount: 1 }),
+        scores: [],
+        canInput: true,
+        ...overrides,
+      });
+    }
+
+    test('点の枠が出て、押せる', () => {
+      const onIncrement = vi.fn();
+      renderWaiting({ onIncrement });
+
+      const button = screen.getByRole('button', { name: '山田の第1ゲームの得点を1増やす' });
+      fireEvent.click(button);
+      expect(onIncrement).toHaveBeenCalledWith(1, 'A');
+    });
+
+    test('まだ点が入っていない間は「呼出待ち」のまま', () => {
+      renderWaiting();
+
+      expect(screen.getByText('呼出待ち')).toBeInTheDocument();
+      expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+    });
+
+    test('最初の1点が入るとLIVEの見た目に切り替わる', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] });
+
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+      expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('一度点が入ったあと0対0に戻しても、LIVEの見た目のまま（入口の側も呼出待ちに戻さない）', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }], started: true });
+
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+      expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('LIVEに切り替わったあとの回戦・部・チーム色は次の試合の情報のまま', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] });
+
+      expect(screen.getByText('1部')).toBeInTheDocument();
+      expect(screen.getByText('予選 2回戦')).toBeInTheDocument();
+    });
+  });
+
+  describe('保存の状況（syncStatus）', () => {
+    test('送り直している間は「保存できていません」の案内が出る', () => {
+      renderLiveCard({
+        syncStatus: {
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        },
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('保存できていません・送り直しています');
+    });
+
+    test('入口に断られたときは、その理由が出る', () => {
+      renderLiveCard({
+        syncStatus: {
+          retryingMessage: null,
+          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+        },
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '終了した試合です。先に「終了を取り消す」を押してください。'
+      );
+    });
+
+    test('保存できていれば何も出ない', () => {
+      renderLiveCard({ syncStatus: { retryingMessage: null, rejectedMessage: null } });
+
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('観戦者（canInput が false）', () => {
+    test('「−」「＋」「試合を終了する」が出ない', () => {
+      renderLiveCard({ canInput: false });
+
+      expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /得点を1減らす/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    });
+
+    test('得点は数字で見える', () => {
+      renderLiveCard({
+        canInput: false,
+        scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
+      });
+
+      expect(screen.getByText('10', { exact: true })).toBeInTheDocument();
+      expect(screen.getByText('8', { exact: true })).toBeInTheDocument();
+    });
   });
 
   describe('「試合を終了する」を押したとき', () => {
@@ -339,18 +495,13 @@ describe('CourtLiveCard', () => {
     test('「次」の試合はそのまま出る', () => {
       renderLiveCard({
         live: finishedLive,
-        next: {
-          classLabel: '1部',
-          teamA: { number: 3, players: ['山田'] },
-          teamB: { number: 4, players: ['中村'] },
-          isMine: false,
-        },
+        next: nextMatch(),
         scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         finished: true,
       });
 
       expect(screen.getByText('次')).toBeInTheDocument();
-      expect(screen.getByText('山田 vs 中村')).toBeInTheDocument();
+      expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     });
   });
 });

@@ -224,7 +224,7 @@ describe('findMyPageData', () => {
     expect(data!.profile.teamNumber).toBe(1);
     expect(data!.profile.teamName).toBe(`${tag} チームA`);
     expect(data!.profile.divisionId).toBe(divisionId);
-    expect(data!.divisions).toContainEqual({ id: divisionId, sortOrder: 10 });
+    expect(data!.divisions).toContainEqual({ id: divisionId, name: '1部', sortOrder: 10 });
     expect(data!.matches).toHaveLength(2);
   });
 

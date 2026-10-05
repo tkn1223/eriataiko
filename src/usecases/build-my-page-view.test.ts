@@ -11,10 +11,10 @@ const OPPONENT_1 = 'p-opp-1';
 const OPPONENT_2 = 'p-opp-2';
 
 const DIVISIONS = [
-  { id: 'div-1', sortOrder: 10 },
-  { id: 'div-2', sortOrder: 20 },
-  { id: 'div-3', sortOrder: 30 },
-  { id: 'div-4', sortOrder: 40 },
+  { id: 'div-1', name: '1部', sortOrder: 10 },
+  { id: 'div-2', name: '2部', sortOrder: 20 },
+  { id: 'div-3', name: '3部', sortOrder: 30 },
+  { id: 'div-4', name: '4部', sortOrder: 40 },
 ];
 
 function baseInput(overrides: Partial<MyPageViewInput> = {}): MyPageViewInput {
@@ -53,21 +53,33 @@ function doubles(overrides: Partial<MyPageViewMatchRow> = {}): MyPageViewMatchRo
 }
 
 describe('buildMyPageView の部のラベル', () => {
-  test('divisions.sortOrder の小さい順に 1部/2部/3部を当てる', () => {
+  test('部の文字は divisions.name、色は divisions.sortOrder の小さい順の番号になる', () => {
     const view = buildMyPageView(baseInput());
-    expect(view.profile.classLabel).toBe('1部');
+    expect(view.profile.classLabel).toEqual({ name: '1部', colorNumber: 1 });
 
     const view2部 = buildMyPageView(
       baseInput({ profile: { ...baseInput().profile, divisionId: 'div-2' } })
     );
-    expect(view2部.profile.classLabel).toBe('2部');
+    expect(view2部.profile.classLabel).toEqual({ name: '2部', colorNumber: 2 });
   });
 
-  test('4 つ目以降の部も 3部になる', () => {
+  test('部の名前を変えると画面の文字も変わり、色は並び順のまま', () => {
+    const view = buildMyPageView(
+      baseInput({
+        divisions: [
+          { id: 'div-1', name: '初級', sortOrder: 20 },
+          { id: 'div-2', name: '上級', sortOrder: 10 },
+        ],
+      })
+    );
+    expect(view.profile.classLabel).toEqual({ name: '初級', colorNumber: 2 });
+  });
+
+  test('4 つ目の部は 4 番目の色になる（3 で止めない）', () => {
     const view = buildMyPageView(
       baseInput({ profile: { ...baseInput().profile, divisionId: 'div-4' } })
     );
-    expect(view.profile.classLabel).toBe('3部');
+    expect(view.profile.classLabel).toEqual({ name: '4部', colorNumber: 4 });
   });
 
   test('部が割り当てられていなければ null になる', () => {
@@ -79,19 +91,9 @@ describe('buildMyPageView の部のラベル', () => {
 });
 
 describe('buildMyPageView のチーム色', () => {
-  test('team_number をそのまま 1〜4 として使う', () => {
+  test('team_number をそのまま使う（折り返さない。色の決めごとは画面側の 1 か所）', () => {
     const view = buildMyPageView(baseInput({ profile: { ...baseInput().profile, teamNumber: 3 } }));
     expect(view.profile.teamNumber).toBe(3);
-  });
-
-  test('4 を超える team_number は 1〜4 に折り返す', () => {
-    const view = buildMyPageView(baseInput({ profile: { ...baseInput().profile, teamNumber: 5 } }));
-    expect(view.profile.teamNumber).toBe(1);
-
-    const view2 = buildMyPageView(
-      baseInput({ profile: { ...baseInput().profile, teamNumber: 8 } })
-    );
-    expect(view2.profile.teamNumber).toBe(4);
   });
 
   test('チーム無しは null になる', () => {
@@ -235,7 +237,7 @@ describe('buildMyPageView のペアの相手', () => {
         matches: [doubles({ matchId: 'm1', divisionId: 'div-2', roundName: '予選 2回戦' })],
       })
     );
-    expect(view.matches[0].classLabel).toBe('2部');
+    expect(view.matches[0].classLabel).toEqual({ name: '2部', colorNumber: 2 });
     expect(view.matches[0].roundLabel).toBe('予選 2回戦');
   });
 });

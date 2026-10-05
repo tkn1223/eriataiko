@@ -17,7 +17,7 @@ function buildCourts(): Court[] {
       // 予選（上限1ゲーム）。20-19 から始まる。押せば数字が動く。
       courtNumber: 1,
       live: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         teamA: team({ teamNumber: 1, players: ['佐々木', '井上'] }),
         teamB: team({ teamNumber: 2, players: ['田中', '木村'] }),
@@ -26,7 +26,7 @@ function buildCourts(): Court[] {
         maxGameCount: 1,
       },
       next: {
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         teamA: team({ teamNumber: 3, players: ['川口', '浜田'] }),
         teamB: team({ teamNumber: 4, players: ['小林', '西村'] }),
         isMine: false,
@@ -35,7 +35,7 @@ function buildCourts(): Court[] {
     {
       courtNumber: 2,
       live: {
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         teamA: team({ teamNumber: 3, players: ['山田', '中川'] }),
         teamB: team({ teamNumber: 4, players: ['清水', '岡本'] }),
@@ -49,7 +49,7 @@ function buildCourts(): Court[] {
       // 0対0のまま。「まだ点が入っていません」を確かめる。自分の試合。
       courtNumber: 3,
       live: {
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         teamA: team({ teamNumber: 1, players: ['鈴木', '高橋'] }),
         teamB: team({ teamNumber: 2, players: ['伊藤', '渡辺'] }),
@@ -63,7 +63,7 @@ function buildCourts(): Court[] {
       // 「＋」の連打テストに使う。加藤・斎藤（B）5点。
       courtNumber: 4,
       live: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         teamA: team({ teamNumber: 3, players: ['松本', '中村'] }),
         teamB: team({ teamNumber: 4, players: ['加藤', '斎藤'] }),
@@ -72,7 +72,7 @@ function buildCourts(): Court[] {
         maxGameCount: 1,
       },
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 1, players: ['吉田', '山口'] }),
         teamB: team({ teamNumber: 2, players: ['佐藤', '森'] }),
         isMine: false,
@@ -82,7 +82,7 @@ function buildCourts(): Court[] {
       // 決勝（上限3ゲーム）。第2ゲームまで入っている（5-8 進行中）。
       courtNumber: 5,
       live: {
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '決勝トーナメント 準決勝',
         teamA: team({ teamNumber: 1, players: ['石川', '前田'] }),
         teamB: team({ teamNumber: 2, players: ['藤田', '岡田'] }),
@@ -99,7 +99,7 @@ function buildCourts(): Court[] {
       // 決勝（上限3ゲーム）。1-1 で同点。
       courtNumber: 6,
       live: {
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '決勝トーナメント 準決勝',
         teamA: team({ teamNumber: 3, players: ['長谷川', '五十嵐'] }),
         teamB: team({ teamNumber: 4, players: ['小早川', '日下部'] }),
@@ -116,7 +116,7 @@ function buildCourts(): Court[] {
       courtNumber: 7,
       live: null,
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 3, players: ['斉藤', '坂本'] }),
         teamB: team({ teamNumber: 4, players: ['遠藤', '青木'] }),
         isMine: true,
@@ -138,6 +138,8 @@ function renderPage(overrides: Partial<React.ComponentProps<typeof CourtsPage>> 
       completedMatches={2}
       totalMatches={48}
       canInput
+      emptyReason={null}
+      truncated={false}
       {...overrides}
     />
   );
@@ -171,12 +173,78 @@ describe('CourtsPage', () => {
     ).toBeInTheDocument();
   });
 
-  test('コートのカードが8枚出る', () => {
+  test('渡されたコートの数だけカードが出る（8 枚に固定しない）', () => {
     renderPage();
 
     for (let courtNumber = 1; courtNumber <= 8; courtNumber += 1) {
       expect(screen.getByTestId(`court-card-${courtNumber}`)).toBeInTheDocument();
     }
+    expect(screen.getAllByTestId(/^court-card-/)).toHaveLength(8);
+  });
+
+  test('9・10 番のコートだけが渡されたら、その 2 枚だけが出る（番号の飛んだ並びのまま）', () => {
+    const courts: Court[] = [9, 10].map((courtNumber) => ({
+      courtNumber,
+      live: null,
+      next: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        teamA: team({ players: ['斉藤', '坂本'] }),
+        teamB: team({ players: ['遠藤', '青木'] }),
+        isMine: false,
+      },
+    }));
+    renderPage({ courts });
+
+    expect(screen.getAllByTestId(/^court-card-/).map((card) => card.dataset.testid)).toEqual([
+      'court-card-9',
+      'court-card-10',
+    ]);
+  });
+
+  describe('コートのカードが 0 枚のとき、理由ごとの案内を出す', () => {
+    test('コートがまだ決まっていないとき「コートがまだ決まっていません」', () => {
+      renderPage({ courts: [], emptyReason: 'courts-undecided' });
+
+      expect(screen.getByText('コートがまだ決まっていません')).toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+    });
+
+    test('全部終わったとき「全部終わりました」と、対戦表へのリンクが出る', () => {
+      renderPage({ courts: [], emptyReason: 'all-finished' });
+
+      expect(screen.getByText('全部終わりました')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /対戦表/ })).toHaveAttribute('href', '/bracket');
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+    });
+
+    test('試合が 1 つも登録されていないときは、別の文面で案内する', () => {
+      renderPage({ courts: [], emptyReason: 'no-matches' });
+
+      expect(screen.getByText('まだ試合が登録されていません')).toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+    });
+
+    test('カードがあるときは案内を出さない', () => {
+      renderPage();
+
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('読み込みが上限を超えたとき', () => {
+    test('黙らず、出しきれていないかもしれないと日本語で知らせる', () => {
+      renderPage({ truncated: true });
+
+      expect(screen.getByRole('alert')).toHaveTextContent('出しきれていない');
+    });
+
+    test('超えていなければ知らせない', () => {
+      renderPage({ truncated: false });
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
   });
 
   test('「＋」を押すと得点が1増える', () => {

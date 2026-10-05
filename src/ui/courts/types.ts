@@ -12,19 +12,27 @@
  * 「進行中のゲーム」を分けて持たない。上限ゲーム数ぶんの枠をどれも押せる形にしたため
  * （docs/specs/2026-09-04-finish-match.md、PR #52 レビュー指摘1）。
  *
- * チーム色の折り返し（1〜4）は src/domain/class-labels.ts の TeamNumber をそのまま使う
- * （マイページと同じ判断。docs/specs/2026-09-19-courts-real-data.md）。
+ * チームの色・部の色の対応は src/domain/class-labels.ts の 1 か所だけ。ここには持たない
+ * （チーム番号はそのまま、部は「文字 + 色の番号」の `ClassLabel` で持つ）。
  */
 
-import type { ClassLabel } from '@/ui/components/class-chip';
+import type { ClassLabel } from '@/domain/class-labels';
 import type { GameScore } from '@/domain/scoring';
-import type { TeamNumber } from '@/domain/class-labels';
 
-export type { ClassLabel, GameScore, TeamNumber };
+export type { ClassLabel, GameScore };
+
+/**
+ * コートのカードが 0 枚のときの理由。画面は理由ごとに別の日本語を出す
+ * （真っ白だと「アプリが壊れている？」と思われる）。
+ * - courts-undecided: 試合は残っているのに、コートが 1 つも決まっていない（朝）
+ * - all-finished: 試合は全部終わった（夕方）
+ * - no-matches: 試合がそもそも 1 つも登録されていない
+ */
+export type CourtsEmptyReason = 'courts-undecided' | 'all-finished' | 'no-matches';
 
 export type CourtTeam = {
-  /** チームが決まっていれば 1〜4 の色番号、まだ決まっていなければ null（灰色扱い）。 */
-  teamNumber: TeamNumber | null;
+  /** `teams.team_number`。まだ決まっていなければ null（薄い色になる）。 */
+  teamNumber: number | null;
   /** 決まっていれば選手名（ダブルスは2人）。まだ決まっていなければ空配列。 */
   players: string[];
   /**

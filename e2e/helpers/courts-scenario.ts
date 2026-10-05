@@ -59,12 +59,14 @@ const [
 ] = BASE_PLAYER_NUMBERS;
 
 /** 対戦（matchups）を後片付けで見分けるための sort_order。seed（10〜60）とはぶつからない。 */
-const BASE_SORT_ORDERS = [970, 971, 972, 973] as const;
+const BASE_SORT_ORDERS = [970, 971, 972, 973, 974, 975] as const;
 const [
   SCORE_MATCHUP_SORT_ORDER,
   ZERO_SCORE_MATCHUP_SORT_ORDER,
   SLOT_MATCHUP_SORT_ORDER,
   LONG_NAME_MATCHUP_SORT_ORDER,
+  COURT_9_MATCHUP_SORT_ORDER,
+  COURT_10_MATCHUP_SORT_ORDER,
 ] = BASE_SORT_ORDERS;
 
 /** 「＋」「−」の一般的な動作確認に使うコート。得点の入った状態（2-0）から始まる。 */
@@ -73,8 +75,19 @@ export const SCORE_COURT_NUMBER = 2;
 export const ZERO_SCORE_COURT_NUMBER = 3;
 /** 相手がまだ決まっていない対戦（空枠ラベル）を「呼出待ち」で確認するコート。 */
 export const SLOT_LABEL_COURT_NUMBER = 5;
-/** 進行中も次も無い、素の「予定なし」を確認するコート（このシナリオでは何も作らない）。 */
-export const EMPTY_COURT_NUMBER = 6;
+/**
+ * 9 番・10 番のコート。次の大会は 10 面なので、8 面で止めていると当日ずっと画面に出ない
+ * （PR #56 レビュー）。9 番は進行中、10 番は呼出待ち（次だけ）。
+ */
+export const COURT_9_NUMBER = 9;
+export const COURT_10_NUMBER = 10;
+/**
+ * 基本シナリオのあいだ、カードが出るコート番号（昇順）。seed のコート 1 と、ここで作るコート。
+ * **4・6・8 は試合が無いので飛んだまま**（番号を埋めてカードを作らない）。
+ */
+export const BASE_COURT_NUMBERS = [1, 2, 3, 5, 7, 9, 10] as const;
+/** 基本シナリオのあいだ、カードが出てはいけないコート番号（番号が飛んだ場所）。 */
+export const SKIPPED_COURT_NUMBERS = [4, 6, 8] as const;
 /**
  * 空白入りの長い名前どうしの試合（進行中と、同じ顔ぶれの次の試合）。
  * seed の名前は「さとう」など短いものばかりで、**狭い画面で崩れるのは長い名前のとき**
@@ -91,8 +104,8 @@ export const SLOT_LABEL_TEXT = '予選4位';
 export const LONG_TEAM_A_NAMES = ['五十嵐　十四郎', '長谷川 一二三'];
 export const LONG_TEAM_B_NAMES = ['佐々木 太郎', '小早川　日下部'];
 
-/** 基本シナリオが作る予選リーグの試合数（seed の 3 試合 + ここで足す 4 試合）。 */
-export const BASE_LEAGUE_TOTAL_MATCHES = 7;
+/** 基本シナリオが作る予選リーグの試合数（seed の 3 試合 + ここで足す 6 試合）。 */
+export const BASE_LEAGUE_TOTAL_MATCHES = 9;
 /** 基本シナリオの間、終わっている予選リーグの試合数（seed の 1 試合のまま）。 */
 export const BASE_LEAGUE_COMPLETED_MATCHES = 1;
 
@@ -172,6 +185,20 @@ export async function createCourtsBaseScenario(): Promise<void> {
         side_b_team_id: TEAM_AISEI_ID,
         sort_order: LONG_NAME_MATCHUP_SORT_ORDER,
       },
+      {
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: '予選 7回戦',
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: COURT_9_MATCHUP_SORT_ORDER,
+      },
+      {
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: '予選 8回戦',
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: COURT_10_MATCHUP_SORT_ORDER,
+      },
     ])
     .select('id, sort_order');
   if (matchups.error) throw new Error(`対戦を作れませんでした: ${matchups.error.message}`);
@@ -225,6 +252,24 @@ export async function createCourtsBaseScenario(): Promise<void> {
         court_number: LONG_NAME_COURT_NUMBER,
         order_in_court: 2,
       },
+      {
+        matchup_id: matchupIdBySortOrder.get(COURT_9_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_1_ID,
+        order_in_matchup: 1,
+        status: 'live',
+        max_game_count: 1,
+        court_number: COURT_9_NUMBER,
+        order_in_court: 1,
+      },
+      {
+        matchup_id: matchupIdBySortOrder.get(COURT_10_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_1_ID,
+        order_in_matchup: 1,
+        status: 'waiting',
+        max_game_count: 1,
+        court_number: COURT_10_NUMBER,
+        order_in_court: 1,
+      },
     ])
     .select('id, matchup_id, order_in_matchup');
   if (matches.error) throw new Error(`試合を作れませんでした: ${matches.error.message}`);
@@ -242,6 +287,12 @@ export async function createCourtsBaseScenario(): Promise<void> {
     .sort((a, b) => a.order_in_matchup - b.order_in_matchup)
     .map((m) => m.id);
   const [longNameLiveMatchId] = longNameMatchIds;
+  const court9MatchId = matches.data.find(
+    (m) => m.matchup_id === matchupIdBySortOrder.get(COURT_9_MATCHUP_SORT_ORDER)
+  )!.id;
+  const court10MatchId = matches.data.find(
+    (m) => m.matchup_id === matchupIdBySortOrder.get(COURT_10_MATCHUP_SORT_ORDER)
+  )!.id;
 
   const matchPlayers = await admin.from('match_players').insert([
     {
@@ -295,6 +346,13 @@ export async function createCourtsBaseScenario(): Promise<void> {
     // slotMatchId は side b（相手）がまだ決まっていないので、a だけ入れる。
     { match_id: slotMatchId, side: 'a', participant_id: participantOf(SLOT_A1), order_in_pair: 1 },
     { match_id: slotMatchId, side: 'a', participant_id: participantOf(SLOT_A2), order_in_pair: 2 },
+    // 9・10 番コートの試合。出場者は得点用の 4 人を使い回す（1 人が何試合にも出てよい）。
+    ...[court9MatchId, court10MatchId].flatMap((matchId) => [
+      { match_id: matchId, side: 'a', participant_id: participantOf(SCORE_A1), order_in_pair: 1 },
+      { match_id: matchId, side: 'a', participant_id: participantOf(SCORE_A2), order_in_pair: 2 },
+      { match_id: matchId, side: 'b', participant_id: participantOf(SCORE_B1), order_in_pair: 1 },
+      { match_id: matchId, side: 'b', participant_id: participantOf(SCORE_B2), order_in_pair: 2 },
+    ]),
     // 長い名前の試合は、進行中と次の両方に同じ 4 人を入れる（「次」の行の崩れも見るため）。
     ...longNameMatchIds.flatMap((matchId) => [
       { match_id: matchId, side: 'a', participant_id: participantOf(LONG_A1), order_in_pair: 1 },
@@ -463,4 +521,108 @@ export async function deleteFinalScenario(): Promise<void> {
 
   const players = await admin.from('players').delete().in('player_number', FINAL_PLAYER_NUMBERS);
   if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
+}
+
+// ---------------------------------------------------------------------
+// カードが 0 枚になる大会（「いまの大会」を、空の別の大会に付け替えて確かめる）
+// ---------------------------------------------------------------------
+
+const EMPTY_COMPETITION_NAME = 'e2e カード 0 枚の大会';
+
+/** 0 枚になる場面。`courts-undecided` は朝、`all-finished` は夕方、`no-matches` は試合の登録前。 */
+export type EmptyCourtsScenario = 'courts-undecided' | 'all-finished' | 'no-matches';
+
+/**
+ * `/courts` が「いまの大会」（is_current の 1 件）を読むので、0 枚の場面を確かめるには、
+ * seed の大会に試合が残っていない状態が要る。seed の試合を書き換えると、ほかの画面テストが
+ * 道連れで壊れるので、**空の別の大会を作り、「いまの大会」の印をそれに付け替える**。
+ * 終わったら別の大会を消し、印を seed の大会に戻す（`deleteEmptyCourtsScenario`）。
+ *
+ * 前回の後片付けが済んでいなくても動くよう、作る前に必ず片づけてから作る。
+ * 途中で止まって印が戻っていないときも、次に流せば（または `npm run db:reset` で）戻る。
+ */
+export async function createEmptyCourtsScenario(scenario: EmptyCourtsScenario): Promise<void> {
+  await deleteEmptyCourtsScenario();
+
+  const turnedOff = await admin
+    .from('competitions')
+    .update({ is_current: false })
+    .eq('id', COMPETITION_ID);
+  if (turnedOff.error) throw new Error(`いまの大会を外せませんでした: ${turnedOff.error.message}`);
+
+  const competition = await admin
+    .from('competitions')
+    .insert({ name: EMPTY_COMPETITION_NAME, held_on: '2027-07-01', is_current: true })
+    .select('id')
+    .single();
+  if (competition.error) throw new Error(`大会を作れませんでした: ${competition.error.message}`);
+
+  const division = await admin
+    .from('divisions')
+    .insert({ competition_id: competition.data.id, name: '1部', sort_order: 10 })
+    .select('id')
+    .single();
+  if (division.error) throw new Error(`部を作れませんでした: ${division.error.message}`);
+
+  const stage = await admin
+    .from('stages')
+    .insert({
+      competition_id: competition.data.id,
+      name: '予選リーグ',
+      format: 'league',
+      sort_order: 10,
+    })
+    .select('id')
+    .single();
+  if (stage.error) throw new Error(`段を作れませんでした: ${stage.error.message}`);
+
+  if (scenario === 'no-matches') return;
+
+  const matchup = await admin
+    .from('matchups')
+    .insert({
+      stage_id: stage.data.id,
+      round_name: '予選 1回戦',
+      side_a_slot_label: '予選1位',
+      side_b_slot_label: '予選2位',
+      sort_order: 10,
+    })
+    .select('id')
+    .single();
+  if (matchup.error) throw new Error(`対戦を作れませんでした: ${matchup.error.message}`);
+
+  const match = await admin.from('matches').insert(
+    scenario === 'all-finished'
+      ? // 終わっている。コートは決まっているが、終わった試合はカードにならない
+        {
+          matchup_id: matchup.data.id,
+          division_id: division.data.id,
+          order_in_matchup: 1,
+          status: 'done',
+          max_game_count: 1,
+          court_number: 1,
+          order_in_court: 1,
+        }
+      : // これから。コートがまだ決まっていない（court_number が null）
+        {
+          matchup_id: matchup.data.id,
+          division_id: division.data.id,
+          order_in_matchup: 1,
+          status: 'waiting',
+          max_game_count: 1,
+        }
+  );
+  if (match.error) throw new Error(`試合を作れませんでした: ${match.error.message}`);
+}
+
+/** 別の大会を消し、「いまの大会」の印を seed の大会に戻す。 */
+export async function deleteEmptyCourtsScenario(): Promise<void> {
+  const removed = await admin.from('competitions').delete().eq('name', EMPTY_COMPETITION_NAME);
+  if (removed.error) throw new Error(`後片付けに失敗（別の大会）: ${removed.error.message}`);
+
+  const restored = await admin
+    .from('competitions')
+    .update({ is_current: true })
+    .eq('id', COMPETITION_ID);
+  if (restored.error) throw new Error(`いまの大会を戻せませんでした: ${restored.error.message}`);
 }

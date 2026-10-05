@@ -3,6 +3,12 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import {
+  classColorClasses,
+  classColorNumberAt,
+  teamBgClass,
+  type ClassColorNumber,
+} from '@/domain/class-labels';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 import type { Session } from '@/server/session';
 
@@ -33,36 +39,6 @@ type Props = {
 /** チームが決まっていない人（試合に出ない入力係など）の置き場を指す目印。 */
 const NO_TEAM = '__no_team__';
 
-/** チーム番号 → 縦棒の色（globals.css の --color-team-1〜4）。 */
-const TEAM_BAR_CLASS: Record<number, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
-};
-
-/** 5 チーム目からは色が足りないので、色を付けずに枠線と同じ薄い色にする。 */
-function teamBarClass(teamNumber: number | null) {
-  if (teamNumber === null) return 'bg-hairline';
-  return TEAM_BAR_CLASS[teamNumber] ?? 'bg-hairline';
-}
-
-/**
- * 部の色。**名前ではなく、その大会での並び順で引く。**
- * 部の呼び名は大会ごとに変わる（「1部」が「A級」になる）ので、
- * 名前で決めると次の大会で色が付かなくなる。
- *
- * チームをまたいで同じ部が同じ色になるよう、番号は**大会の部の並び**から取る。
- */
-const DIVISION_DOT_CLASS = [
-  'bg-class-1',
-  'bg-class-2',
-  'bg-class-3',
-  'bg-class-4',
-  'bg-class-5',
-  'bg-class-6',
-];
-
 type Bucket = {
   key: string;
   teamNumber: number | null;
@@ -92,15 +68,23 @@ function buildBuckets(entrants: Entrant[], teams: EnterTeam[]): Bucket[] {
   return buckets;
 }
 
-type Group = { key: string; colorIndex: number; name: string | null; members: Entrant[] };
+/**
+ * 部の色は**名前ではなく、その大会での並び順で引く**（`src/domain/class-labels.ts`）。
+ * チームをまたいで同じ部が同じ色になるよう、番号は大会の部の並びから取る。
+ */
+type Group = {
+  key: string;
+  colorNumber: ClassColorNumber | null;
+  name: string | null;
+  members: Entrant[];
+};
 
 /** 選んだチームの中を部ごとに分ける。部が無い人は見出しなしで最後にまとめる。 */
 function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
   const groups: Group[] = divisions
     .map((division, index) => ({
       key: division.id,
-      // チームをまたいで「1部」が同じ色になるよう、大会の部の並びから取る
-      colorIndex: index,
+      colorNumber: classColorNumberAt(index),
       name: division.name,
       members: members.filter((member) => member.divisionId === division.id),
     }))
@@ -110,7 +94,7 @@ function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
   if (withoutDivision.length > 0) {
     groups.push({
       key: '__no_division__',
-      colorIndex: -1,
+      colorNumber: null,
       name: null,
       members: withoutDivision,
     });
@@ -394,7 +378,7 @@ function TeamStep({
           >
             <span
               aria-hidden="true"
-              className={`h-[34px] w-[10px] shrink-0 rounded-[6px] ${teamBarClass(bucket.teamNumber)}`}
+              className={`h-[34px] w-[10px] shrink-0 rounded-[6px] ${teamBgClass(bucket.teamNumber)}`}
             />
             <span className="min-w-0 flex-1 truncate text-[18px] font-black">{bucket.name}</span>
             <span className="text-muted-ink tabular shrink-0 text-[13px] font-bold">
@@ -438,7 +422,7 @@ function NameStep({
           <span className="flex min-w-0 items-center gap-2 text-[15px] font-black">
             <span
               aria-hidden="true"
-              className={`h-[10px] w-[10px] shrink-0 rounded-full ${teamBarClass(bucket.teamNumber)}`}
+              className={`h-[10px] w-[10px] shrink-0 rounded-full ${teamBgClass(bucket.teamNumber)}`}
             />
             <span className="truncate">{bucket.name}</span>
           </span>
@@ -451,12 +435,12 @@ function NameStep({
         <div key={group.key} className="mt-3">
           {group.name && (
             <p className="text-muted-ink mb-2 flex items-center gap-1.5 text-[12px] font-extrabold">
-              <span
-                aria-hidden="true"
-                className={`h-[8px] w-[8px] shrink-0 rounded-full ${
-                  DIVISION_DOT_CLASS[group.colorIndex] ?? 'bg-hairline'
-                }`}
-              />
+              {group.colorNumber && (
+                <span
+                  aria-hidden="true"
+                  className={`h-[8px] w-[8px] shrink-0 rounded-full ${classColorClasses(group.colorNumber).dot}`}
+                />
+              )}
               {group.name}
             </p>
           )}

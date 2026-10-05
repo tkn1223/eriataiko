@@ -19,7 +19,7 @@ function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
 }
 
 const baseLive: NonNullable<Court['live']> = {
-  classLabel: '2部',
+  classLabel: { name: '2部', colorNumber: 2 },
   roundLabel: '予選 1回戦',
   teamA: team({ teamNumber: 1, players: ['佐藤', '鈴木'] }),
   teamB: team({ teamNumber: 2, players: ['高橋', '伊藤'] }),
@@ -71,6 +71,24 @@ describe('CourtLiveCard', () => {
     expect(screen.getByText('予選 1回戦')).toBeInTheDocument();
   });
 
+  test('部の文字は部の名前で、色は並び順の番号から決まる', () => {
+    renderLiveCard({
+      live: { ...baseLive, classLabel: { name: '初級', colorNumber: 5 } },
+    });
+
+    expect(screen.getByText('初級')).toHaveClass('text-class-5', 'bg-class-5-bg');
+  });
+
+  test('5 番目以降のチーム番号は折り返さず、薄い色になる（1 番の色と同じにならない）', () => {
+    renderLiveCard({
+      live: { ...baseLive, teamA: team({ teamNumber: 5, players: ['佐藤', '鈴木'] }) },
+    });
+
+    const mark = screen.getByText(wholeText('佐藤・鈴木')).previousElementSibling;
+    expect(mark).toHaveClass('bg-hairline');
+    expect(mark).not.toHaveClass('bg-team-1');
+  });
+
   test('両ペアの名前が出る', () => {
     renderLiveCard();
 
@@ -87,7 +105,7 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText(wholeText('高橋・伊藤'))).not.toBeInTheDocument();
   });
 
-  test('ペア名の横にチーム色が出る。チームが決まっていない側は灰色', () => {
+  test('ペア名の横にチーム色が出る。チームが決まっていない側は薄い色（入場画面と同じ）', () => {
     renderLiveCard({
       live: { ...baseLive, teamB: team({ teamNumber: null, players: [], slotLabel: '予選4位' }) },
     });
@@ -96,7 +114,7 @@ describe('CourtLiveCard', () => {
     expect(screen.getByText(wholeText('佐藤・鈴木')).previousElementSibling).toHaveClass(
       'bg-team-1'
     );
-    expect(screen.getByText('予選4位').previousElementSibling).toHaveClass('bg-gray-300');
+    expect(screen.getByText('予選4位').previousElementSibling).toHaveClass('bg-hairline');
   });
 
   test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', () => {
@@ -156,7 +174,7 @@ describe('CourtLiveCard', () => {
   test('次の試合があるコートには「次」と部・ペア名が出る', () => {
     renderLiveCard({
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 3, players: ['山田'] }),
         teamB: team({ teamNumber: 4, players: ['中村'] }),
         isMine: false,
@@ -171,7 +189,7 @@ describe('CourtLiveCard', () => {
   test('次の試合の出場者がまだ決まっていなければ、空枠ラベルが出る', () => {
     renderLiveCard({
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 3, players: ['山田'] }),
         teamB: team({ teamNumber: null, players: [], slotLabel: '予選2位' }),
         isMine: false,
@@ -190,7 +208,7 @@ describe('CourtLiveCard', () => {
   test('次が自分の試合のときは名前がaccent色で強調される', () => {
     renderLiveCard({
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 3, players: ['山田'] }),
         teamB: team({ teamNumber: 4, players: ['中村'] }),
         isMine: true,
@@ -204,7 +222,7 @@ describe('CourtLiveCard', () => {
     renderLiveCard({
       live: null,
       next: {
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         teamA: team({ teamNumber: 1, players: ['山田'] }),
         teamB: team({ teamNumber: 2, players: ['中村'] }),
         isMine: false,
@@ -412,7 +430,7 @@ describe('CourtLiveCard', () => {
       renderLiveCard({
         live: finishedLive,
         next: {
-          classLabel: '1部',
+          classLabel: { name: '1部', colorNumber: 1 },
           teamA: team({ teamNumber: 3, players: ['山田'] }),
           teamB: team({ teamNumber: 4, players: ['中村'] }),
           isMine: false,

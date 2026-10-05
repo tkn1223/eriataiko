@@ -8,17 +8,14 @@
  * この型をそのまま返す。
  */
 
-/** チーム色は 1〜4 の 4 色のみ（globals.css の --color-team-1〜4）。 */
-export type TeamNumber = 1 | 2 | 3 | 4;
-
-export type ClassLabel = '1部' | '2部' | '3部';
+import type { ClassLabel } from '@/domain/class-labels';
 
 export type MyProfile = {
   name: string;
   /** チーム無しの参加者（入力係など）は null。 */
   teamName: string | null;
-  /** チーム無しは null（灰色のアバターにする）。 */
-  teamNumber: TeamNumber | null;
+  /** `teams.team_number`。チーム無しは null（薄い色のアバターにする。色の対応は class-labels.ts）。 */
+  teamNumber: number | null;
   /** 部が割り当てられていない参加者は null。 */
   classLabel: ClassLabel | null;
 };

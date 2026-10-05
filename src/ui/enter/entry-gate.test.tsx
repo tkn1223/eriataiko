@@ -82,6 +82,46 @@ describe('入場画面', () => {
     expect(screen.queryByRole('button', { name: /たろう/ })).not.toBeInTheDocument();
   });
 
+  test('チームの縦棒はチーム番号の色。チームに入っていない人の束は薄い色', () => {
+    renderGate({
+      entrants: [
+        ...entrants,
+        entrant({ playerId: 'p7', playerNumber: 7, name: 'にゅうりょく', divisionId: null }),
+      ],
+    });
+
+    const barOf = (name: RegExp) =>
+      screen.getByRole('button', { name }).querySelector('[aria-hidden="true"]');
+    expect(barOf(/愛知南/)).toHaveClass('bg-team-1');
+    expect(barOf(/愛知中央/)).toHaveClass('bg-team-2');
+    expect(barOf(/チームなし/)).toHaveClass('bg-hairline');
+  });
+
+  test('部の小さい丸は並び順の色。6 部まで色が付く', () => {
+    const sixDivisions: EnterDivision[] = [1, 2, 3, 4, 5, 6].map((n) => ({
+      id: `d${n}`,
+      name: `部${n}`,
+    }));
+    renderGate({
+      divisions: sixDivisions,
+      teams: [{ id: 't1', teamNumber: 1, name: '愛知南' }],
+      entrants: sixDivisions.map((division, index) =>
+        entrant({
+          playerId: `p${index}`,
+          playerNumber: index + 1,
+          name: `せんしゅ${index + 1}`,
+          teamId: 't1',
+          divisionId: division.id,
+        })
+      ),
+    });
+
+    sixDivisions.forEach((division, index) => {
+      const dot = screen.getByText(division.name).querySelector('[aria-hidden="true"]');
+      expect(dot).toHaveClass(`bg-class-${index + 1}`);
+    });
+  });
+
   test('同名を見分けられるよう、名前に番号が添えられている', () => {
     renderGate();
     fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));

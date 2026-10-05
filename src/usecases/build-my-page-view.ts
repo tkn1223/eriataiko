@@ -1,8 +1,13 @@
 import { buildPlayerRecord, type FinishedMatchRecord } from '@/domain/player-record';
-import { classLabelsByDivisionId, foldTeamNumber } from '@/domain/class-labels';
+import {
+  classLabelsByDivisionId,
+  UNKNOWN_CLASS_LABEL,
+  type ClassLabel,
+  type DivisionRow,
+} from '@/domain/class-labels';
 import { leadingSide, matchOutcome } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
-import type { ClassLabel, MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
+import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
 
 /**
  * `/me`（マイページ）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -12,9 +17,10 @@ import type { ClassLabel, MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
  * （読み取りは `src/db/me.ts`。ゲームの得点・勝敗の型は `src/domain/scoring.ts` /
  * `src/domain/match-rules.ts` の `GameScore` にそろえ、ここでは独自の型を作らない）。
  *
- * 部のラベル決めとチーム色の折り返しは `src/domain/class-labels.ts` の共通関数を使う
- * （結果LIVE の `build-courts-view.ts` と同じ判断を 2 か所にコピーしない。
- * docs/specs/2026-09-19-courts-real-data.md）。
+ * 部のラベル決め（文字は `divisions.name`、色は並び順）は `src/domain/class-labels.ts` の
+ * 共通関数を使う（結果LIVE の `build-courts-view.ts` と同じ判断を 2 か所にコピーしない。
+ * docs/specs/2026-09-19-courts-real-data.md）。チームの色は番号のまま画面に渡し、
+ * 対応表も同じファイルの `teamBgClass` に 1 か所だけ置く。
  */
 
 export type MyPageViewPlayerRow = {
@@ -45,7 +51,7 @@ export type MyPageViewMatchRow = {
   gameScores: MyPageViewGameScoreRow[];
 };
 
-export type MyPageViewDivisionRow = { id: string; sortOrder: number };
+export type MyPageViewDivisionRow = DivisionRow;
 
 export type MyPageViewInput = {
   /** 自分の participants.id。試合の中から自分がどちら側かを見分けるのに使う。 */
@@ -130,8 +136,8 @@ function toMyMatch(
 
   const gameScoresAB = toGameScores(playedGameScores(match.gameScores));
   // classLabelById は buildMyPageView が divisions から作った、必ず値が入るはずの表。
-  // 万一 division がその大会に無ければ「決めていない部」の意味で 3部 に寄せる。
-  const classLabel = classLabelById.get(match.divisionId) ?? '3部';
+  // 万一 division がその大会に無ければ、別の部に見えないよう「部不明」にする。
+  const classLabel = classLabelById.get(match.divisionId) ?? UNKNOWN_CLASS_LABEL;
 
   const base: MyMatch = {
     id: match.matchId,
@@ -174,7 +180,7 @@ export function buildMyPageView(input: MyPageViewInput): MyPageView {
   const profile: MyProfile = {
     name: input.profile.name,
     teamName: input.profile.teamName,
-    teamNumber: foldTeamNumber(input.profile.teamNumber),
+    teamNumber: input.profile.teamNumber,
     classLabel: input.profile.divisionId
       ? (classLabelById.get(input.profile.divisionId) ?? null)
       : null,

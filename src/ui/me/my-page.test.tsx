@@ -7,7 +7,7 @@ const profile: MyProfile = {
   name: '佐々木 太郎',
   teamName: 'アリーナクラブ',
   teamNumber: 2,
-  classLabel: '2部',
+  classLabel: { name: '2部', colorNumber: 2 },
 };
 
 const record: MyRecord = {
@@ -25,7 +25,7 @@ const matches: MyMatch[] = [
     won: true,
     roundLabel: '予選 1回戦',
     partnerName: '山田',
-    classLabel: '2部',
+    classLabel: { name: '2部', colorNumber: 2 },
     opponentNames: ['佐藤', '鈴木'],
     gamesWon: 2,
     gamesLost: 0,
@@ -40,7 +40,7 @@ const matches: MyMatch[] = [
     won: false,
     roundLabel: '予選 2回戦',
     partnerName: '山田',
-    classLabel: '2部',
+    classLabel: { name: '2部', colorNumber: 2 },
     opponentNames: ['田中', '高橋'],
     gamesWon: 1,
     gamesLost: 2,
@@ -54,7 +54,7 @@ const matches: MyMatch[] = [
     id: 'match-3',
     status: 'live',
     roundLabel: '決勝トーナメント 準々決勝',
-    classLabel: '2部',
+    classLabel: { name: '2部', colorNumber: 2 },
     opponentNames: ['伊藤'],
     // 進行中はゲーム数を渡さない（2 ゲーム目は決着していない）
     gameScores: [
@@ -67,7 +67,7 @@ const matches: MyMatch[] = [
     status: 'waiting',
     roundLabel: '決勝トーナメント 準決勝',
     partnerName: '山田',
-    classLabel: '2部',
+    classLabel: { name: '2部', colorNumber: 2 },
     opponentNames: ['渡辺', '小林'],
     courtNumber: 3,
     orderInCourt: 2,
@@ -76,7 +76,7 @@ const matches: MyMatch[] = [
     id: 'match-5',
     status: 'waiting',
     roundLabel: '決勝トーナメント 3位決定戦',
-    classLabel: '2部',
+    classLabel: { name: '2部', colorNumber: 2 },
     opponentNames: ['中村'],
     courtNumber: null,
   },
@@ -90,12 +90,37 @@ describe('MyPage', () => {
     expect(screen.getByText(/アリーナクラブ\s*・\s*2部/)).toBeInTheDocument();
   });
 
-  test('チーム無しのときは灰色のアバターで、サブ行は部だけになる', () => {
+  test('チーム無しのときは薄い色のアバターで、サブ行は部だけになる', () => {
     const soloProfile: MyProfile = { ...profile, teamName: null, teamNumber: null };
-    render(<MyPage profile={soloProfile} record={record} matches={[]} />);
+    const { container } = render(<MyPage profile={soloProfile} record={record} matches={[]} />);
 
     expect(screen.queryByText(/アリーナクラブ/)).not.toBeInTheDocument();
     expect(screen.getByText('2部')).toBeInTheDocument();
+    const avatar = container.querySelector('[aria-hidden="true"].rounded-full');
+    // 入場画面と同じ薄い色。薄い色の上の頭文字は白だと読めないので濃い色
+    expect(avatar).toHaveClass('bg-hairline', 'text-ink');
+    expect(avatar).not.toHaveClass('text-white');
+  });
+
+  test('チームに入っている人のアバターはチーム番号の色で、頭文字は白', () => {
+    const { container } = render(
+      <MyPage profile={{ ...profile, teamNumber: 3 }} record={record} matches={[]} />
+    );
+
+    const avatar = container.querySelector('[aria-hidden="true"].rounded-full');
+    expect(avatar).toHaveClass('bg-team-3', 'text-white');
+  });
+
+  test('部の文字は部の名前をそのまま出す（1部/2部/3部に限らない）', () => {
+    render(
+      <MyPage
+        profile={{ ...profile, classLabel: { name: '初級', colorNumber: 5 } }}
+        record={record}
+        matches={[]}
+      />
+    );
+
+    expect(screen.getByText(/アリーナクラブ\s*・\s*初級/)).toBeInTheDocument();
   });
 
   test('成績カードに「◯勝◯敗」「ゲーム ◯-◯」「得失点 ±◯」が出る', () => {
@@ -161,7 +186,7 @@ describe('MyPage', () => {
       id: 'court-only',
       status: 'waiting',
       roundLabel: '予選 3回戦',
-      classLabel: '2部',
+      classLabel: { name: '2部', colorNumber: 2 },
       opponentNames: ['中村'],
       courtNumber: 2,
     };

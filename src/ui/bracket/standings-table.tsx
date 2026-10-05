@@ -1,17 +1,11 @@
 'use client';
 
+import { teamBgClass } from '@/domain/class-labels';
 import type { StandingRow, Team, TeamNumber } from '@/ui/bracket/sample-data';
 
 type Props = {
   teams: Team[];
   rows: StandingRow[];
-};
-
-const TEAM_DOT_CLASS: Record<TeamNumber, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
 };
 
 function teamName(teams: Team[], teamNumber: TeamNumber) {
@@ -72,7 +66,7 @@ export function StandingsTable({ teams, rows }: Props) {
                   <span className="flex items-center gap-1 text-[14px] font-bold whitespace-nowrap">
                     <span
                       aria-hidden="true"
-                      className={`size-[10px] shrink-0 rounded-[2px] ${TEAM_DOT_CLASS[row.teamNumber]}`}
+                      className={`size-[10px] shrink-0 rounded-[2px] ${teamBgClass(row.teamNumber)}`}
                     />
                     {teamName(teams, row.teamNumber)}
                   </span>

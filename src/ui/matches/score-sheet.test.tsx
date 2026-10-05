@@ -7,7 +7,7 @@ const match: CourtMatch & { courtNumber: number } = {
   id: 'm-live',
   courtNumber: 3,
   orderInCourt: 2,
-  classLabel: '2部',
+  classLabel: { name: '2部', colorNumber: 2 },
   roundLabel: '予選 1回戦',
   status: 'live',
   teamA: { number: 1, players: ['佐藤', '鈴木'] },

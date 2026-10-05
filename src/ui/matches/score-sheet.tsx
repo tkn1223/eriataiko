@@ -2,7 +2,8 @@
 
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
-import type { CourtMatch, GameScore, MatchTeam, TeamNumber } from '@/ui/matches/sample-data';
+import { teamBgClass } from '@/domain/class-labels';
+import type { CourtMatch, GameScore, MatchTeam } from '@/ui/matches/sample-data';
 
 type SelectedMatch = CourtMatch & { courtNumber: number };
 
@@ -16,14 +17,6 @@ type Props = {
   onDecrement: (side: 'A' | 'B') => void;
   onFinishGame: () => void;
   onClose: () => void;
-};
-
-/** チーム番号 → 背景色クラス（globals.css の @theme で定義した --color-team-1〜4）。 */
-const TEAM_BG_CLASS: Record<TeamNumber, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
 };
 
 /**
@@ -55,7 +48,7 @@ export function ScoreSheet({
       header={
         <>
           <h2 id="score-sheet-title" className="text-[15px] font-black">
-            コート{match.courtNumber} ・ [{match.classLabel}] {match.roundLabel}
+            コート{match.courtNumber} ・ [{match.classLabel.name}] {match.roundLabel}
           </h2>
           <span className="mt-1 inline-block rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500">
             {gameNumber}ゲーム目
@@ -124,7 +117,7 @@ function TeamScorePanel({
       <p className="flex min-h-[2.6em] items-center justify-center gap-1.5 text-center text-[13px] font-extrabold">
         <span
           aria-hidden="true"
-          className={`size-2.5 shrink-0 rounded-sm ${TEAM_BG_CLASS[team.number]}`}
+          className={`size-2.5 shrink-0 rounded-sm ${teamBgClass(team.number)}`}
         />
         {team.players.join('・')}
       </p>

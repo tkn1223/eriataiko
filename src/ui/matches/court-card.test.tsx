@@ -7,7 +7,7 @@ function makeMatch(
   overrides: Partial<CourtMatch> & Pick<CourtMatch, 'id' | 'orderInCourt' | 'status'>
 ): CourtMatch {
   return {
-    classLabel: '1部',
+    classLabel: { name: '1部', colorNumber: 1 },
     roundLabel: '予選 1回戦',
     teamA: { number: 1, players: ['佐藤'] },
     teamB: { number: 2, players: ['鈴木'] },

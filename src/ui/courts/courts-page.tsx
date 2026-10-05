@@ -21,7 +21,7 @@ type Props = {
   canInput: boolean;
   /** `courts` が空のときだけ入る。理由ごとに別の案内を出す。 */
   emptyReason: CourtsEmptyReason | null;
-  /** 読む上限を超えて、コートが出しきれていないかもしれない。 */
+  /** 読む上限を超えて、コートや消化数が出しきれていないかもしれない。 */
   truncated: boolean;
 };
 
@@ -157,7 +157,7 @@ export function CourtsPage({
           role="alert"
           className="text-live mb-[14px] rounded-[10px] bg-red-100 px-3 py-2 text-[12px] font-extrabold"
         >
-          試合の数が多すぎて、出しきれていないコートがあるかもしれません。運営の方に知らせてください。
+          試合の数が多すぎて、出しきれていないコートや試合数があるかもしれません。運営の方に知らせてください。
         </p>
       )}
 

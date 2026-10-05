@@ -16,21 +16,27 @@ import type {
  * - コートのカード用: 進行中（live）と未実施（waiting）の試合**だけ**を、
  *   対戦・チーム・出場者の名前・得点ごと 1 回で読む。終わった試合は画面に出ないので読まない。
  * - 「◯/◯ 試合消化」用: 段ごとの試合数と終了数を、**件数として数えるだけ**
- *   （`head: true` で行を持ってこない）。中身は要らない。
+ *   （埋め込みの `matches(count)` で件数だけを受け取り、試合の行は持ってこない）。中身は要らない。
  * 1 本で兼ねていたころは、終わった試合ぶんだけ大会が進むほど重くなり、
  * 上限（100 件）を超えるとコートや消化数が**黙って**欠けた。
  *
  * 当日いちばん開かれる画面で、体育館の電波は細い。順番待ちの段数を増やさないよう、
- * 大会の id が分かったあと、部・段（と段ごとの件数）・コート用の試合・自分の参加者情報を
- * 同時に読む（`findCurrentCompetitionId` と合わせて 3 段）。
+ * 大会の id が分かったあと、部・段と段ごとの件数・コート用の試合・自分の参加者情報の 4 回を
+ * 同時に読む（`findCurrentCompetitionId` と合わせて 5 回・2 段。段の数が増えても回数は変わらない）。
  *
  * 一覧の上限（AGENTS.md の「一覧を読むクエリには .limit() を付ける」）は、
  * `src/db/snapshot.ts` と同じく**上限より 1 件多く読み**、超えたら `truncated` で分かるようにする
  * （超えた 1 件は判定にだけ使い、渡さない）。
- * 埋め込んだ表の上限は「試合 1 つあたり」に効く。
+ * 埋め込んだ表の上限は、親の 1 行あたり（試合 1 つ・段 1 つあたり）に効く。
  */
 const MAX_DIVISIONS = 20;
 const MAX_STAGES = 20;
+/**
+ * 1 段あたりの対戦の数の上限。チームは 4 つまで（teams_team_number_range）なので、
+ * 総当たりでも 1 段に 6 対戦。組み方が変わっても届かないよう大きく取る
+ * （1 対戦ぶんは件数 2 つだけの小さな行なので、多めにしても軽い）。
+ */
+export const MAX_MATCHUPS_PER_STAGE = 100;
 /**
  * コート用の試合（live と waiting）の上限。朝は全部が waiting なので、
  * 大会全体の試合数（100 人で 1 人 5 試合 = 125 試合が目安）を超える余裕を持たせる。
@@ -111,48 +117,43 @@ async function findDivisions(supabase: SupabaseReadClient, competitionId: string
 
 /**
  * いまの大会の段すべて（予選リーグ・決勝トーナメントなど）と、段ごとの試合数・終了数。
- * 件数は段ごとに数えるだけ（行は持ってこない）。段の数は数個なので、数える問い合わせは
- * 同時に出す。
+ *
+ * 件数は**数えるだけ**で、試合の行は持ってこない（埋め込みの `matches(count)` は件数だけを返す）。
+ * 試合は段を直接持たない（試合 → 対戦 → 段）ので、対戦ごとの件数を受け取って段ごとに足す。
+ * 対戦の数は大会の組み方で決まり、試合が進んでも増えない（チームは 4 つまでなので 1 段に数個）。
+ *
+ * 段の一覧と件数を 1 回で読むのは、段の id を知ってから段ごとに数えると
+ * 順番待ちが 1 段増え、問い合わせも段の数 × 2 回増えるため（体育館の電波は細い）。
  */
 async function findStagesWithCounts(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('stages')
-    .select('id, name, sort_order')
+    .select('id, name, sort_order, matchups(total:matches(count), done:matches(count))')
     .eq('competition_id', competitionId)
+    .eq('matchups.done.status', 'done')
+    .limit(MAX_MATCHUPS_PER_STAGE + 1, { referencedTable: 'matchups' })
     .limit(MAX_STAGES + 1);
   if (error) throw error;
 
-  const { rows: stageRows, overflowed } = withinLimit(data ?? [], MAX_STAGES);
-  const rows: CourtsViewStageRow[] = await Promise.all(
-    stageRows.map(async (row) => {
-      const [totalMatches, doneMatches] = await Promise.all([
-        countMatchesOfStage(supabase, row.id, 'all'),
-        countMatchesOfStage(supabase, row.id, 'done'),
-      ]);
-      return { id: row.id, name: row.name, sortOrder: row.sort_order, totalMatches, doneMatches };
-    })
-  );
-  return { rows, overflowed };
+  const { rows: stageRows, overflowed: stagesOverflowed } = withinLimit(data ?? [], MAX_STAGES);
+  let matchupsOverflowed = false;
+  const rows: CourtsViewStageRow[] = stageRows.map((row) => {
+    const { rows: matchups, overflowed } = withinLimit(row.matchups, MAX_MATCHUPS_PER_STAGE);
+    if (overflowed) matchupsOverflowed = true;
+    return {
+      id: row.id,
+      name: row.name,
+      sortOrder: row.sort_order,
+      totalMatches: sumCounts(matchups.map((matchup) => matchup.total)),
+      doneMatches: sumCounts(matchups.map((matchup) => matchup.done)),
+    };
+  });
+  return { rows, overflowed: stagesOverflowed || matchupsOverflowed };
 }
 
-/**
- * ある段の試合数を**数えるだけ**で返す（`head: true` は行を返さず件数だけ返す）。
- * 行を読まないので `.limit()` は要らない（件数は何試合あっても正確）。
- * 試合は段を直接持たない（対戦 → 段）ので、対戦をつないで段で絞る。
- */
-async function countMatchesOfStage(
-  supabase: SupabaseReadClient,
-  stageId: string,
-  which: 'all' | 'done'
-): Promise<number> {
-  const inStage = supabase
-    .from('matches')
-    .select('id, matchups!inner(stage_id)', { count: 'exact', head: true })
-    .eq('matchups.stage_id', stageId);
-
-  const { count, error } = await (which === 'done' ? inStage.eq('status', 'done') : inStage);
-  if (error) throw error;
-  return count ?? 0;
+/** 対戦ごとの `matches(count)`（`[{ count }]` の形）を足し合わせる。 */
+function sumCounts(countsPerMatchup: { count: number }[][]): number {
+  return countsPerMatchup.reduce((sum, counts) => sum + (counts[0]?.count ?? 0), 0);
 }
 
 /**

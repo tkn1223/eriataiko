@@ -6,6 +6,7 @@ import {
   BASE_LEAGUE_TOTAL_MATCHES,
   COURT_10_NUMBER,
   COURT_9_NUMBER,
+  COURT_9_SAVED_SCORE,
   createCourtsBaseScenario,
   createFinalScenario,
   deleteCourtsBaseScenario,
@@ -32,9 +33,10 @@ import {
  * *.test.tsx は jsdom で見た目の中身を、ここではスマホ幅での実際の見え方と、
  * 本物のデータ（supabase/seed.sql + e2e/helpers/courts-scenario.ts）につながっていることを確かめる。
  *
- * seed.sql のコート1（愛知南 対 愛知中央）はそのまま使う:
+ * seed.sql のコート1（愛知南 対 愛知中央）はそのまま使う（名前と「あなたの試合」だけ。
+ * 得点は手元で押すと変わるので、得点の確かめには courts-scenario.ts の 9 番コートを使う）:
  * - 進行中（court_number=1, order_in_court=2）: 2部・予選 1回戦。
- *   たろう・いとう（愛知南、8点） 対 やまもと・まつもと（愛知中央、6点）
+ *   たろう・いとう（愛知南） 対 やまもと・まつもと（愛知中央）
  * - 次（court_number=1, order_in_court=3）: 3部。さとう・いとう 対 わたなべ・まつもと
  *
  * それ以外の状態（0対0・相手未定・呼出待ち・決勝の同点・長い名前…）は
@@ -168,11 +170,12 @@ test('枠の数がmax_game_countどおりで、保存済みの得点が枠に入
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  const card = courtCard(page, 1);
+  // seed の得点は手元で押すと変わるので、テスト用に作った試合（1 ゲームだけ・得点つき）で見る
+  const card = courtCard(page, COURT_9_NUMBER);
   await expect(card.getByText('第1ゲーム')).toBeVisible();
   await expect(card.getByText('第2ゲーム')).toHaveCount(0);
-  await expect(card.getByText('8', { exact: true })).toBeVisible();
-  await expect(card.getByText('6', { exact: true })).toBeVisible();
+  await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideA), { exact: true })).toBeVisible();
+  await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideB), { exact: true })).toBeVisible();
 });
 
 test('次の試合（部・ペア名）が出る。次が無ければ出ない', async ({ page }) => {
@@ -265,9 +268,9 @@ test.describe('観戦者', () => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
-    const card = courtCard(page, 1);
-    await expect(card.getByText('8', { exact: true })).toBeVisible();
-    await expect(card.getByText('6', { exact: true })).toBeVisible();
+    const card = courtCard(page, COURT_9_NUMBER);
+    await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideA), { exact: true })).toBeVisible();
+    await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideB), { exact: true })).toBeVisible();
   });
 });
 

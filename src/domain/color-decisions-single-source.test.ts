@@ -14,7 +14,12 @@ import { describe, expect, test } from 'vitest';
 const SOURCE_ROOT = join(process.cwd(), 'src');
 const THE_ONE_PLACE = join('src', 'domain', 'class-labels.ts');
 
-const COLOR_CLASS = /\b(?:bg|text)-(?:team|class)-(?:[1-6]|\$\{)/;
+/**
+ * チーム色・部の色を指す書き方。`bg-` `text-` だけでなく `border-` `ring-` など
+ * どの頭でも、CSS の変数（`var(--color-team-1)`）でも、`'bg-team-' + n` のような
+ * つなぎ合わせでも引っかかるようにする（どれも対応表のコピーになる）。
+ */
+const COLOR_CLASS = /-(?:team|class)-(?:\d|\$\{)|-(?:team|class)-['"`]\s*\+/;
 const FOLD = /foldTeamNumber/;
 const FIXED_COURTS = /COURT_NUMBERS/;
 
@@ -25,6 +30,29 @@ function sourceFiles(dir: string): string[] {
     return /\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name) ? [path] : [];
   });
 }
+
+describe('見張りの網に穴が無い', () => {
+  test.each([
+    'bg-team-1',
+    'text-team-2',
+    'border-team-3',
+    'ring-class-4',
+    'bg-class-5-bg',
+    'text-class-6',
+    'var(--color-team-1)',
+    'bg-team-${teamNumber}',
+    "'bg-class-' + colorNumber",
+  ])('%s は対応表のコピーとして見つかる', (source) => {
+    expect(COLOR_CLASS.test(source)).toBe(true);
+  });
+
+  test.each(['teamBgClass(team.number)', 'classColorClasses(1).dot', "data-testid='team'"])(
+    '%s は見つからない（共通の関数を呼んでいるだけ）',
+    (source) => {
+      expect(COLOR_CLASS.test(source)).toBe(false);
+    }
+  );
+});
 
 describe('色の決めごとは 1 か所', () => {
   const files = sourceFiles(SOURCE_ROOT)

@@ -82,6 +82,12 @@ export const SLOT_LABEL_COURT_NUMBER = 5;
 export const COURT_9_NUMBER = 9;
 export const COURT_10_NUMBER = 10;
 /**
+ * 9 番の進行中の試合に保存しておく第 1 ゲームの得点（1 ゲームだけの試合）。
+ * 「保存済みの得点が枠に出る」はこれで確かめ、どのテストもこの点を押して変えない。
+ * seed のコート 1 の得点に頼っていたころは、手元で「＋」「−」を押すたびに e2e が落ちた。
+ */
+export const COURT_9_SAVED_SCORE = { sideA: 8, sideB: 6 } as const;
+/**
  * 基本シナリオのあいだ、カードが出るコート番号（昇順）。seed のコート 1 と、ここで作るコート。
  * **4・6・8 は試合が無いので飛んだまま**（番号を埋めてカードを作らない）。
  */
@@ -366,6 +372,12 @@ export async function createCourtsBaseScenario(): Promise<void> {
 
   const gameScores = await admin.from('game_scores').insert([
     { match_id: scoreMatchId, game_number: 1, side_a_score: 2, side_b_score: 0 },
+    {
+      match_id: court9MatchId,
+      game_number: 1,
+      side_a_score: COURT_9_SAVED_SCORE.sideA,
+      side_b_score: COURT_9_SAVED_SCORE.sideB,
+    },
     { match_id: longNameLiveMatchId, game_number: 1, side_a_score: 21, side_b_score: 19 },
     { match_id: longNameLiveMatchId, game_number: 2, side_a_score: 18, side_b_score: 21 },
     { match_id: longNameLiveMatchId, game_number: 3, side_a_score: 20, side_b_score: 20 },

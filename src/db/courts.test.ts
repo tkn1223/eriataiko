@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getSupabaseAdminClient } from '@/db/admin';
-import { findCourtsData, MAX_COURT_MATCHES } from '@/db/courts';
+import { findCourtsData, MAX_COURT_MATCHES, MAX_MATCHUPS_PER_STAGE } from '@/db/courts';
 
 /**
  * `findCourtsData` を本物のデータベースに当てて確かめる。
@@ -341,7 +341,9 @@ describe('findCourtsData（試合が多い大会）', () => {
   /** 小さな大会を 1 つ作り、試合を決まった数だけ入れて、渡した関数を実行して、片づける。 */
   async function withBigCompetition(
     statuses: { status: 'waiting' | 'live' | 'done'; count: number }[],
-    run: (bigCompetitionId: string, bigStageId: string) => Promise<void>
+    run: (bigCompetitionId: string, bigStageId: string) => Promise<void>,
+    // 件数は対戦ごとに数えて段で足すので、対戦を複数にして足し算まで確かめる
+    matchupCount = 3
   ) {
     const bigCompetition = await admin
       .from('competitions')
@@ -367,24 +369,26 @@ describe('findCourtsData（試合が多い大会）', () => {
         })
         .select('id')
         .single();
-      const bigMatchup = await admin
+      const bigMatchups = await admin
         .from('matchups')
-        .insert({
-          stage_id: bigStage.data!.id,
-          round_name: '予選 1回戦',
-          side_a_slot_label: '予選1位',
-          side_b_slot_label: '予選2位',
-        })
-        .select('id')
-        .single();
-      expect(bigMatchup.error, `対戦の作成に失敗: ${bigMatchup.error?.message}`).toBeNull();
+        .insert(
+          Array.from({ length: matchupCount }, (_, index) => ({
+            stage_id: bigStage.data!.id,
+            round_name: `予選 ${index + 1}回戦`,
+            side_a_slot_label: '予選1位',
+            side_b_slot_label: '予選2位',
+          }))
+        )
+        .select('id');
+      expect(bigMatchups.error, `対戦の作成に失敗: ${bigMatchups.error?.message}`).toBeNull();
+      const bigMatchupIds = bigMatchups.data!.map((row) => row.id);
 
       let orderInMatchup = 0;
       const rows = statuses.flatMap(({ status, count }) =>
         Array.from({ length: count }, () => {
           orderInMatchup += 1;
           return {
-            matchup_id: bigMatchup.data!.id,
+            matchup_id: bigMatchupIds[orderInMatchup % bigMatchupIds.length],
             division_id: bigDivision.data!.id,
             order_in_matchup: orderInMatchup,
             status,
@@ -446,6 +450,18 @@ describe('findCourtsData（試合が多い大会）', () => {
         expect(data.truncated).toBe(false);
         expect(data.matches).toHaveLength(MAX_COURT_MATCHES);
       }
+    );
+  });
+
+  test('1 段の対戦が上限を超えたら、消化数が欠けたまま出さず truncated で分かる', async () => {
+    await withBigCompetition(
+      [{ status: 'done', count: 1 }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(true);
+      },
+      MAX_MATCHUPS_PER_STAGE + 1
     );
   });
 });

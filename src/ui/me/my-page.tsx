@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
+import { hasTeamColor, teamBgClass } from '@/domain/class-labels';
 import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
 
 type Props = {
@@ -7,17 +8,6 @@ type Props = {
   record: MyRecord;
   matches: MyMatch[];
 };
-
-/** チーム番号 → 背景色クラス（globals.css の @theme で定義した --color-team-1〜4）。 */
-const TEAM_BG_CLASS: Record<NonNullable<MyProfile['teamNumber']>, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
-};
-
-/** チーム無しの参加者（入力係など）は灰色にする。 */
-const NO_TEAM_BG_CLASS = 'bg-gray-400';
 
 /**
  * 試合の状態を表す丸バッジ。
@@ -55,10 +45,13 @@ function badgeOf(match: MyMatch) {
  * 本物のデータをつなぐときは、渡す props を差し替えるだけでよい。
  */
 export function MyPage({ profile, record, matches }: Props) {
-  const avatarClass = profile.teamNumber ? TEAM_BG_CLASS[profile.teamNumber] : NO_TEAM_BG_CLASS;
+  // チーム無しの参加者（入力係など）は薄い色（色の決めごとは class-labels.ts の 1 か所）
+  const avatarClass = teamBgClass(profile.teamNumber);
+  // 薄い色の上に白い頭文字は読めないので、チーム色が無いときだけ文字を濃くする
+  const avatarTextClass = hasTeamColor(profile.teamNumber) ? 'text-white' : 'text-ink';
   // チーム無しの参加者は部だけを出す（「・」だけ浮かないようにする）
-  const subLine = [profile.teamName, profile.classLabel]
-    .filter((value) => value !== null)
+  const subLine = [profile.teamName, profile.classLabel?.name]
+    .filter((value) => value != null)
     .join(' ・ ');
 
   return (
@@ -75,7 +68,7 @@ export function MyPage({ profile, record, matches }: Props) {
       <div className="mb-5 flex items-center gap-3">
         <div
           aria-hidden="true"
-          className={`flex size-16 shrink-0 items-center justify-center rounded-full text-[26px] font-black text-white ${avatarClass}`}
+          className={`flex size-16 shrink-0 items-center justify-center rounded-full text-[26px] font-black ${avatarTextClass} ${avatarClass}`}
         >
           {profile.name.charAt(0)}
         </div>
@@ -163,7 +156,7 @@ function MatchCard({ match }: { match: MyMatch }) {
           {' ・ '}
           <Words text={match.partnerName ? `${match.partnerName} とペア` : 'シングルス'} />
           {' ・ '}
-          <Words text={match.classLabel} />
+          <Words text={match.classLabel.name} />
         </p>
         <p className="line-clamp-2 text-[14.5px] font-extrabold">
           {'vs '}

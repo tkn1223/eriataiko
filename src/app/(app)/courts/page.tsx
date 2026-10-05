@@ -58,6 +58,8 @@ export default async function Page() {
       completedMatches={state.view.completedMatches}
       totalMatches={state.view.totalMatches}
       canInput={state.canInput}
+      emptyReason={state.view.emptyReason}
+      truncated={state.view.truncated}
     />
   );
 }

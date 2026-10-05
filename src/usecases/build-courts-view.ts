@@ -1,6 +1,11 @@
-import { classLabelsByDivisionId, foldTeamNumber, type ClassLabel } from '@/domain/class-labels';
+import {
+  classLabelsByDivisionId,
+  UNKNOWN_CLASS_LABEL,
+  type ClassLabel,
+  type DivisionRow,
+} from '@/domain/class-labels';
 import type { GameScore } from '@/domain/scoring';
-import type { Court, CourtTeam, LiveMatch, NextMatch } from '@/ui/courts/types';
+import type { Court, CourtsEmptyReason, CourtTeam, LiveMatch, NextMatch } from '@/ui/courts/types';
 
 /**
  * 結果LIVE（`/courts`）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -8,19 +13,29 @@ import type { Court, CourtTeam, LiveMatch, NextMatch } from '@/ui/courts/types';
  * 仕様: docs/specs/2026-09-19-courts-real-data.md
  * 層の分け方は AGENTS.md の「db が読む → usecases が画面の形に組む → page.tsx は呼ぶだけ」に従う
  * （読み取りは `src/db/courts.ts`）。
+ *
+ * 入力は 2 種類の読み込みに分かれている（大会が進むほど重くならないように）。
+ * - `matches` … **進行中（live）と未実施（waiting）の試合だけ**。名前・得点つき。コートのカード用。
+ * - `stages[].totalMatches` / `doneMatches` … 段ごとの**件数だけ**。「◯/◯ 試合消化」用。
  */
 
-/** コートは常に 1〜8 面（仕様の「決めたこと」）。この定数 1 か所だけで決める。 */
-export const COURT_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+export type CourtsViewDivisionRow = DivisionRow;
 
-export type CourtsViewDivisionRow = { id: string; sortOrder: number };
-export type CourtsViewStageRow = { id: string; name: string; sortOrder: number };
+export type CourtsViewStageRow = {
+  id: string;
+  name: string;
+  sortOrder: number;
+  /** その段の全試合数（状態を問わない）。数えただけで、試合の行は読んでいない。 */
+  totalMatches: number;
+  /** その段の終了（done）の試合数。 */
+  doneMatches: number;
+};
 
 export type CourtsViewPlayerRow = { participantId: string; orderInPair: number; name: string };
 
 /** 対戦の片側（`matchups.side_x_*`）。チームが決まっていなければ `players` は空。 */
 export type CourtsViewSideRow = {
-  /** `teams.team_number`（折り返す前の生の値）。決まっていなければ null。 */
+  /** `teams.team_number`（そのまま。色の対応は `src/domain/class-labels.ts`）。決まっていなければ null。 */
   teamNumber: number | null;
   /** `matchups.side_x_slot_label`。決まっていれば null。 */
   slotLabel: string | null;
@@ -31,7 +46,7 @@ export type CourtsViewGameScoreRow = GameScore;
 
 export type CourtsViewMatchRow = {
   matchId: string;
-  /** `matches.status`。'waiting' | 'live' | 'done'。 */
+  /** `matches.status`。ここに来るのは 'waiting' | 'live'（終わった試合は読まない）。 */
   status: string;
   maxGameCount: number;
   courtNumber: number | null;
@@ -50,7 +65,10 @@ export type CourtsViewInput = {
   myParticipantId: string | null;
   divisions: CourtsViewDivisionRow[];
   stages: CourtsViewStageRow[];
+  /** live と waiting の試合だけ。 */
   matches: CourtsViewMatchRow[];
+  /** 読む上限を超えた（読み切れていない）。黙って欠けさせず、画面で知らせる。 */
+  truncated: boolean;
 };
 
 export type CourtsView = {
@@ -61,6 +79,9 @@ export type CourtsView = {
   /** いまの段の全試合数。 */
   totalMatches: number;
   courts: Court[];
+  /** `courts` が空のときだけ入る。 */
+  emptyReason: CourtsEmptyReason | null;
+  truncated: boolean;
 };
 
 function isMineSide(side: CourtsViewSideRow, myParticipantId: string | null): boolean {
@@ -70,7 +91,7 @@ function isMineSide(side: CourtsViewSideRow, myParticipantId: string | null): bo
 
 function toCourtTeam(side: CourtsViewSideRow): CourtTeam {
   return {
-    teamNumber: foldTeamNumber(side.teamNumber),
+    teamNumber: side.teamNumber,
     players: [...side.players].sort((a, b) => a.orderInPair - b.orderInPair).map((p) => p.name),
     slotLabel: side.slotLabel,
   };
@@ -81,8 +102,8 @@ function classLabelOf(
   classLabelById: Map<string, ClassLabel>
 ): ClassLabel {
   // classLabelById は divisions から作った、通常は必ず値が入る表。
-  // 万一 division がその大会に無ければ「決めていない部」の意味で 3部 に寄せる（/me と同じ扱い）。
-  return classLabelById.get(match.divisionId) ?? '3部';
+  // 万一 division がその大会に無ければ、別の部に見えないよう「部不明」にする。
+  return classLabelById.get(match.divisionId) ?? UNKNOWN_CLASS_LABEL;
 }
 
 function toLiveMatch(
@@ -114,7 +135,7 @@ function toNextMatch(
   };
 }
 
-/** `order_in_court` が最小の 1 件を選ぶ。コート未定（null）は最後に回す。 */
+/** `order_in_court` が最小の 1 件を選ぶ。順番が未定（null）は最後に回す。 */
 function pickByOrderInCourt(matches: CourtsViewMatchRow[]): CourtsViewMatchRow | null {
   if (matches.length === 0) return null;
   const sorted = [...matches].sort((a, b) => {
@@ -143,10 +164,11 @@ function buildCourt(
 }
 
 /**
- * 「いまの段」のラベルと消化数。
+ * 「いまの段」のラベルと消化数。**件数だけで決める**（試合の行は見ない）。
  *
- * 段を `sort_order` の大きい順に見て、waiting 以外の試合が 1 つでもある最初の段が「いまの段」。
- * どの段にも waiting 以外の試合が無ければ、並び順が最初の段（仕様の「決めたこと」2）。
+ * 段を `sort_order` の大きい順に見て、waiting 以外の試合（終了か進行中）が 1 つでもある
+ * 最初の段が「いまの段」。どの段にも無ければ、並び順が最初の段（仕様の「決めたこと」2）。
+ * 「進行中があるか」は、コート用に読んだ live の試合から分かる。
  */
 function currentStageProgress(
   stages: CourtsViewStageRow[],
@@ -155,26 +177,50 @@ function currentStageProgress(
   if (stages.length === 0) return { label: '', completedMatches: 0, totalMatches: 0 };
 
   const sortedAscending = [...stages].sort((a, b) => a.sortOrder - b.sortOrder);
-  const startedStageIds = new Set(
-    matches.filter((m) => m.status !== 'waiting').map((m) => m.stageId)
+  const stageIdsWithLiveMatch = new Set(
+    matches.filter((m) => m.status === 'live').map((m) => m.stageId)
   );
 
   const currentStage =
-    [...sortedAscending].reverse().find((stage) => startedStageIds.has(stage.id)) ??
+    [...sortedAscending]
+      .reverse()
+      .find((stage) => stage.doneMatches > 0 || stageIdsWithLiveMatch.has(stage.id)) ??
     sortedAscending[0];
 
-  const stageMatches = matches.filter((m) => m.stageId === currentStage.id);
-  const completedMatches = stageMatches.filter((m) => m.status === 'done').length;
+  return {
+    label: currentStage.name,
+    completedMatches: currentStage.doneMatches,
+    totalMatches: currentStage.totalMatches,
+  };
+}
 
-  return { label: currentStage.name, completedMatches, totalMatches: stageMatches.length };
+/** 0 枚の理由。`remainingMatches` は live と waiting の試合（コートが決まっていないものも含む）。 */
+function emptyReasonOf(
+  remainingMatches: CourtsViewMatchRow[],
+  stages: CourtsViewStageRow[]
+): CourtsEmptyReason {
+  if (remainingMatches.length > 0) return 'courts-undecided';
+  const hasAnyMatch = stages.some((stage) => stage.totalMatches > 0);
+  return hasAnyMatch ? 'all-finished' : 'no-matches';
 }
 
 export function buildCourtsView(input: CourtsViewInput): CourtsView {
   const classLabelById = classLabelsByDivisionId(input.divisions);
   const progress = currentStageProgress(input.stages, input.matches);
 
-  const courts = COURT_NUMBERS.map((courtNumber) =>
-    buildCourt(courtNumber, input.matches, input.myParticipantId, classLabelById)
+  // 出すのは進行中・未実施の試合だけ。念のため終わった試合が混ざっても使わない。
+  const remainingMatches = input.matches.filter(
+    (m) => m.status === 'live' || m.status === 'waiting'
+  );
+
+  // コートの枚数は決め打ちせず、試合に入っているコート番号から出す
+  // （次の大会は 10 面。番号が飛んでいる日は飛んだまま出す。コート未定の試合はカードにしない）。
+  const courtNumbers = [
+    ...new Set(remainingMatches.flatMap((m) => (m.courtNumber === null ? [] : [m.courtNumber]))),
+  ].sort((a, b) => a - b);
+
+  const courts = courtNumbers.map((courtNumber) =>
+    buildCourt(courtNumber, remainingMatches, input.myParticipantId, classLabelById)
   );
 
   return {
@@ -182,5 +228,7 @@ export function buildCourtsView(input: CourtsViewInput): CourtsView {
     completedMatches: progress.completedMatches,
     totalMatches: progress.totalMatches,
     courts,
+    emptyReason: courts.length === 0 ? emptyReasonOf(remainingMatches, input.stages) : null,
+    truncated: input.truncated,
   };
 }

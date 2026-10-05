@@ -129,12 +129,12 @@ async function findDivisions(
   const MAX_DIVISIONS = 20;
   const { data, error } = await supabase
     .from('divisions')
-    .select('id, sort_order')
+    .select('id, name, sort_order')
     .eq('competition_id', competitionId)
     .limit(MAX_DIVISIONS);
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({ id: row.id, sortOrder: row.sort_order }));
+  return (data ?? []).map((row) => ({ id: row.id, name: row.name, sortOrder: row.sort_order }));
 }
 
 /** 自分が出る試合を、画面が要る形（対戦相手・得点込み）でまとめて読む。 */

@@ -1,13 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
 import {
+  BASE_COURT_NUMBERS,
   BASE_LEAGUE_COMPLETED_MATCHES,
   BASE_LEAGUE_TOTAL_MATCHES,
+  COURT_10_NUMBER,
+  COURT_9_NUMBER,
   createCourtsBaseScenario,
+  createEmptyCourtsScenario,
   createFinalScenario,
   deleteCourtsBaseScenario,
+  deleteEmptyCourtsScenario,
   deleteFinalScenario,
-  EMPTY_COURT_NUMBER,
   FINAL_COURT_NUMBER,
   FINAL_KNOCKOUT_COMPLETED_MATCHES,
   FINAL_KNOCKOUT_TOTAL_MATCHES,
@@ -20,8 +24,10 @@ import {
   SCORE_TEAM_B_NAMES,
   SLOT_LABEL_COURT_NUMBER,
   SLOT_LABEL_TEXT,
+  SKIPPED_COURT_NUMBERS,
   SLOT_TEAM_A_NAMES,
   ZERO_SCORE_COURT_NUMBER,
+  type EmptyCourtsScenario,
 } from './helpers/courts-scenario';
 
 /**
@@ -113,13 +119,42 @@ test('本物の試合が出る。見本の名前（佐々木・井上など）�
   await expect(page.getByText('佐々木・井上')).toHaveCount(0);
 });
 
-test('コートのカードが8枚出る', async ({ page }) => {
+/** 画面に出ているコートのカードの番号を、上から順に。 */
+async function visibleCourtNumbers(page: import('@playwright/test').Page) {
+  const ids = await page
+    .locator('[data-testid^="court-card-"]')
+    .evaluateAll((cards) => cards.map((card) => card.getAttribute('data-testid') ?? ''));
+  return ids.map((id) => Number(id.replace('court-card-', '')));
+}
+
+test('コートのカードは、進行中・未実施の試合が割り当てられたコートの数だけ出る（8 枚に固定しない）', async ({
+  page,
+}) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  for (let courtNumber = 1; courtNumber <= 8; courtNumber += 1) {
-    await expect(courtCard(page, courtNumber)).toBeVisible();
+  await expect(courtCard(page, 1)).toBeVisible();
+  expect(await visibleCourtNumbers(page)).toEqual([...BASE_COURT_NUMBERS]);
+});
+
+test('9・10 番のコートの試合も出る（次の大会は 10 面）', async ({ page }) => {
+  await enterAsViewer(page);
+  await page.goto('/courts');
+
+  await expect(courtCard(page, COURT_9_NUMBER).getByText('LIVE')).toBeVisible();
+  await expect(courtCard(page, COURT_10_NUMBER).getByText('呼出待ち')).toBeVisible();
+});
+
+test('番号が飛んでいても飛んだまま出す（試合の無い番号のカードは作らない）', async ({ page }) => {
+  await enterAsViewer(page);
+  await page.goto('/courts');
+  await expect(courtCard(page, 1)).toBeVisible();
+
+  for (const courtNumber of SKIPPED_COURT_NUMBERS) {
+    await expect(courtCard(page, courtNumber)).toHaveCount(0);
   }
+  // 「予定なし」のカードで穴埋めしない
+  await expect(page.getByText('予定なし')).toHaveCount(0);
 });
 
 test('進行中のコートにLIVEと部・回戦・両ペアの名前が出る', async ({ page }) => {
@@ -171,13 +206,6 @@ test('相手がまだ決まっていない対戦は、名前の代わりに空�
   await expect(
     card.getByText(`${SLOT_TEAM_A_NAMES.join('・')} vs ${SLOT_LABEL_TEXT}`)
   ).toBeVisible();
-});
-
-test('進行中も次も無いコートには「予定なし」が出る', async ({ page }) => {
-  await enterAsViewer(page);
-  await page.goto('/courts');
-
-  await expect(courtCard(page, EMPTY_COURT_NUMBER).getByText('予定なし')).toBeVisible();
 });
 
 test('「予選リーグ」のラベルと、いまの段の試合消化数が出る', async ({ page }) => {
@@ -388,7 +416,7 @@ test('一番下のコートのカードが下のメニューに隠れない', as
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  const lastCard = courtCard(page, 8);
+  const lastCard = page.locator('[data-testid^="court-card-"]').last();
   await lastCard.scrollIntoViewIfNeeded();
 
   const cardBox = (await lastCard.boundingBox())!;
@@ -470,6 +498,94 @@ for (const width of [375, 390]) {
     expect(splitAcrossLines).toEqual([]);
   });
 }
+
+/**
+ * カードが 0 枚になる場面。8 枚固定をやめたので、真っ白にならないよう理由ごとに案内を出す。
+ *
+ * 「いまの大会」を空の別の大会に付け替えて確かめる（`createEmptyCourtsScenario`）。
+ * seed の試合は書き換えないので、ほかの describe には影響しない。
+ */
+const EMPTY_COURTS_CASES: {
+  scenario: EmptyCourtsScenario;
+  heading: string;
+  otherHeadings: string[];
+}[] = [
+  {
+    scenario: 'courts-undecided',
+    heading: 'コートがまだ決まっていません',
+    otherHeadings: ['全部終わりました', 'まだ試合が登録されていません'],
+  },
+  {
+    scenario: 'all-finished',
+    heading: '全部終わりました',
+    otherHeadings: ['コートがまだ決まっていません', 'まだ試合が登録されていません'],
+  },
+  {
+    scenario: 'no-matches',
+    heading: 'まだ試合が登録されていません',
+    otherHeadings: ['コートがまだ決まっていません', '全部終わりました'],
+  },
+];
+
+for (const { scenario, heading, otherHeadings } of EMPTY_COURTS_CASES) {
+  test.describe(`カードが 0 枚（${scenario}）`, () => {
+    test.beforeAll(() => createEmptyCourtsScenario(scenario));
+    test.afterAll(deleteEmptyCourtsScenario);
+
+    test(`「${heading}」と出て、コートのカードは 1 枚も出ない`, async ({ page }) => {
+      await enterAsViewer(page);
+      await page.goto('/courts');
+
+      await expect(page.getByText(heading)).toBeVisible();
+      for (const other of otherHeadings) {
+        await expect(page.getByText(other)).toHaveCount(0);
+      }
+      await expect(page.locator('[data-testid^="court-card-"]')).toHaveCount(0);
+    });
+
+    for (const width of [375, 390]) {
+      test(`${width}px 幅で、案内が横にはみ出さず、押せるところは44px以上`, async ({ page }) => {
+        await enterAsViewer(page);
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/courts');
+        await expect(page.getByText(heading)).toBeVisible();
+
+        const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        }));
+        expect(innerWidth).toBe(width);
+        expect(scrollWidth).toBe(innerWidth);
+
+        const tooSmall = await page
+          .locator('[data-testid="courts-empty-notice"] a')
+          .evaluateAll((targets) =>
+            targets
+              .map((target) => {
+                const { width: w, height: h } = target.getBoundingClientRect();
+                return { label: target.textContent, width: w, height: h };
+              })
+              .filter((box) => box.height < 44 || box.width < 44)
+          );
+        expect(tooSmall).toEqual([]);
+      });
+    }
+  });
+}
+
+test.describe('カードが 0 枚で、全部終わったとき', () => {
+  test.beforeAll(() => createEmptyCourtsScenario('all-finished'));
+  test.afterAll(deleteEmptyCourtsScenario);
+
+  test('「対戦表を見る」を押すと対戦表（/bracket）に行ける', async ({ page }) => {
+    await enterAsViewer(page);
+    await page.goto('/courts');
+
+    await page.getByRole('link', { name: '対戦表を見る' }).click();
+
+    await expect(page).toHaveURL(/\/bracket$/);
+  });
+});
 
 /**
  * 決勝トーナメントの試合を 1 つ start すると「いまの段」が切り替わる

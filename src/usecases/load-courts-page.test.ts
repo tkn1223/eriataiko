@@ -15,8 +15,11 @@ import type { CourtsViewInput } from '@/usecases/build-courts-view';
 const EMPTY_DATA: CourtsViewInput = {
   myParticipantId: null,
   divisions: [],
-  stages: [{ id: 'stage-league', name: '予選リーグ', sortOrder: 10 }],
+  stages: [
+    { id: 'stage-league', name: '予選リーグ', sortOrder: 10, totalMatches: 6, doneMatches: 2 },
+  ],
   matches: [],
+  truncated: false,
 };
 
 function fakeDeps(overrides: Partial<LoadCourtsPageDeps> = {}): LoadCourtsPageDeps {
@@ -78,7 +81,11 @@ describe('読めたときは画面の形と、押せるかどうかを返す', (
     expect(result.kind).toBe('ready');
     if (result.kind !== 'ready') return;
     expect(result.canInput).toBe(true);
-    expect(result.view.courts).toHaveLength(8);
+    // 試合が残っていない（0 枚）。8 枚に固定していない
+    expect(result.view.courts).toHaveLength(0);
+    expect(result.view.emptyReason).toBe('all-finished');
+    expect(result.view.completedMatches).toBe(2);
+    expect(result.view.totalMatches).toBe(6);
     expect(result.view.stageLabel).toBe('予選リーグ');
     expect(deps.findCourtsData).toHaveBeenCalledWith('competition-1', 'player-1');
   });

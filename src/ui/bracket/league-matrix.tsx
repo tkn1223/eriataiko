@@ -1,19 +1,12 @@
 'use client';
 
+import { teamBgClass } from '@/domain/class-labels';
 import type { LeagueCard, Team, TeamNumber } from '@/ui/bracket/sample-data';
 
 type Props = {
   teams: Team[];
   cards: LeagueCard[];
   onSelectCard: (card: LeagueCard) => void;
-};
-
-/** チーム番号 → 四角ドットの背景色クラス（globals.css の --color-team-1〜4）。 */
-const TEAM_DOT_CLASS: Record<TeamNumber, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
 };
 
 function findCard(cards: LeagueCard[], a: TeamNumber, b: TeamNumber) {
@@ -83,7 +76,7 @@ function TeamLabel({ team }: { team: Team }) {
     <span className="text-ink flex items-center gap-1 text-[12px] font-extrabold whitespace-nowrap">
       <span
         aria-hidden="true"
-        className={`size-[10px] shrink-0 rounded-[2px] ${TEAM_DOT_CLASS[team.number]}`}
+        className={`size-[10px] shrink-0 rounded-[2px] ${teamBgClass(team.number)}`}
       />
       {team.name}
     </span>

@@ -12,19 +12,30 @@ import type {
 /**
  * `/courts`（結果LIVE）が読む DB の行。**読み取りだけ**（`createSupabaseServerClient()`）。
  *
- * 試合まわり（対戦・チーム・出場者・選手名・得点）は、埋め込みの select で **1 回に**まとめて読む。
- * 当日いちばん開かれる画面で、体育館の電波は細い。表ごとに順番に読むと待ち時間が積み重なるため
- * （はじめは 11 回・6 段の順番待ちだった）。いまは大会の id が分かったあと、
- * 部・段・試合まわり・自分の参加者情報の 4 回を同時に読むだけ（`findCurrentCompetitionId` と合わせて 5 回・2 段）。
+ * **読み込みは性質の違う 2 種類に分けている。**（PR #56 レビュー）
+ * - コートのカード用: 進行中（live）と未実施（waiting）の試合**だけ**を、
+ *   対戦・チーム・出場者の名前・得点ごと 1 回で読む。終わった試合は画面に出ないので読まない。
+ * - 「◯/◯ 試合消化」用: 段ごとの試合数と終了数を、**件数として数えるだけ**
+ *   （`head: true` で行を持ってこない）。中身は要らない。
+ * 1 本で兼ねていたころは、終わった試合ぶんだけ大会が進むほど重くなり、
+ * 上限（100 件）を超えるとコートや消化数が**黙って**欠けた。
+ *
+ * 当日いちばん開かれる画面で、体育館の電波は細い。順番待ちの段数を増やさないよう、
+ * 大会の id が分かったあと、部・段（と段ごとの件数）・コート用の試合・自分の参加者情報を
+ * 同時に読む（`findCurrentCompetitionId` と合わせて 3 段）。
  *
  * 一覧の上限（AGENTS.md の「一覧を読むクエリには .limit() を付ける」）は、
- * 100 人・48 試合という大会の規模を踏まえた余裕を持った数にしている
- * （`src/db/me.ts` の MAX_MY_MATCHES と同じ考え方。大会全体の試合数は超えない）。
+ * `src/db/snapshot.ts` と同じく**上限より 1 件多く読み**、超えたら `truncated` で分かるようにする
+ * （超えた 1 件は判定にだけ使い、渡さない）。
  * 埋め込んだ表の上限は「試合 1 つあたり」に効く。
  */
 const MAX_DIVISIONS = 20;
 const MAX_STAGES = 20;
-const MAX_MATCHES = 100;
+/**
+ * コート用の試合（live と waiting）の上限。朝は全部が waiting なので、
+ * 大会全体の試合数（100 人で 1 人 5 試合 = 125 試合が目安）を超える余裕を持たせる。
+ */
+export const MAX_COURT_MATCHES = 200;
 /**
  * 1 試合の出場者は多くても 4 行（側 a/b × ペアの中の順番 1/2）。
  * 表の `unique (match_id, side, order_in_pair)` が 5 行目を弾くので、この数を超えることはない。
@@ -38,11 +49,20 @@ export type CourtsData = {
   /** 選手として入った人の participants.id。その大会に参加者情報が無ければ null。 */
   myParticipantId: string | null;
   divisions: CourtsViewDivisionRow[];
+  /** 段と、段ごとの試合数・終了数（件数だけ）。 */
   stages: CourtsViewStageRow[];
+  /** 進行中（live）と未実施（waiting）の試合だけ。 */
   matches: CourtsViewMatchRow[];
+  /** どれかの読み込みが上限に達し、読み切れていない。 */
+  truncated: boolean;
 };
 
 type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
+
+/** 上限 + 1 件まで読んだ行から、上限を超えたかの判定と、上限までの行を取り出す。 */
+function withinLimit<Row>(rows: Row[], max: number): { rows: Row[]; overflowed: boolean } {
+  return { rows: rows.slice(0, max), overflowed: rows.length > max };
+}
 
 /**
  * `/courts` が要るものをまとめて読む。
@@ -59,55 +79,93 @@ export async function findCourtsData(
 
   const [divisions, stages, matches, myParticipantId] = await Promise.all([
     findDivisions(supabase, competitionId),
-    findStages(supabase, competitionId),
-    findMatches(supabase, competitionId),
+    findStagesWithCounts(supabase, competitionId),
+    findCourtMatches(supabase, competitionId),
     playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
   ]);
 
-  return { myParticipantId, divisions, stages, matches };
+  return {
+    myParticipantId,
+    divisions: divisions.rows,
+    stages: stages.rows,
+    matches: matches.rows,
+    truncated: divisions.overflowed || stages.overflowed || matches.overflowed,
+  };
 }
 
-/** いまの大会の部すべて（並び順のラベル付けに使う）。 */
-async function findDivisions(
-  supabase: SupabaseReadClient,
-  competitionId: string
-): Promise<CourtsViewDivisionRow[]> {
+/** いまの大会の部すべて（並び順で色を付けるのと、部の名前を出すのに使う）。 */
+async function findDivisions(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('divisions')
-    .select('id, sort_order')
+    .select('id, name, sort_order')
     .eq('competition_id', competitionId)
-    .limit(MAX_DIVISIONS);
+    .limit(MAX_DIVISIONS + 1);
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({ id: row.id, sortOrder: row.sort_order }));
+  const { rows, overflowed } = withinLimit(data ?? [], MAX_DIVISIONS);
+  return {
+    rows: rows.map((row) => ({ id: row.id, name: row.name, sortOrder: row.sort_order })),
+    overflowed,
+  };
 }
 
-/** いまの大会の段すべて（予選リーグ・決勝トーナメントなど）。 */
-async function findStages(
-  supabase: SupabaseReadClient,
-  competitionId: string
-): Promise<CourtsViewStageRow[]> {
+/**
+ * いまの大会の段すべて（予選リーグ・決勝トーナメントなど）と、段ごとの試合数・終了数。
+ * 件数は段ごとに数えるだけ（行は持ってこない）。段の数は数個なので、数える問い合わせは
+ * 同時に出す。
+ */
+async function findStagesWithCounts(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('stages')
     .select('id, name, sort_order')
     .eq('competition_id', competitionId)
-    .limit(MAX_STAGES);
+    .limit(MAX_STAGES + 1);
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({ id: row.id, name: row.name, sortOrder: row.sort_order }));
+  const { rows: stageRows, overflowed } = withinLimit(data ?? [], MAX_STAGES);
+  const rows: CourtsViewStageRow[] = await Promise.all(
+    stageRows.map(async (row) => {
+      const [totalMatches, doneMatches] = await Promise.all([
+        countMatchesOfStage(supabase, row.id, 'all'),
+        countMatchesOfStage(supabase, row.id, 'done'),
+      ]);
+      return { id: row.id, name: row.name, sortOrder: row.sort_order, totalMatches, doneMatches };
+    })
+  );
+  return { rows, overflowed };
 }
 
 /**
- * その大会の試合を、対戦・チーム番号・出場者の名前・得点ごと 1 回で読む。
+ * ある段の試合数を**数えるだけ**で返す（`head: true` は行を返さず件数だけ返す）。
+ * 行を読まないので `.limit()` は要らない（件数は何試合あっても正確）。
+ * 試合は段を直接持たない（対戦 → 段）ので、対戦をつないで段で絞る。
+ */
+async function countMatchesOfStage(
+  supabase: SupabaseReadClient,
+  stageId: string,
+  which: 'all' | 'done'
+): Promise<number> {
+  const inStage = supabase
+    .from('matches')
+    .select('id, matchups!inner(stage_id)', { count: 'exact', head: true })
+    .eq('matchups.stage_id', stageId);
+
+  const { count, error } = await (which === 'done' ? inStage.eq('status', 'done') : inStage);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * コートに出す試合（進行中と未実施）を、対戦・チーム番号・出場者の名前・得点ごと 1 回で読む。
  *
  * 大会で絞るのに `divisions!inner` を使う。matches 自身は大会の id を持たないが、
  * 部は必ず大会に属する（`matches.division_id` は not null）ので、ここを通せば 1 段で絞れる。
  * チームは matchups から 2 本（a 側・b 側）出ているので、外部キーの名前で向きを指定する。
+ *
+ * 上限を超えたとき**どの行が欠けるかが決まっている**よう、コート番号・順番で並べる
+ * （欠けるのはコートが未定の試合と、番号の大きいコートのほう）。
  */
-async function findMatches(
-  supabase: SupabaseReadClient,
-  competitionId: string
-): Promise<CourtsViewMatchRow[]> {
+async function findCourtMatches(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('matches')
     .select(
@@ -122,12 +180,17 @@ async function findMatches(
       game_scores(game_number, side_a_score, side_b_score)`
     )
     .eq('divisions.competition_id', competitionId)
+    .in('status', ['live', 'waiting'])
+    .order('court_number', { ascending: true })
+    .order('order_in_court', { ascending: true })
     .limit(MAX_PLAYERS_PER_MATCH, { referencedTable: 'match_players' })
     .limit(MAX_GAME_SCORES_PER_MATCH, { referencedTable: 'game_scores' })
-    .limit(MAX_MATCHES);
+    .limit(MAX_COURT_MATCHES + 1);
   if (error) throw error;
 
-  return (data ?? []).map((match) => {
+  const { rows, overflowed } = withinLimit(data ?? [], MAX_COURT_MATCHES);
+
+  const matches: CourtsViewMatchRow[] = rows.map((match) => {
     const players = match.match_players.map((row) => ({
       side: row.side,
       participantId: row.participant_id,
@@ -163,6 +226,8 @@ async function findMatches(
       })),
     };
   });
+
+  return { rows: matches, overflowed };
 }
 
 function toSideRow(

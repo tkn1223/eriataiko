@@ -5,7 +5,8 @@ import { canFinishMatch, leadingSide, matchOutcome, winnerOfGame } from '@/domai
 import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
 import { YouTag } from '@/ui/components/you-tag';
-import type { Court, CourtTeam, LiveScore, NextMatch, TeamNumber } from '@/ui/courts/types';
+import { teamBgClass } from '@/domain/class-labels';
+import type { Court, CourtTeam, LiveScore, NextMatch } from '@/ui/courts/types';
 import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 
 type Props = {
@@ -62,19 +63,6 @@ function PairName({ team }: { team: CourtTeam }) {
       <span className="whitespace-nowrap">{name}</span>
     </Fragment>
   ));
-}
-
-/** チーム番号 → 背景色クラス（globals.css の @theme で定義した --color-team-1〜4）。 */
-const TEAM_BG_CLASS: Record<TeamNumber, string> = {
-  1: 'bg-team-1',
-  2: 'bg-team-2',
-  3: 'bg-team-3',
-  4: 'bg-team-4',
-};
-
-/** チームがまだ決まっていない側は灰色にする（崩れないよう色は必ず何か置く）。 */
-function teamBgClass(team: CourtTeam): string {
-  return team.teamNumber ? TEAM_BG_CLASS[team.teamNumber] : 'bg-gray-300';
 }
 
 /**
@@ -275,7 +263,10 @@ export function CourtLiveCard({
 function TeamNameLine({ team }: { team: CourtTeam }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-[3px] ${teamBgClass(team)}`} />
+      <span
+        aria-hidden="true"
+        className={`size-2.5 shrink-0 rounded-[3px] ${teamBgClass(team.teamNumber)}`}
+      />
       <span className="min-w-0 text-[14px] font-bold break-words">
         <PairName team={team} />
       </span>
@@ -351,7 +342,10 @@ function FrameScoreValue({
   if (!canInput) {
     return (
       <span className="flex shrink-0 items-center gap-1">
-        <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team)}`} />
+        <span
+          aria-hidden="true"
+          className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team.teamNumber)}`}
+        />
         <span className="tabular text-accent w-7 text-center text-[18px] font-extrabold">
           {value}
         </span>
@@ -363,7 +357,10 @@ function FrameScoreValue({
 
   return (
     <span className="flex shrink-0 items-center gap-1">
-      <span aria-hidden="true" className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team)}`} />
+      <span
+        aria-hidden="true"
+        className={`size-2 shrink-0 rounded-[2px] ${teamBgClass(team.teamNumber)}`}
+      />
       <button
         type="button"
         onClick={onDecrement}

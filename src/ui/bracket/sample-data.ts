@@ -7,10 +7,10 @@
  * src/app/(app)/bracket/page.tsx が渡す中身を差し替える。
  */
 
-/** チーム番号は 1〜4 の 4 チーム固定（今回のスコープ外：5 チーム以上）。 */
-export type TeamNumber = 1 | 2 | 3 | 4;
+import type { ClassLabel, TeamNumber } from '@/domain/class-labels';
 
-export type ClassLabel = '1部' | '2部' | '3部';
+// 色の決めごと（チーム 1〜4・部の色）は src/domain/class-labels.ts の 1 か所。ここでは型を使うだけ。
+export type { ClassLabel, TeamNumber };
 
 export type Team = {
   number: TeamNumber;
@@ -105,7 +105,7 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-1-2-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'done',
         teamAPlayers: ['佐藤', '鈴木'],
         teamBPlayers: ['山田', '田中'],
@@ -114,7 +114,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-1-2-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'done',
         teamAPlayers: ['高橋', '伊藤'],
         teamBPlayers: ['渡辺', '小林'],
@@ -123,7 +123,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-1-2-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'done',
         teamAPlayers: ['中村'],
         teamBPlayers: ['加藤'],
@@ -142,7 +142,7 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-1-3-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'done',
         teamAPlayers: ['佐藤', '鈴木'],
         teamBPlayers: ['吉田', '斎藤'],
@@ -151,7 +151,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-1-3-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'done',
         teamAPlayers: ['高橋', '伊藤'],
         teamBPlayers: ['山本', '松本'],
@@ -160,7 +160,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-1-3-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'done',
         teamAPlayers: ['中村'],
         teamBPlayers: ['井上'],
@@ -179,7 +179,7 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-3-4-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'done',
         teamAPlayers: ['吉田', '斎藤'],
         teamBPlayers: ['木村', '林'],
@@ -188,7 +188,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-3-4-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'done',
         teamAPlayers: ['山本', '松本'],
         teamBPlayers: ['清水', '山口'],
@@ -197,7 +197,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-3-4-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'done',
         teamAPlayers: ['井上'],
         teamBPlayers: ['森'],
@@ -216,7 +216,7 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-2-3-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'done',
         teamAPlayers: ['山田', '田中'],
         teamBPlayers: ['吉田', '斎藤'],
@@ -225,7 +225,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-2-3-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'live',
         teamAPlayers: ['渡辺', '小林'],
         teamBPlayers: ['山本', '松本'],
@@ -234,7 +234,7 @@ export const sampleLeagueCards: LeagueCard[] = [
       },
       {
         id: 'card-2-3-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'waiting',
         teamAPlayers: ['加藤'],
         teamBPlayers: ['井上'],
@@ -249,21 +249,21 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-1-4-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'waiting',
         teamAPlayers: ['佐藤', '鈴木'],
         teamBPlayers: ['木村', '林'],
       },
       {
         id: 'card-1-4-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'waiting',
         teamAPlayers: ['高橋', '伊藤'],
         teamBPlayers: ['清水', '山口'],
       },
       {
         id: 'card-1-4-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'waiting',
         teamAPlayers: ['中村'],
         teamBPlayers: ['森'],
@@ -278,21 +278,21 @@ export const sampleLeagueCards: LeagueCard[] = [
     matches: [
       {
         id: 'card-2-4-1',
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         status: 'waiting',
         teamAPlayers: ['山田', '田中'],
         teamBPlayers: ['木村', '林'],
       },
       {
         id: 'card-2-4-2',
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         status: 'waiting',
         teamAPlayers: ['渡辺', '小林'],
         teamBPlayers: ['清水', '山口'],
       },
       {
         id: 'card-2-4-3',
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         status: 'waiting',
         teamAPlayers: ['加藤'],
         teamBPlayers: ['森'],

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getSupabaseAdminClient } from '@/db/admin';
-import { findCourtsData } from '@/db/courts';
+import { findCourtsData, MAX_COURT_MATCHES } from '@/db/courts';
 
 /**
  * `findCourtsData` を本物のデータベースに当てて確かめる。
@@ -32,6 +32,7 @@ let opponentPlayerId: string;
 let liveMatchId: string;
 let waitingMatchId: string;
 let undecidedMatchId: string;
+let doneMatchId: string;
 let myParticipantId: string;
 
 beforeAll(async () => {
@@ -176,6 +177,16 @@ beforeAll(async () => {
         court_number: 91,
         order_in_court: 1,
       },
+      // 終わった試合。コート用の読み込みには入らず、件数（消化数）にだけ数えられる。
+      {
+        matchup_id: decidedMatchupId,
+        division_id: divisionId,
+        order_in_matchup: 3,
+        status: 'done',
+        max_game_count: 1,
+        court_number: 92,
+        order_in_court: 1,
+      },
     ])
     .select('id, matchup_id, status');
   expect(matches.error, `試合の作成に失敗: ${matches.error?.message}`).toBeNull();
@@ -184,6 +195,7 @@ beforeAll(async () => {
     (m) => m.status === 'waiting' && m.matchup_id === decidedMatchupId
   )!.id;
   undecidedMatchId = matches.data!.find((m) => m.matchup_id === undecidedMatchupId)!.id;
+  doneMatchId = matches.data!.find((m) => m.status === 'done')!.id;
 
   const matchPlayers = await admin.from('match_players').insert([
     { match_id: liveMatchId, side: 'a', participant_id: myParticipantId, order_in_pair: 1 },
@@ -234,16 +246,33 @@ afterAll(async () => {
 });
 
 describe('findCourtsData', () => {
-  test('部・段・試合が読める', async () => {
+  test('部（名前つき）・段・試合が読める', async () => {
     const data = await findCourtsData(competitionId, myPlayerId);
 
-    expect(data.divisions).toContainEqual({ id: divisionId, sortOrder: 10 });
+    expect(data.divisions).toContainEqual({ id: divisionId, name: '1部', sortOrder: 10 });
     expect(data.stages.map((s) => s.name).sort()).toEqual(
       ['予選リーグ', '決勝トーナメント'].sort()
     );
+    expect(data.truncated).toBe(false);
+  });
+
+  test('コート用の試合は live と waiting だけ。終わった試合は読まない', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
     expect(data.matches.map((m) => m.matchId).sort()).toEqual(
       [liveMatchId, waitingMatchId, undecidedMatchId].sort()
     );
+    expect(data.matches.map((m) => m.matchId)).not.toContain(doneMatchId);
+    expect(data.matches.every((m) => m.status === 'live' || m.status === 'waiting')).toBe(true);
+  });
+
+  test('段ごとの試合数と終了数は、件数として読める（終わった試合も数に入る）', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    const league = data.stages.find((s) => s.id === leagueStageId)!;
+    const knockout = data.stages.find((s) => s.id === knockoutStageId)!;
+    expect(league).toMatchObject({ totalMatches: 3, doneMatches: 1 });
+    expect(knockout).toMatchObject({ totalMatches: 1, doneMatches: 0 });
   });
 
   test('進行中の試合に、両ペアの名前・チーム番号・得点が入っている', async () => {
@@ -301,5 +330,122 @@ describe('findCourtsData', () => {
     } finally {
       await admin.from('players').delete().eq('id', noSuchPlayer.data!.id);
     }
+  });
+});
+
+/**
+ * 試合が多い大会。件数は数えるだけなので 100 件を超えても正しく、
+ * コート用の読み込みは上限を超えたら「超えた」と分かる（黙って欠けさせない）。
+ */
+describe('findCourtsData（試合が多い大会）', () => {
+  /** 小さな大会を 1 つ作り、試合を決まった数だけ入れて、渡した関数を実行して、片づける。 */
+  async function withBigCompetition(
+    statuses: { status: 'waiting' | 'live' | 'done'; count: number }[],
+    run: (bigCompetitionId: string, bigStageId: string) => Promise<void>
+  ) {
+    const bigCompetition = await admin
+      .from('competitions')
+      .insert({ name: `${tag} 多い大会`, held_on: '2027-06-01' })
+      .select('id')
+      .single();
+    expect(bigCompetition.error).toBeNull();
+    const bigCompetitionId = bigCompetition.data!.id;
+
+    try {
+      const bigDivision = await admin
+        .from('divisions')
+        .insert({ competition_id: bigCompetitionId, name: '1部', sort_order: 10 })
+        .select('id')
+        .single();
+      const bigStage = await admin
+        .from('stages')
+        .insert({
+          competition_id: bigCompetitionId,
+          name: '予選リーグ',
+          format: 'league',
+          sort_order: 10,
+        })
+        .select('id')
+        .single();
+      const bigMatchup = await admin
+        .from('matchups')
+        .insert({
+          stage_id: bigStage.data!.id,
+          round_name: '予選 1回戦',
+          side_a_slot_label: '予選1位',
+          side_b_slot_label: '予選2位',
+        })
+        .select('id')
+        .single();
+      expect(bigMatchup.error, `対戦の作成に失敗: ${bigMatchup.error?.message}`).toBeNull();
+
+      let orderInMatchup = 0;
+      const rows = statuses.flatMap(({ status, count }) =>
+        Array.from({ length: count }, () => {
+          orderInMatchup += 1;
+          return {
+            matchup_id: bigMatchup.data!.id,
+            division_id: bigDivision.data!.id,
+            order_in_matchup: orderInMatchup,
+            status,
+            max_game_count: 1,
+            court_number: 1 + (orderInMatchup % 10),
+            order_in_court: orderInMatchup,
+          };
+        })
+      );
+      const inserted = await admin.from('matches').insert(rows);
+      expect(inserted.error, `試合の作成に失敗: ${inserted.error?.message}`).toBeNull();
+
+      await run(bigCompetitionId, bigStage.data!.id);
+    } finally {
+      const { error } = await admin.from('competitions').delete().eq('id', bigCompetitionId);
+      if (error) throw new Error(`後片付けに失敗（多い大会）: ${error.message}`);
+    }
+  }
+
+  test('終わった試合が 100 件を超えても、消化数は正しい数が出て、コート用には 1 件も読まない', async () => {
+    await withBigCompetition(
+      [
+        { status: 'done', count: 130 },
+        { status: 'live', count: 1 },
+        { status: 'waiting', count: 1 },
+      ],
+      async (bigCompetitionId, bigStageId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.stages.find((s) => s.id === bigStageId)).toMatchObject({
+          totalMatches: 132,
+          doneMatches: 130,
+        });
+        expect(data.matches).toHaveLength(2);
+        expect(data.truncated).toBe(false);
+      }
+    );
+  });
+
+  test('コート用の試合が上限を超えたら、黙って欠けさせず truncated で分かる', async () => {
+    await withBigCompetition(
+      [{ status: 'waiting', count: MAX_COURT_MATCHES + 1 }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(true);
+        // 超えた 1 件は「読み切れたか」の判定にだけ使い、渡さない
+        expect(data.matches).toHaveLength(MAX_COURT_MATCHES);
+      }
+    );
+  });
+
+  test('上限ちょうどなら truncated は false（読み切れている）', async () => {
+    await withBigCompetition(
+      [{ status: 'waiting', count: MAX_COURT_MATCHES }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(false);
+        expect(data.matches).toHaveLength(MAX_COURT_MATCHES);
+      }
+    );
   });
 });

@@ -113,6 +113,12 @@ export type ScoreSyncStatus = {
  */
 export type MatchSyncState = ScoreSyncStatus & {
   /**
+   * この試合で一度でも 0 対 0 以外の点を押したか（あとで 0 対 0 に戻しても true）。
+   * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
+   * （`LiveScore.started` と同じ決まり）。
+   */
+  started: boolean;
+  /**
    * まだサーバーに届いたと確かめられていないゲームの、いま押している点数
    * （送信中・送り直し待ち・入口に断られたまま、のどれも含む）。無ければ空。
    */

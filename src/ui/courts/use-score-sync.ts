@@ -1,6 +1,7 @@
 'use client';
 
 import { useSyncExternalStore } from 'react';
+import { hasAnyPoint } from '@/domain/scoring';
 import {
   rejectionMessage,
   retryDelayMs,
@@ -29,8 +30,12 @@ import type { MatchSyncState } from '@/ui/courts/types';
  * - Provider だと「どの画面より外側に置く」ことを layout の作りに頼ることになり、
  *   将来 layout を組み替えたときに黙って捨てられる道が再び開くため。
  * モジュールならどの画面から呼んでも同じ 1 つで、画面の作りに左右されない。
- * （サーバー側の描画でもこのファイルは読み込まれるが、送るのは操作のあとだけなので
- * サーバーでは何も預からない。）
+ * **サーバー側の描画では何も預からないし、中身も読まない。** サーバーでもこのファイルは読み込まれ、
+ * そこでの預かり場所はアクセスした全員で 1 つになる。もし値が入ったり、描画で中身を読んで HTML に
+ * 混ぜたりすると、ある人の未送信の点が別の人の画面に出る。そこで
+ * - `sync` はブラウザの外（`window` が無いところ）では何もしない
+ * - 描画は `useSyncExternalStore` の 3 番目の引数（サーバー用）で常に空を見る
+ * の 2 つで止めている（use-score-sync.server.test.ts と use-score-sync.test.tsx で確かめている）。
  *
  * 送るか諦めるかの判断は `save-retry-policy.ts`。画面を離れても返事は反映し、送り直しも続ける。
  *
@@ -76,6 +81,13 @@ type GameSyncState = {
   retryingMessage: string | null;
   rejectedMessage: string | null;
   retryTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * 一度でも 0 対 0 以外の点を押したか。あとで 0 対 0 に戻しても true のまま。
+   * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
+   * （画面の `LiveScore.started` と同じ決まり。0 対 0 に戻した値が送れていないまま戻ると、
+   * 数字だけでは「始まった試合」と分からず呼出待ちに見えてしまうため）。
+   */
+  pointPressed: boolean;
 };
 
 function keyOf(matchId: string, gameNumber: number): string {
@@ -183,6 +195,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
       next[game.matchId] = {
         retryingMessage: existing?.retryingMessage ?? game.retryingMessage,
         rejectedMessage: existing?.rejectedMessage ?? game.rejectedMessage,
+        started: (existing?.started ?? false) || game.pointPressed,
         unsentScores: [
           ...(existing?.unsentScores ?? []),
           ...(isUnsent(game) ? [{ gameNumber: game.gameNumber, ...game.desired }] : []),
@@ -246,6 +259,11 @@ export function createScoreSyncStore(): ScoreSyncStore {
 
   return {
     sync(input) {
+      // サーバー側の描画では何も預からない。このモジュールの預かり場所はサーバーのプロセスでは
+      // 全員で 1 つになるので、ここに値が入ると、ある人の点が別の人の画面（HTML）に混ざる。
+      // 今は押したとき（ブラウザ）にしか呼ばれないが、将来うっかり描画中に呼んでも入らないように止める。
+      if (typeof window === 'undefined') return;
+
       const key = keyOf(input.matchId, input.gameNumber);
       let game = games.get(key);
 
@@ -260,11 +278,13 @@ export function createScoreSyncStore(): ScoreSyncStore {
           retryingMessage: null,
           rejectedMessage: null,
           retryTimer: null,
+          pointPressed: false,
         };
         games.set(key, game);
       } else {
         game.desired = { sideAScore: input.sideAScore, sideBScore: input.sideBScore };
       }
+      if (hasAnyPoint([{ gameNumber: game.gameNumber, ...game.desired }])) game.pointPressed = true;
 
       // 新しい操作が来たら、それまでの送り直し待ちはやめて、いますぐ試す。
       // 「送り直しています」は保存できるまで消さない（押しただけで消すと、まだ届いていないのに

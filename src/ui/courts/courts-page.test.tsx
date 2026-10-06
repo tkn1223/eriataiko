@@ -648,9 +648,46 @@ describe('CourtsPage', () => {
       expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
     });
 
-    test('観戦者には、戻ったときも「保存できていません」は出ない', () => {
-      renderPage({ canInput: false });
+    test('呼出待ちのコートで 1 点入れて 0 対 0 に戻し、送れていないまま戻っても LIVE の見た目のまま', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      const firstCard = screen.getByTestId('court-card-7');
+      fireEvent.click(
+        within(firstCard).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+      fireEvent.click(
+        within(firstCard).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1減らす' })
+      );
+      await waitFor(() => expect(within(firstCard).getByRole('status')).toBeInTheDocument());
+      expect(within(firstCard).getByText('LIVE')).toBeInTheDocument();
+      first.unmount();
 
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    // 選手として押した点が送れないまま、観戦者として入り直して結果LIVE を開いた場合。
+    // 観戦者は点を入れないので、預かっている数字も案内も混ぜない。
+    test('選手として押した点が送れていないまま観戦者で開いても、数字も「保存できていません」も混ざらない', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+
+      renderPage({ canInput: false });
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('20', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByText('21', { exact: true })).not.toBeInTheDocument();
       expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
     });
   });

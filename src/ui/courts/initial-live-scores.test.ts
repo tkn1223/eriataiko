@@ -41,7 +41,13 @@ const waitingCourt: Court = {
 };
 
 function syncState(overrides: Partial<MatchSyncState>): MatchSyncState {
-  return { retryingMessage: null, rejectedMessage: null, unsentScores: [], ...overrides };
+  return {
+    retryingMessage: null,
+    rejectedMessage: null,
+    started: false,
+    unsentScores: [],
+    ...overrides,
+  };
 }
 
 describe('initialLiveScores', () => {
@@ -90,6 +96,40 @@ describe('initialLiveScores', () => {
       finished: false,
       started: true,
     });
+  });
+
+  // 仕様「呼出待ちから始まった試合は、0 対 0 に戻しても LIVE の見た目のまま」
+  test('呼出待ちのコートで 1 点入れてから 0 対 0 に戻し、送れていないまま戻っても LIVE の見た目のまま', () => {
+    const result = initialLiveScores([waitingCourt], true, {
+      'match-next': syncState({
+        started: true,
+        unsentScores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }],
+      }),
+    });
+
+    expect(result[2]).toEqual({
+      scores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }],
+      finished: false,
+      started: true,
+    });
+  });
+
+  test('呼出待ちのコートで一度点を入れた試合は、ぜんぶ送れたあとに戻っても LIVE の見た目のまま', () => {
+    const result = initialLiveScores([waitingCourt], true, {
+      'match-next': syncState({ started: true }),
+    });
+
+    expect(result[2]).toEqual({ scores: [], finished: false, started: true });
+  });
+
+  test('呼出待ちのコートで 0 対 0 しか押していなければ、呼出待ちの見た目のまま（数字は戻す）', () => {
+    const result = initialLiveScores([waitingCourt], true, {
+      'match-next': syncState({
+        unsentScores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }],
+      }),
+    });
+
+    expect(result[2]?.started).toBe(false);
   });
 
   test('呼出待ちのコートに未送信が無ければ、得点の状態は作らない（呼出待ちのまま）', () => {

@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
+import { initialLiveScores } from '@/ui/courts/initial-live-scores';
 import {
   activeMatchId,
   type Court,
@@ -74,22 +75,6 @@ function EmptyCourtsNotice({ reason }: { reason: CourtsEmptyReason }) {
 /** 試合の終了はまだ記録されない旨を、得点を入れる人（選手）にだけ出す。 */
 const PLAYER_UNSAVED_NOTICE = '試合の終了はまだ記録されません（点は保存されます）';
 
-/** 進行中のコートぶんだけ、渡された値を得点の初期値にする。 */
-function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
-  const entries = courts.flatMap((court) =>
-    court.live
-      ? [
-          [
-            court.courtNumber,
-            { scores: court.live.scores, finished: false, started: true },
-          ] as const,
-        ]
-      : []
-  );
-
-  return Object.fromEntries(entries);
-}
-
 /**
  * 結果LIVE画面（トップ）。
  *
@@ -101,6 +86,8 @@ function initialLiveScores(courts: Court[]): Record<number, LiveScore> {
  *
  * 押した点の保存は `use-score-sync.ts` に任せる（送る・送り直す・まとめる仕組みを
  * 画面の部品から切り離す。docs/specs/2026-09-19-save-score-from-courts.md の「つくりの方針」）。
+ * 送れていない点はこの画面ではなくアプリ全体で預かるので、下のメニューで別の画面に移っても
+ * 送り直しは続き、戻ってきたらその数字のまま出る。
  */
 export function CourtsPage({
   courts,
@@ -111,10 +98,12 @@ export function CourtsPage({
   emptyReason,
   truncated,
 }: Props) {
-  const [liveScores, setLiveScores] = useState<Record<number, LiveScore>>(() =>
-    initialLiveScores(courts)
-  );
   const { sync, statusByMatchId } = useScoreSync();
+  // 開いたときの数字は、サーバーから読んだ得点に、アプリの中で預かっている「まだ送れていない点」を
+  // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。initial-live-scores.ts）。
+  const [liveScores, setLiveScores] = useState<Record<number, LiveScore>>(() =>
+    initialLiveScores(courts, canInput, statusByMatchId)
+  );
 
   // 押した直後の得点を、描画を待たずに読める形でも持つ（画面に出すのは上の state）。
   //

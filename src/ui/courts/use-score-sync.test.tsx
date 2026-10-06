@@ -1,11 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { useScoreSync } from '@/ui/courts/use-score-sync';
+import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
 
 /**
  * `use-score-sync.ts` のテスト。DOM（window の beforeunload・タイマー）が要るので
  * `.test.tsx`（jsdom）で動かす。fetch を差し替えて失敗・再送を再現する
  * （仕様の「つくりの方針」）。
+ *
+ * 預かる場所はアプリ全体で 1 つ（`appScoreSyncStore`）なので、テストのあいだに前のテストの
+ * 点や送り直しのタイマーが残らないよう、前後で `dispose()` して空にする。
  */
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -16,10 +19,12 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 beforeEach(() => {
+  appScoreSyncStore.dispose();
   vi.stubGlobal('fetch', vi.fn());
 });
 
 afterEach(() => {
+  appScoreSyncStore.dispose();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -255,26 +260,191 @@ describe('useScoreSync', () => {
     );
   });
 
-  test('画面を離れたら、送り直しをやめる（返事待ちの送信が戻ってきても次を送らない）', async () => {
-    vi.useFakeTimers();
-    const fetchMock = vi.mocked(fetch);
-    let rejectFirst!: (error: Error) => void;
-    fetchMock.mockImplementationOnce(
-      () =>
-        new Promise((_, reject) => {
-          rejectFirst = reject;
-        })
-    );
-    const { result, unmount } = renderHook(() => useScoreSync());
+  // 仕様 2026-10-04: 送れていない点を預かる場所は画面（フック）より長生きする。
+  // 「画面を離れたら送り直しをやめる」は、点が黙って消える原因だったのでやめた。
+  describe('預かる場所はアプリ全体で 1 つ（画面を離れても送り続ける）', () => {
+    test('画面を離れても、送り直しを続けて、送れたらデータベースに届く', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.mocked(fetch);
+      fetchMock
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+      const { result, unmount } = renderHook(() => useScoreSync());
 
-    act(() => {
-      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      unmount();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({
+        gameNumber: 1,
+        sideAScore: 3,
+        sideBScore: 1,
+      });
     });
-    unmount();
-    rejectFirst(new Error('network down'));
-    await vi.advanceTimersByTimeAsync(30_000);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    test('2 つの画面（フック）は同じ預かり場所を見ている', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      const first = renderHook(() => useScoreSync());
+      const second = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      });
+
+      expect(second.result.current.statusByMatchId['m']?.unsentScores).toEqual([
+        { gameNumber: 1, sideAScore: 1, sideBScore: 0 },
+      ]);
+    });
+
+    test('離れて戻ってきた画面は、送れていない点を未送信の数字と案内つきで受け取る', async () => {
+      vi.useFakeTimers();
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      first.unmount();
+
+      const returned = renderHook(() => useScoreSync());
+
+      expect(returned.result.current.statusByMatchId['m']).toEqual({
+        retryingMessage: '保存できていません・送り直しています',
+        rejectedMessage: null,
+        unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
+      });
+    });
+
+    test('離れている間に送り直しが成功したら、戻ってきた画面に案内も未送信も無い', async () => {
+      vi.useFakeTimers();
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      first.unmount();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const returned = renderHook(() => useScoreSync());
+
+      expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+      expect(returned.result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+    });
+
+    test('離れている間に返事が戻ってきても（成功）、印が付け替わる', async () => {
+      let resolveFirst!: (response: Response) => void;
+      vi.mocked(fetch).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          })
+      );
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      first.unmount();
+      await act(async () => {
+        resolveFirst(jsonResponse(200, { ok: true }));
+      });
+
+      const returned = renderHook(() => useScoreSync());
+      expect(returned.result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+      expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+    });
+
+    test('離れている間に返事が戻ってきても（失敗）、送り直しの印が付き、次の送り直しも仕掛ける', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.mocked(fetch);
+      let rejectFirst!: (error: Error) => void;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectFirst = reject;
+          })
+      );
+      fetchMock.mockResolvedValue(jsonResponse(200, { ok: true }));
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      first.unmount();
+      rejectFirst(new Error('network down'));
+      await vi.advanceTimersByTimeAsync(0);
+
+      const returned = renderHook(() => useScoreSync());
+      expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBe(
+        '保存できていません・送り直しています'
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+    });
+
+    test('入口に断られた点も、離れて戻ると未送信の数字と理由つきで受け取る', async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(409, { error: '終了した試合です。' }));
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      await waitFor(() =>
+        expect(first.result.current.statusByMatchId['m']?.rejectedMessage).toBe(
+          '終了した試合です。'
+        )
+      );
+      first.unmount();
+
+      const returned = renderHook(() => useScoreSync());
+      expect(returned.result.current.statusByMatchId['m']).toEqual({
+        retryingMessage: null,
+        rejectedMessage: '終了した試合です。',
+        unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
+      });
+    });
+
+    test('未送信の数字は、送信中のあいだも含めて、保存できたら無くなる', async () => {
+      let resolveFirst!: (response: Response) => void;
+      vi.mocked(fetch).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          })
+      );
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      });
+      expect(result.current.statusByMatchId['m']?.unsentScores).toHaveLength(1);
+
+      await act(async () => {
+        resolveFirst(jsonResponse(200, { ok: true }));
+      });
+      expect(result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+    });
   });
 
   describe('beforeunload（送れていない点があるまま閉じようとしたときの確認）', () => {
@@ -307,8 +477,63 @@ describe('useScoreSync', () => {
       act(() => {
         result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
       });
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      // 送信中も「まだ届いていない」ので確認は出る。返事（成功）が戻って、預かりが空になるまで待つ。
+      await waitFor(() => expect(result.current.statusByMatchId['m']?.unsentScores).toEqual([]));
 
+      expect(dispatchBeforeUnload()).toBe(false);
+    });
+
+    test('送れていない点があるまま画面（フック）が外れても、確認は出る（アプリごと閉じる・更新する保険）', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      vi.useFakeTimers();
+      const { result, unmount } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      unmount();
+
+      expect(dispatchBeforeUnload()).toBe(true);
+    });
+
+    test('離れている間に送れて、未送信が無くなったら確認は出なくなる', async () => {
+      vi.useFakeTimers();
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+      const { result, unmount } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      unmount();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(dispatchBeforeUnload()).toBe(false);
+    });
+
+    test('後片付け（dispose）で、待っている送り直しと確認の仕掛けが残らない', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.mocked(fetch);
+      fetchMock.mockRejectedValue(new Error('network down'));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      appScoreSyncStore.dispose();
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(dispatchBeforeUnload()).toBe(false);
     });
 

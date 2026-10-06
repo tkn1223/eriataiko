@@ -277,20 +277,24 @@ export function CourtLiveCard({
         </p>
       )}
 
+      {/* 送れていない点の案内は、試合を終了したあとも残す（仕様 2026-10-04 の決めたこと 4）。
+          終了の記録は 1-d まで画面の中だけで、点の保存とは別の話。ここで消すと、
+          送れていない点があるのに「保存できた」ように見える。 */}
+      {canInput &&
+        (syncStatus?.rejectedMessage ? (
+          <p role="status" className="text-live text-[13px] font-bold">
+            {syncStatus.rejectedMessage}
+          </p>
+        ) : (
+          syncStatus?.retryingMessage && (
+            <p role="status" className="text-live text-[13px] font-bold">
+              {syncStatus.retryingMessage}
+            </p>
+          )
+        ))}
+
       {!finished && canInput && (
         <>
-          {syncStatus?.rejectedMessage ? (
-            <p role="status" className="text-live text-[13px] font-bold">
-              {syncStatus.rejectedMessage}
-            </p>
-          ) : (
-            syncStatus?.retryingMessage && (
-              <p role="status" className="text-live text-[13px] font-bold">
-                {syncStatus.retryingMessage}
-              </p>
-            )
-          )}
-
           {notice && (
             <p role="status" className="text-live text-[13px] font-bold">
               {notice}

@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CourtsPage } from '@/ui/courts/courts-page';
+import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 import type { Court, CourtTeam } from '@/ui/courts/types';
 
 /**
@@ -10,6 +11,8 @@ import type { Court, CourtTeam } from '@/ui/courts/types';
  * use-score-sync.test.tsx が担当する）。
  */
 beforeEach(() => {
+  // 送れていない点の預かり場所はアプリ全体で 1 つ。前のテストの点を持ち越さない。
+  appScoreSyncStore.dispose();
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
@@ -17,6 +20,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  appScoreSyncStore.dispose();
   vi.unstubAllGlobals();
 });
 
@@ -544,6 +548,155 @@ describe('CourtsPage', () => {
         sideAScore: 1,
         sideBScore: 0,
       });
+    });
+  });
+
+  // 仕様 2026-10-04: 送れていない点は、結果LIVE の画面より長生きする。
+  // 下のメニューで別の画面に移る = この画面を外す（unmount）、戻る = 作り直す（render）。
+  describe('別の画面に移っても、送れていない点を預かる', () => {
+    const PLUS_COURT_1 = '佐々木・井上の第1ゲームの得点を1増やす';
+
+    test('送れない状態で「＋」を押して画面を外しても、送り直しを続けて保存の入口に届く', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+
+      first.unmount();
+
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2), { timeout: 3000 });
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[1][1]?.body as string)).toEqual({
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+      });
+    });
+
+    test('送れていない点があるまま結果LIVE に戻ると、押した数字のまま「保存できていません」が出る', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toHaveTextContent(
+          '保存できていません'
+        )
+      );
+      first.unmount();
+
+      // サーバーから読み直した数字は、まだ押す前の 20-19
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('21', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByText('20', { exact: true })).not.toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    test('別の画面にいる間に保存できたら、戻ったとき「保存できていません」は出ていない', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2), { timeout: 3000 });
+      // 返事が預かり場所に反映されるのを待つ
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // サーバーは保存された 21-19 を返す
+      const courts = buildCourts();
+      courts[0].live!.scores = [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }];
+      renderPage({ courts });
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('21', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+
+    test('呼出待ちのコートで入れた最初の 1 点が送れていないまま戻ると、LIVE の見た目で数字が残る', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-7')).getByRole('button', {
+          name: '斉藤・坂本の第1ゲームの得点を1増やす',
+        })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-7')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).getByText('1', { exact: true })).toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    test('観戦者には、戻ったときも「保存できていません」は出ない', () => {
+      renderPage({ canInput: false });
+
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('送れていない点がある試合で「試合を終了する」を押したとき', () => {
+    function finishCourt1() {
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      return card;
+    }
+
+    test('終了しても「保存できていません」の案内が消えない。送れたら消える', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      await waitFor(() => expect(within(card).getByRole('status')).toBeInTheDocument());
+
+      finishCourt1();
+
+      expect(within(card).getByText('終了')).toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+
+      // 送り直しが成功すると、終了したカードからも案内が消える
+      await waitFor(() => expect(within(card).queryByRole('status')).not.toBeInTheDocument(), {
+        timeout: 3000,
+      });
+    });
+
+    test('送れている試合を終了しても、案内は出ない', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+
+      finishCourt1();
+
+      expect(within(card).getByText('終了')).toBeInTheDocument();
+      expect(within(card).queryByRole('status')).not.toBeInTheDocument();
     });
   });
 });

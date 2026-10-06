@@ -1,4 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
 
@@ -290,6 +291,36 @@ describe('useScoreSync', () => {
       });
     });
 
+    test('画面を何度出入りしても、送り直しは 1 本だけ・確認（beforeunload）の仕掛けも 1 つだけ', async () => {
+      vi.useFakeTimers();
+      const fetchMock = vi.mocked(fetch);
+      fetchMock
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockImplementation(() => new Promise(() => {}));
+      const addListenerSpy = vi.spyOn(window, 'addEventListener');
+      const first = renderHook(() => useScoreSync());
+
+      act(() => {
+        first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      first.unmount();
+      for (let visit = 0; visit < 5; visit += 1) {
+        renderHook(() => useScoreSync()).unmount();
+      }
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // 1 回目の送信と、1 秒後の送り直し 1 本だけ（出入りのたびに増えない）
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const beforeUnloadAdds = addListenerSpy.mock.calls.filter(
+        ([type]) => type === 'beforeunload'
+      );
+      expect(beforeUnloadAdds).toHaveLength(1);
+      addListenerSpy.mockRestore();
+    });
+
     test('2 つの画面（フック）は同じ預かり場所を見ている', () => {
       vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
       const first = renderHook(() => useScoreSync());
@@ -322,6 +353,7 @@ describe('useScoreSync', () => {
       expect(returned.result.current.statusByMatchId['m']).toEqual({
         retryingMessage: '保存できていません・送り直しています',
         rejectedMessage: null,
+        started: true,
         unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
     });
@@ -421,6 +453,7 @@ describe('useScoreSync', () => {
       expect(returned.result.current.statusByMatchId['m']).toEqual({
         retryingMessage: null,
         rejectedMessage: '終了した試合です。',
+        started: true,
         unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
     });
@@ -444,6 +477,66 @@ describe('useScoreSync', () => {
         resolveFirst(jsonResponse(200, { ok: true }));
       });
       expect(result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+    });
+  });
+
+  // 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つための印
+  // （仕様「0 対 0 に戻しても LIVE のまま」）。
+  describe('一度でも点を押したか（started）', () => {
+    test('まだ 0 対 0 しか送っていなければ started は false', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 0, sideBScore: 0 });
+      });
+
+      expect(result.current.statusByMatchId['m']?.started).toBe(false);
+    });
+
+    test('1 点押したあと 0 対 0 に戻しても、started は true のまま', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 0, sideBScore: 0 });
+      });
+
+      expect(result.current.statusByMatchId['m']?.started).toBe(true);
+    });
+
+    test('別のゲームで点を押していれば、その試合は started', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 2, sideAScore: 1, sideBScore: 0 });
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 0, sideBScore: 0 });
+        result.current.sync({ matchId: 'other', gameNumber: 1, sideAScore: 0, sideBScore: 0 });
+      });
+
+      expect(result.current.statusByMatchId['m']?.started).toBe(true);
+      expect(result.current.statusByMatchId['other']?.started).toBe(false);
+    });
+  });
+
+  // 預かり場所はサーバーのプロセスでは全員で 1 つになる。サーバー側の描画に中身が混ざると、
+  // ある人の未送信の点が別の人の画面（HTML）に出てしまう。
+  describe('サーバー側の描画には、預かっている点を混ぜない', () => {
+    function StatusProbe() {
+      const { statusByMatchId } = useScoreSync();
+      return <output>{JSON.stringify(statusByMatchId)}</output>;
+    }
+
+    test('預かり場所に点があっても、サーバー側の描画（renderToString）では空のまま', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      appScoreSyncStore.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
+      expect(appScoreSyncStore.getSnapshot()['m']).toBeDefined();
+
+      const html = renderToString(<StatusProbe />);
+
+      expect(html).toBe('<output>{}</output>');
     });
   });
 

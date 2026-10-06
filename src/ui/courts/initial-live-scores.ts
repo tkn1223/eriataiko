@@ -19,9 +19,8 @@ export function initialLiveScores(
   const entries: Array<[number, LiveScore]> = [];
 
   for (const court of courts) {
-    const unsent = canInput
-      ? (statusByMatchId[activeMatchId(court, canInput) ?? '']?.unsentScores ?? [])
-      : [];
+    const syncState = canInput ? statusByMatchId[activeMatchId(court, canInput) ?? ''] : undefined;
+    const unsent = syncState?.unsentScores ?? [];
 
     if (court.live) {
       entries.push([
@@ -36,11 +35,13 @@ export function initialLiveScores(
     }
 
     // 呼出待ち（選手だけ）。まだ何も押していなければ状態は作らない（呼出待ちのまま）。
-    // 押した点が送れていなければ、LIVE の見た目で数字を戻す
-    if (unsent.length > 0) {
+    // 押した点が送れていなければ数字を戻す。一度でも点を押した試合は、0 対 0 に戻していても
+    // LIVE の見た目にする（離れる前の画面がそうだったため。仕様「0 対 0 に戻しても LIVE のまま」）
+    const started = (syncState?.started ?? false) || hasAnyPoint(unsent);
+    if (unsent.length > 0 || started) {
       entries.push([
         court.courtNumber,
-        { scores: overlayUnsent([], unsent), finished: false, started: hasAnyPoint(unsent) },
+        { scores: overlayUnsent([], unsent), finished: false, started },
       ]);
     }
   }

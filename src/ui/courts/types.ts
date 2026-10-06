@@ -105,6 +105,20 @@ export type ScoreSyncStatus = {
   rejectedMessage: string | null;
 };
 
+/**
+ * 試合 1 つぶんの、預かり場所（`use-score-sync.ts`）の中身。
+ * 画面を作り直したとき（下のメニューで別の画面から戻ったとき）に、
+ * サーバーから読んだ数字より「まだ送れていない数字」を優先して出すために、数字ごと渡す
+ * （docs/specs/2026-09-19-save-score-from-courts.md の「2026-10-04 の書き直し」）。
+ */
+export type MatchSyncState = ScoreSyncStatus & {
+  /**
+   * まだサーバーに届いたと確かめられていないゲームの、いま押している点数
+   * （送信中・送り直し待ち・入口に断られたまま、のどれも含む）。無ければ空。
+   */
+  unsentScores: GameScore[];
+};
+
 export type Court = {
   courtNumber: number;
   /** 進行中の試合。無いコートは「呼出待ち」または「予定なし」になる。 */

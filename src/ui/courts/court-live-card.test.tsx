@@ -323,6 +323,55 @@ describe('CourtLiveCard', () => {
 
       expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
     });
+
+    // 仕様 2026-10-04 の 4: 終了を押しても、送れていない点がある間は案内を消さない
+    // （終了の記録そのものは 1-d まで画面の中だけなので、点の保存状況は終了後も見えるべき）。
+    test('試合が終了した状態でも、送り直している間は「保存できていません」が残る', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: {
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        },
+      });
+
+      expect(screen.getByText('終了')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('保存できていません・送り直しています');
+    });
+
+    test('試合が終了した状態でも、入口に断られた理由は残る', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: {
+          retryingMessage: null,
+          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+        },
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('終了した試合です');
+    });
+
+    test('試合が終了した状態で、送れていれば何も出ない', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: { retryingMessage: null, rejectedMessage: null },
+      });
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    test('観戦者には、終了した状態でも案内を出さない', () => {
+      renderLiveCard({
+        canInput: false,
+        finished: true,
+        syncStatus: {
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        },
+      });
+
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
   });
 
   describe('観戦者（canInput が false）', () => {

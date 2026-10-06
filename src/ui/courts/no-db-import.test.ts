@@ -19,6 +19,7 @@ const UI_COMPONENT_FILES = [
   // Supabase の画面側の鍵でも書かない（AGENTS.md の「破ってはいけない 3 つ」の 1 番目）。
   'src/ui/courts/use-score-sync.ts',
   'src/ui/courts/save-retry-policy.ts',
+  'src/ui/courts/initial-live-scores.ts',
 ];
 
 const PAGE_FILE = 'src/app/(app)/courts/page.tsx';

@@ -229,6 +229,8 @@ function championOf(
  * 代わりに、決勝の段の対戦を sort_order の順に並べた位置で決める
  * （1・2 番目 = 準決勝、3 番目 = 決勝、4 番目 = 3位決定戦）。
  * 4 つ以外のときは、どれが決勝か決められないので、並べずに「想定外の形」として知らせる。
+ * 4 つでも並び順が重なっていれば同じく知らせる。重なった 2 つの前後は読み込みのたびに
+ * 変わりうるので、決勝と3位決定戦が入れ替わった間違いの表を黙って出してしまうため。
  */
 function buildKoBracket(
   knockoutMatchups: BracketViewMatchupRow[],
@@ -239,6 +241,10 @@ function buildKoBracket(
   if (knockoutMatchups.length !== KNOCKOUT_MATCHUP_COUNT) {
     return { kind: 'unexpected-shape', matchupCount: knockoutMatchups.length };
   }
+  const distinctOrders = new Set(
+    knockoutMatchups.map((matchup) => `${matchup.stageSortOrder}-${matchup.sortOrder}`)
+  );
+  if (distinctOrders.size !== knockoutMatchups.length) return { kind: 'duplicate-sort-order' };
 
   const [semifinal1, semifinal2, final, thirdPlace] = knockoutMatchups;
   return {

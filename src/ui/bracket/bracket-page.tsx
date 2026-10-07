@@ -70,11 +70,20 @@ function KoBracketOrNotice({ view }: { view: KoBracketView }) {
 
   return (
     <p className="mb-5 rounded-2xl border border-gray-200 bg-white p-[14px] text-[14px] font-bold">
-      {view.kind === 'not-registered'
-        ? '決勝トーナメントの組み合わせはまだありません'
-        : `決勝トーナメントの組み合わせが、想定と違う形で登録されています（対戦が ${view.matchupCount} 件）。運営の方に知らせてください。`}
+      {koNoticeText(view)}
     </p>
   );
+}
+
+function koNoticeText(view: Exclude<KoBracketView, { kind: 'ready' }>): string {
+  switch (view.kind) {
+    case 'not-registered':
+      return '決勝トーナメントの組み合わせはまだありません';
+    case 'unexpected-shape':
+      return `決勝トーナメントの組み合わせが、想定と違う形で登録されています（対戦が ${view.matchupCount} 件）。運営の方に知らせてください。`;
+    case 'duplicate-sort-order':
+      return '決勝トーナメントの組み合わせが、想定と違う形で登録されています（対戦の並び順が重なっています）。運営の方に知らせてください。';
+  }
 }
 
 function TabButton({

@@ -15,7 +15,7 @@ import type { Database } from '@/types/database';
  * - 予選: 同じチームの組み合わせの対戦が 2 つになり、星取表の 1 マスにどちらが出るか決まらない
  * - 決勝: 決勝の段の対戦がちょうど 4 つのときだけ勝ち上がり表にする（どれが決勝かを並びで決めるため。
  *   仕様の「決勝の見分け方」）。5 つにすると「想定と違う形」の案内になってしまう
- * 足した試合は `order_in_matchup` が 90 以上なので、後片付けで seed の試合と見分けられる。
+ * 足した試合は `order_in_matchup` が 91 以上なので、後片付けで seed の試合と見分けられる。
  *
  * **2 段階に分けている。**
  * - `createBracketScenario` … 予選リーグの結果（終了・引き分け・進行中・未実施）と、決勝の準決勝 2。
@@ -48,6 +48,26 @@ const KNOCKOUT_SEMIFINAL_1 = '60000000-0000-4000-8000-000000000011';
 const KNOCKOUT_SEMIFINAL_2 = '60000000-0000-4000-8000-000000000012';
 const KNOCKOUT_FINAL = '60000000-0000-4000-8000-000000000013';
 const KNOCKOUT_THIRD_PLACE = '60000000-0000-4000-8000-000000000014';
+
+/** seed.sql の対戦すべて（予選 6・決勝 4）。試合を足すのも、余計な対戦が無いかを見るのもこの一覧。 */
+const ALL_MATCHUP_IDS = [
+  '60000000-0000-4000-8000-000000000001',
+  LEAGUE_HOKU_SEI,
+  LEAGUE_NAN_HOKU,
+  LEAGUE_CHUO_SEI,
+  LEAGUE_NAN_SEI,
+  '60000000-0000-4000-8000-000000000006',
+  KNOCKOUT_SEMIFINAL_1,
+  KNOCKOUT_SEMIFINAL_2,
+  KNOCKOUT_FINAL,
+  KNOCKOUT_THIRD_PLACE,
+];
+const KNOCKOUT_MATCHUP_IDS = [
+  KNOCKOUT_SEMIFINAL_1,
+  KNOCKOUT_SEMIFINAL_2,
+  KNOCKOUT_FINAL,
+  KNOCKOUT_THIRD_PLACE,
+];
 
 /** 勝ち上がり表の枠の `data-testid` は `ko-match-<対戦の id>`。 */
 export const KO_BOX_TEST_IDS = {
@@ -222,21 +242,31 @@ async function setKnockoutTeams(
   if (error) throw new Error(`決勝の対戦にチームを入れられませんでした: ${error.message}`);
 }
 
-/** seed の決勝の対戦が 4 つそろっていること（無ければ勝ち上がり表は「想定と違う形」になる）。 */
-async function assertSeedKnockoutMatchups(): Promise<void> {
+/**
+ * いまの大会の対戦が、seed.sql の予選 6・決勝 4 の**ちょうど 10 個だけ**であること。
+ *
+ * 足りなくても、余計にあっても、このファイルの確かめ方が成り立たない。特に別の e2e
+ * （courts-scenario・long-name-player は同じ大会に対戦を足す）が途中で止まって残した対戦があると、
+ * 決勝が 5 つになって勝ち上がり表が「想定と違う形」になり、どの test も「見つからない」で落ちて
+ * 理由が分からない。先にここで、理由の分かる言葉で止める。
+ */
+async function assertOnlySeedMatchups(): Promise<void> {
   const { data, error } = await admin
     .from('matchups')
-    .select('id')
-    .in('id', [
-      KNOCKOUT_SEMIFINAL_1,
-      KNOCKOUT_SEMIFINAL_2,
-      KNOCKOUT_FINAL,
-      KNOCKOUT_THIRD_PLACE,
-      LEAGUE_HOKU_SEI,
-    ]);
+    .select('id, stages!inner(competition_id)')
+    .eq('stages.competition_id', COMPETITION_ID)
+    .limit(ALL_MATCHUP_IDS.length + 1);
   if (error) throw new Error(`seed の対戦を確認できませんでした: ${error.message}`);
-  if (data.length !== 5) {
+
+  const ids = data.map((row) => row.id);
+  const missing = ALL_MATCHUP_IDS.filter((id) => !ids.includes(id));
+  if (missing.length > 0) {
     throw new Error('seed.sql の予選・決勝の対戦が見つかりません。npm run db:reset をしてください');
+  }
+  if (ids.length > ALL_MATCHUP_IDS.length) {
+    throw new Error(
+      'いまの大会に seed 以外の対戦が残っています（別の e2e の後片付け漏れ）。npm run db:reset をしてください'
+    );
   }
 }
 
@@ -248,7 +278,7 @@ export async function createBracketScenario(): Promise<void> {
   // 前回が途中で止まって seed を書き換えたまま残っていても、作る前に必ず元に戻す
   // （courts-scenario と同じ「作る前に消す」）。
   await restoreSeedState();
-  await assertSeedKnockoutMatchups();
+  await assertOnlySeedMatchups();
 
   const players = await admin
     .from('players')
@@ -288,26 +318,6 @@ export async function createBracketScenario(): Promise<void> {
 export async function deleteBracketScenario(): Promise<void> {
   await restoreSeedState();
 }
-
-/** 試合を足すことがある対戦（予選 6・決勝 4）。seed.sql の固定 id。 */
-const ALL_MATCHUP_IDS = [
-  '60000000-0000-4000-8000-000000000001',
-  LEAGUE_HOKU_SEI,
-  LEAGUE_NAN_HOKU,
-  LEAGUE_CHUO_SEI,
-  LEAGUE_NAN_SEI,
-  '60000000-0000-4000-8000-000000000006',
-  KNOCKOUT_SEMIFINAL_1,
-  KNOCKOUT_SEMIFINAL_2,
-  KNOCKOUT_FINAL,
-  KNOCKOUT_THIRD_PLACE,
-];
-const KNOCKOUT_MATCHUP_IDS = [
-  KNOCKOUT_SEMIFINAL_1,
-  KNOCKOUT_SEMIFINAL_2,
-  KNOCKOUT_FINAL,
-  KNOCKOUT_THIRD_PLACE,
-];
 
 /**
  * このシナリオが seed に足した・書き換えたものを、seed.sql の値に戻して、戻ったことを確かめる。

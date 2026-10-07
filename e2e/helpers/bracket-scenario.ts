@@ -245,7 +245,9 @@ async function assertSeedKnockoutMatchups(): Promise<void> {
 // ---------------------------------------------------------------------
 
 export async function createBracketScenario(): Promise<void> {
-  await deleteBracketScenario();
+  // 前回が途中で止まって seed を書き換えたまま残っていても、作る前に必ず元に戻す
+  // （courts-scenario と同じ「作る前に消す」）。
+  await restoreSeedState();
   await assertSeedKnockoutMatchups();
 
   const players = await admin
@@ -284,29 +286,85 @@ export async function createBracketScenario(): Promise<void> {
 
 /** 足した試合・選手を消し、決勝に入れたチームを空に戻す。seed の試合には触らない。 */
 export async function deleteBracketScenario(): Promise<void> {
-  await deleteFinishedFinalScenario();
-
-  await setKnockoutTeams(KNOCKOUT_SEMIFINAL_2, null, null);
-  await deleteAddedMatches();
-
-  const players = await admin.from('players').delete().in('player_number', PLAYER_NUMBERS);
-  if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
+  await restoreSeedState();
 }
 
-async function deleteAddedMatches(): Promise<void> {
-  const { error } = await admin
+/** 試合を足すことがある対戦（予選 6・決勝 4）。seed.sql の固定 id。 */
+const ALL_MATCHUP_IDS = [
+  '60000000-0000-4000-8000-000000000001',
+  LEAGUE_HOKU_SEI,
+  LEAGUE_NAN_HOKU,
+  LEAGUE_CHUO_SEI,
+  LEAGUE_NAN_SEI,
+  '60000000-0000-4000-8000-000000000006',
+  KNOCKOUT_SEMIFINAL_1,
+  KNOCKOUT_SEMIFINAL_2,
+  KNOCKOUT_FINAL,
+  KNOCKOUT_THIRD_PLACE,
+];
+const KNOCKOUT_MATCHUP_IDS = [
+  KNOCKOUT_SEMIFINAL_1,
+  KNOCKOUT_SEMIFINAL_2,
+  KNOCKOUT_FINAL,
+  KNOCKOUT_THIRD_PLACE,
+];
+
+/**
+ * このシナリオが seed に足した・書き換えたものを、seed.sql の値に戻して、戻ったことを確かめる。
+ * - 足した試合（order_in_matchup が 91 以上）と、足した選手を消す
+ * - 決勝 4 対戦の side_a/b_team_id を null に戻す（seed.sql では空枠の名前だけで、チームは入っていない）
+ * 作る前と、終わったあとの両方で呼ぶ。戻っていなければ、黙って進まず落とす。
+ */
+async function restoreSeedState(): Promise<void> {
+  const matches = await admin
     .from('matches')
     .delete()
     .gte('order_in_matchup', ADDED_MATCH_ORDER_START)
-    .in('matchup_id', [
-      LEAGUE_HOKU_SEI,
-      LEAGUE_NAN_HOKU,
-      LEAGUE_CHUO_SEI,
-      LEAGUE_NAN_SEI,
-      KNOCKOUT_SEMIFINAL_2,
-      KNOCKOUT_FINAL,
-    ]);
-  if (error) throw new Error(`後片付けに失敗（試合）: ${error.message}`);
+    .in('matchup_id', ALL_MATCHUP_IDS);
+  if (matches.error) throw new Error(`後片付けに失敗（試合）: ${matches.error.message}`);
+
+  const teams = await admin
+    .from('matchups')
+    .update({ side_a_team_id: null, side_b_team_id: null })
+    .in('id', KNOCKOUT_MATCHUP_IDS);
+  if (teams.error) throw new Error(`後片付けに失敗（決勝のチーム）: ${teams.error.message}`);
+
+  const players = await admin.from('players').delete().in('player_number', PLAYER_NUMBERS);
+  if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
+
+  await assertSeedStateRestored();
+}
+
+async function assertSeedStateRestored(): Promise<void> {
+  const left = await admin
+    .from('matches')
+    .select('id')
+    .gte('order_in_matchup', ADDED_MATCH_ORDER_START)
+    .in('matchup_id', ALL_MATCHUP_IDS);
+  if (left.error) throw new Error(`戻ったかを確認できませんでした（試合）: ${left.error.message}`);
+  if (left.data.length > 0) {
+    throw new Error(`足した試合が ${left.data.length} 件、消えずに残っています`);
+  }
+
+  const knockout = await admin
+    .from('matchups')
+    .select('id, side_a_team_id, side_b_team_id')
+    .in('id', KNOCKOUT_MATCHUP_IDS);
+  if (knockout.error) {
+    throw new Error(`戻ったかを確認できませんでした（決勝）: ${knockout.error.message}`);
+  }
+  const stillFilled = knockout.data.filter((row) => row.side_a_team_id || row.side_b_team_id);
+  if (stillFilled.length > 0) {
+    throw new Error(`決勝の対戦 ${stillFilled.length} 件に、チームが入ったまま残っています`);
+  }
+
+  const players = await admin.from('players').select('id').in('player_number', PLAYER_NUMBERS);
+  if (players.error) {
+    throw new Error(`戻ったかを確認できませんでした（選手）: ${players.error.message}`);
+  }
+  if (players.data.length > 0) {
+    throw new Error(`テスト用の選手が ${players.data.length} 人、消えずに残っています`);
+  }
 }
 
 // ---------------------------------------------------------------------

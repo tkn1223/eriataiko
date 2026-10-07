@@ -65,7 +65,7 @@ export function LeagueMatrix({ teams, cards, onSelectCard }: Props) {
         </table>
       </div>
       <p className="mt-[10px] text-[12px] text-gray-500">
-        ○＝カード勝利（数字はカード内の勝ち試合数）。タップで詳細。
+        ○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。
       </p>
     </div>
   );

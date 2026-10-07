@@ -124,11 +124,11 @@ test.describe('星取表のマス', () => {
     await expect(cell(page, chuo, hoku)).not.toContainText(/\d-\d/);
   });
 
-  test('星取表の下に「○＝カード勝利…」の注記が出る', async ({ page }) => {
+  test('星取表の下に「○＝カード勝利、△＝引き分け…」の注記が出る', async ({ page }) => {
     await page.goto('/bracket');
 
     await expect(
-      page.getByText('○＝カード勝利（数字はカード内の勝ち試合数）。タップで詳細。')
+      page.getByText('○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。')
     ).toBeVisible();
   });
 });
@@ -359,6 +359,21 @@ for (const width of [375, 390]) {
       .getByTestId('standings-scroll')
       .evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
     expect(scrollWidth).toBe(clientWidth);
+  });
+
+  test(`${width}px 幅で、星取表の注記（○・△の説明）が枠からはみ出さない`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('/bracket');
+
+    const note = page.getByText('○＝カード勝利、△＝引き分け', { exact: false });
+    await expect(note).toBeVisible();
+    const box = (await note.boundingBox())!;
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    const { scrollWidth, clientWidth } = await note.evaluate((el) => ({
+      scrollWidth: el.scrollWidth,
+      clientWidth: el.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
   });
 
   test(`${width}px 幅で、勝ち上がり表は枠の中だけで横に動き、ページ全体は動かない`, async ({

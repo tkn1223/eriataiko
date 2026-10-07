@@ -96,11 +96,11 @@ describe('LeagueMatrix', () => {
     expect(waitingCell).not.toHaveTextContent(/\d+-\d+/);
   });
 
-  test('星取表の下に「○＝カード勝利…」の注記が出る', () => {
+  test('星取表の下に「○＝カード勝利、△＝引き分け…」の注記が出る', () => {
     renderMatrix();
 
     expect(
-      screen.getByText('○＝カード勝利（数字はカード内の勝ち試合数）。タップで詳細。')
+      screen.getByText('○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。')
     ).toBeInTheDocument();
   });
 

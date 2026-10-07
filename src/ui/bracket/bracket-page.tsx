@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { CardDetailSheet } from '@/ui/bracket/card-detail-sheet';
 import { KoBracket } from '@/ui/bracket/ko-bracket';
 import { LeagueMatrix } from '@/ui/bracket/league-matrix';
-import type { KoBracketData, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
+import type { KoBracketView, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
 import { StandingsTable } from '@/ui/bracket/standings-table';
 
 type Tab = 'league' | 'tournament';
@@ -13,7 +13,7 @@ type Props = {
   teams: Team[];
   leagueCards: LeagueCard[];
   standings: StandingRow[];
-  koBracket: KoBracketData;
+  koBracket: KoBracketView;
   /** 読む上限を超えて、星取表や順位が出しきれていないかもしれない。 */
   truncated: boolean;
 };
@@ -56,11 +56,24 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
           <StandingsTable teams={teams} rows={standings} />
         </>
       ) : (
-        <KoBracket data={koBracket} />
+        <KoBracketOrNotice view={koBracket} />
       )}
 
       <CardDetailSheet card={selectedCard} teams={teams} onClose={() => setSelectedCard(null)} />
     </div>
+  );
+}
+
+/** 勝ち上がり表を出せないときの案内。真っ白のままだと「壊れている？」と思われるため。 */
+function KoBracketOrNotice({ view }: { view: KoBracketView }) {
+  if (view.kind === 'ready') return <KoBracket data={view.data} />;
+
+  return (
+    <p className="mb-5 rounded-2xl border border-gray-200 bg-white p-[14px] text-[14px] font-bold">
+      {view.kind === 'not-registered'
+        ? '決勝トーナメントの組み合わせはまだありません'
+        : `決勝トーナメントの組み合わせが、想定と違う形で登録されています（対戦が ${view.matchupCount} 件）。運営の方に知らせてください。`}
+    </p>
   );
 }
 

@@ -374,3 +374,259 @@ describe('そのほか', () => {
     expect(buildBracketView(input([], { truncated: false })).truncated).toBe(false);
   });
 });
+
+/**
+ * 決勝トーナメント（勝ち上がり表）。
+ *
+ * どの対戦が準決勝・決勝・3位決定戦かは、回戦の呼び方（round_name）ではなく
+ * 決勝の段の対戦を sort_order の順に並べた位置で決める（1・2 番目 = 準決勝、3 番目 = 決勝、
+ * 4 番目 = 3位決定戦）。仕様の「決勝の見分け方」を参照。
+ */
+describe('決勝トーナメント（勝ち上がり表）', () => {
+  /** 決勝の段の対戦。回戦の呼び方は大会ごとに違うので、わざと見分けのつかない名前にしておく。 */
+  function knockoutMatchup(
+    id: string,
+    sortOrder: number,
+    overrides: Partial<BracketViewMatchupRow> = {}
+  ): BracketViewMatchupRow {
+    return {
+      id,
+      stageFormat: 'knockout',
+      stageSortOrder: 20,
+      roundName: `呼び方${id}`,
+      sortOrder,
+      sideATeamId: null,
+      sideBTeamId: null,
+      sideASlotLabel: '空枠A',
+      sideBSlotLabel: '空枠B',
+      matches: [],
+      ...overrides,
+    };
+  }
+
+  const leagueUnfinished = leagueMatchup('l1', 'team-1', 'team-2', [match('l1a', 'waiting', null)]);
+
+  function fourKnockoutMatchups(
+    overrides: Partial<Record<'s1' | 's2' | 'final' | 'third', Partial<BracketViewMatchupRow>>> = {}
+  ) {
+    return [
+      knockoutMatchup('s1', 10, overrides.s1),
+      knockoutMatchup('s2', 20, overrides.s2),
+      knockoutMatchup('final', 30, overrides.final),
+      knockoutMatchup('third', 40, overrides.third),
+    ];
+  }
+
+  function readyKo(matchups: BracketViewMatchupRow[], overrides: Partial<BracketViewInput> = {}) {
+    const view = buildBracketView(input([leagueUnfinished, ...matchups], overrides));
+    if (view.koBracket.kind !== 'ready') throw new Error(`ready ではない: ${view.koBracket.kind}`);
+    return view.koBracket.data;
+  }
+
+  test('決勝の段の対戦を sort_order の順に並べ、準決勝2つ・決勝・3位決定戦に割り当てる', () => {
+    // 並びを入れ替えて渡しても、sort_order どおりに割り当たる
+    const shuffled = [...fourKnockoutMatchups()].reverse();
+
+    const ko = readyKo(shuffled);
+
+    expect(ko.semifinals.map((m) => m.id)).toEqual(['s1', 's2']);
+    expect(ko.final.id).toBe('final');
+    expect(ko.thirdPlace.id).toBe('third');
+  });
+
+  test('回戦の呼び方（round_name）が何であっても、並びだけで割り当たる（名前に頼らない）', () => {
+    const named = fourKnockoutMatchups({
+      s1: { roundName: '3位決定戦' },
+      s2: { roundName: '決勝' },
+      final: { roundName: '準決勝1' },
+      third: { roundName: 'Semi Final' },
+    });
+
+    const ko = readyKo(named);
+
+    expect(ko.semifinals.map((m) => m.id)).toEqual(['s1', 's2']);
+    expect(ko.final.id).toBe('final');
+    expect(ko.thirdPlace.id).toBe('third');
+  });
+
+  test('チームが入っている枠はチーム名（チーム番号つき）、空の枠は空枠の名前（薄字）になる', () => {
+    const ko = readyKo(
+      fourKnockoutMatchups({
+        s1: { sideATeamId: 'team-1', sideASlotLabel: null, sideBSlotLabel: '予選4位' },
+      })
+    );
+
+    expect(ko.semifinals[0].slotA).toEqual({ label: '愛知南', isDecided: true, teamNumber: 1 });
+    expect(ko.semifinals[0].slotB).toEqual({ label: '予選4位', isDecided: false });
+  });
+
+  test('チームが入っていれば、空枠の名前が残っていてもチーム名のほうを出す', () => {
+    const ko = readyKo(
+      fourKnockoutMatchups({ s1: { sideATeamId: 'team-2', sideASlotLabel: '予選1位' } })
+    );
+
+    expect(ko.semifinals[0].slotA).toMatchObject({ label: '愛知中央', isDecided: true });
+  });
+
+  test('チームも空枠の名前も無い枠は「未定」と出る', () => {
+    const ko = readyKo(fourKnockoutMatchups({ s1: { sideASlotLabel: null } }));
+
+    expect(ko.semifinals[0].slotA).toEqual({ label: '未定', isDecided: false });
+  });
+
+  test('対戦の状態と数字が、中の試合どおりに出る（終了・試合中・未）', () => {
+    const ko = readyKo(
+      fourKnockoutMatchups({
+        s1: {
+          matches: [
+            match('k1', 'done', [21, 10], { maxGameCount: 3 }),
+            match('k2', 'done', [21, 15], { maxGameCount: 3, orderInMatchup: 2 }),
+          ],
+        },
+        s2: {
+          matches: [
+            match('k3', 'done', [10, 21], { maxGameCount: 3 }),
+            match('k4', 'live', [3, 2], { maxGameCount: 3, orderInMatchup: 2 }),
+          ],
+        },
+      })
+    );
+
+    expect(ko.semifinals[0]).toMatchObject({ status: 'done', scoreA: 2, scoreB: 0 });
+    expect(ko.semifinals[1]).toMatchObject({ status: 'live', scoreA: 0, scoreB: 1 });
+    expect(ko.final.status).toBe('waiting');
+    expect(ko.final.scoreA).toBeUndefined();
+    expect(ko.final.scoreB).toBeUndefined();
+  });
+
+  describe('優勝', () => {
+    const finalDoneWonByB = {
+      sideATeamId: 'team-1',
+      sideBTeamId: 'team-2',
+      matches: [match('f1', 'done', [10, 21], { maxGameCount: 3 })],
+    };
+
+    test('決勝の対戦が終わって勝ちが決まれば、勝ったチームの名前が入る', () => {
+      const ko = readyKo(fourKnockoutMatchups({ final: finalDoneWonByB }));
+
+      expect(ko.champion).toEqual({ decided: true, teamName: '愛知中央' });
+    });
+
+    test('決勝の対戦が終わっていなければ、優勝は決まっていない', () => {
+      const ko = readyKo(
+        fourKnockoutMatchups({
+          final: {
+            ...finalDoneWonByB,
+            matches: [
+              match('f1', 'done', [10, 21], { maxGameCount: 3 }),
+              match('f2', 'live', [5, 3], { maxGameCount: 3, orderInMatchup: 2 }),
+            ],
+          },
+        })
+      );
+
+      expect(ko.champion).toEqual({ decided: false });
+    });
+
+    test('決勝の対戦が引き分けなら、優勝は決まっていない', () => {
+      const ko = readyKo(
+        fourKnockoutMatchups({
+          final: {
+            ...finalDoneWonByB,
+            matches: [
+              match('f1', 'done', [21, 10], { maxGameCount: 3 }),
+              match('f2', 'done', [10, 21], { maxGameCount: 3, orderInMatchup: 2 }),
+            ],
+          },
+        })
+      );
+
+      expect(ko.champion).toEqual({ decided: false });
+    });
+
+    test('勝った側にまだチームが入っていなければ、名前が出せないので優勝は決まっていない', () => {
+      const ko = readyKo(
+        fourKnockoutMatchups({
+          final: {
+            sideATeamId: 'team-1',
+            sideBTeamId: null,
+            sideBSlotLabel: '準決勝2 勝者',
+            matches: [match('f1', 'done', [10, 21], { maxGameCount: 3 })],
+          },
+        })
+      );
+
+      expect(ko.champion).toEqual({ decided: false });
+    });
+
+    test('3位決定戦が終わっていても、優勝は決勝だけで決まる', () => {
+      const ko = readyKo(
+        fourKnockoutMatchups({
+          third: {
+            sideATeamId: 'team-3',
+            sideBTeamId: 'team-4',
+            matches: [match('t1', 'done', [21, 10], { maxGameCount: 3 })],
+          },
+        })
+      );
+
+      expect(ko.champion).toEqual({ decided: false });
+    });
+  });
+
+  describe('予選リーグが終わったか（注記「組み合わせは予選リーグ終了後に確定します」を出すか）', () => {
+    test('予選の対戦のどれかに終わっていない試合が残っていれば、終わっていない', () => {
+      expect(readyKo(fourKnockoutMatchups()).leagueFinished).toBe(false);
+    });
+
+    test('予選の試合が全部終わっていれば、終わっている', () => {
+      const finished = leagueMatchup('l1', 'team-1', 'team-2', [match('l1a', 'done', [21, 10])]);
+
+      const view = buildBracketView(input([finished, ...fourKnockoutMatchups()]));
+
+      expect(view.koBracket).toMatchObject({ kind: 'ready', data: { leagueFinished: true } });
+    });
+
+    test('決勝の試合の進み具合は、予選が終わったかに関わらない', () => {
+      const finished = leagueMatchup('l1', 'team-1', 'team-2', [match('l1a', 'done', [21, 10])]);
+      const knockoutWaiting = fourKnockoutMatchups({
+        s1: { matches: [match('k1', 'waiting', null, { maxGameCount: 3 })] },
+      });
+
+      const view = buildBracketView(input([finished, ...knockoutWaiting]));
+
+      expect(view.koBracket).toMatchObject({ kind: 'ready', data: { leagueFinished: true } });
+    });
+  });
+
+  describe('決勝の段の対戦が 4 つでないとき', () => {
+    test('1 つも無ければ「まだ登録されていない」になる', () => {
+      const view = buildBracketView(input([leagueUnfinished]));
+
+      expect(view.koBracket).toEqual({ kind: 'not-registered' });
+    });
+
+    test.each([1, 2, 3, 5])(
+      '%i つだと、どれが決勝か決められないので想定外の形になる（件数が入る）',
+      (count) => {
+        const knockouts = fourKnockoutMatchups().concat([knockoutMatchup('extra', 50)]);
+
+        const view = buildBracketView(input([leagueUnfinished, ...knockouts.slice(0, count)]));
+
+        expect(view.koBracket).toEqual({ kind: 'unexpected-shape', matchupCount: count });
+      }
+    );
+
+    test('予選の対戦は決勝の対戦の数に入らない', () => {
+      const view = buildBracketView(
+        input([
+          leagueUnfinished,
+          leagueMatchup('l2', 'team-3', 'team-4', [], 20),
+          ...fourKnockoutMatchups(),
+        ])
+      );
+
+      expect(view.koBracket.kind).toBe('ready');
+    });
+  });
+});

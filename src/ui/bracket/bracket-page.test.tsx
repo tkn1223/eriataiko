@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BracketPage } from '@/ui/bracket/bracket-page';
-import type { KoBracketData, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
+import type {
+  KoBracketData,
+  KoBracketView,
+  LeagueCard,
+  StandingRow,
+  Team,
+} from '@/ui/bracket/types';
 
 const teams: Team[] = [
   { number: 1, name: '愛知南' },
@@ -56,19 +62,17 @@ const standings: StandingRow[] = [
 ];
 
 const waitingSlot = (label: string) => ({ label, isDecided: false });
-const koBracket: KoBracketData = {
+const koData: KoBracketData = {
   leagueFinished: false,
   semifinals: [
     {
       id: 'semi-1',
-      roundLabel: '準決勝1',
       slotA: waitingSlot('予選1位'),
       slotB: waitingSlot('予選4位'),
       status: 'waiting',
     },
     {
       id: 'semi-2',
-      roundLabel: '準決勝2',
       slotA: waitingSlot('予選2位'),
       slotB: waitingSlot('予選3位'),
       status: 'waiting',
@@ -76,14 +80,12 @@ const koBracket: KoBracketData = {
   ],
   final: {
     id: 'final',
-    roundLabel: '決勝',
     slotA: waitingSlot('準決勝1 勝者'),
     slotB: waitingSlot('準決勝2 勝者'),
     status: 'waiting',
   },
   thirdPlace: {
     id: 'third',
-    roundLabel: '3位決定戦',
     slotA: waitingSlot('準決勝1 敗者'),
     slotB: waitingSlot('準決勝2 敗者'),
     status: 'waiting',
@@ -91,13 +93,13 @@ const koBracket: KoBracketData = {
   champion: { decided: false },
 };
 
-function renderPage(overrides: { truncated?: boolean } = {}) {
+function renderPage(overrides: { truncated?: boolean; koBracket?: KoBracketView } = {}) {
   return render(
     <BracketPage
       teams={teams}
       leagueCards={leagueCards}
       standings={standings}
-      koBracket={koBracket}
+      koBracket={overrides.koBracket ?? { kind: 'ready', data: koData }}
       truncated={overrides.truncated ?? false}
     />
   );
@@ -149,5 +151,23 @@ describe('BracketPage', () => {
     renderPage({ truncated: false });
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  test('決勝の対戦がまだ登録されていなければ、決勝トーナメントのタブに案内が出る', () => {
+    renderPage({ koBracket: { kind: 'not-registered' } });
+
+    fireEvent.click(screen.getByRole('button', { name: '決勝トーナメント' }));
+
+    expect(screen.getByText('決勝トーナメントの組み合わせはまだありません')).toBeInTheDocument();
+    expect(screen.queryByText('準決勝')).not.toBeInTheDocument();
+  });
+
+  test('決勝の対戦が想定と違う数なら、件数つきで運営に知らせるよう案内が出る', () => {
+    renderPage({ koBracket: { kind: 'unexpected-shape', matchupCount: 5 } });
+
+    fireEvent.click(screen.getByRole('button', { name: '決勝トーナメント' }));
+
+    expect(screen.getByText(/想定と違う形で登録されています（対戦が 5 件）/)).toBeInTheDocument();
+    expect(screen.queryByText('準決勝')).not.toBeInTheDocument();
   });
 });

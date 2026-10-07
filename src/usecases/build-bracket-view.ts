@@ -12,7 +12,17 @@ import {
   type MatchInput,
   type MatchupInput,
 } from '@/domain/standings';
-import type { CardMatch, CardStatus, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
+import type {
+  CardMatch,
+  CardStatus,
+  Champion,
+  KoBracketView,
+  KoMatch,
+  KoSlot,
+  LeagueCard,
+  StandingRow,
+  Team,
+} from '@/ui/bracket/types';
 
 /**
  * 対戦表（`/bracket`）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -84,10 +94,14 @@ export type BracketView = {
   standings: StandingRow[];
   /** 予選リーグの対戦が 1 つでも登録されているか。無ければ画面は案内だけを出す。 */
   hasLeagueMatchups: boolean;
+  koBracket: KoBracketView;
   truncated: boolean;
 };
 
 const LEAGUE_FORMAT = 'league';
+const KNOCKOUT_FORMAT = 'knockout';
+/** 決勝トーナメントの対戦の数（4 チーム大会: 準決勝 2・決勝・3位決定戦）。 */
+const KNOCKOUT_MATCHUP_COUNT = 4;
 
 function toMatchInput(match: BracketViewMatchRow): MatchInput {
   return {
@@ -167,6 +181,78 @@ function toLeagueCard(
   return { ...card, gamesWonA, gamesWonB };
 }
 
+function toKoSlot(
+  teamId: string | null,
+  slotLabel: string | null,
+  teamById: Map<string, BracketViewTeamRow>
+): KoSlot {
+  const team = teamId ? teamById.get(teamId) : undefined;
+  if (team) return { label: team.name, isDecided: true, teamNumber: team.teamNumber };
+  return { label: slotLabel ?? '未定', isDecided: false };
+}
+
+function toKoMatch(
+  matchup: BracketViewMatchupRow,
+  teamById: Map<string, BracketViewTeamRow>
+): KoMatch {
+  const status = statusOfMatchup(matchup.matches);
+  const base = {
+    id: matchup.id,
+    slotA: toKoSlot(matchup.sideATeamId, matchup.sideASlotLabel, teamById),
+    slotB: toKoSlot(matchup.sideBTeamId, matchup.sideBSlotLabel, teamById),
+    status,
+  };
+  if (status === 'waiting') return base;
+
+  const [scoreA, scoreB] = matchupResult(matchup.matches.map(toMatchInput)).wonMatches;
+  return { ...base, scoreA, scoreB };
+}
+
+/** 優勝は決勝の対戦だけで決まる。終わって勝ちが決まり、勝った側のチームが分かるときだけ。 */
+function championOf(
+  finalMatchup: BracketViewMatchupRow,
+  teamById: Map<string, BracketViewTeamRow>
+): Champion {
+  const result = matchupResult(finalMatchup.matches.map(toMatchInput));
+  if (!result.finished || result.winner === null) return { decided: false };
+
+  const winnerTeamId = result.winner === 'A' ? finalMatchup.sideATeamId : finalMatchup.sideBTeamId;
+  const winnerTeam = winnerTeamId ? teamById.get(winnerTeamId) : undefined;
+  return winnerTeam ? { decided: true, teamName: winnerTeam.name } : { decided: false };
+}
+
+/**
+ * 決勝トーナメントの勝ち上がり表。
+ *
+ * **どの対戦が準決勝・決勝・3位決定戦かは、`round_name`（回戦の呼び方）では決めない。**
+ * 呼び方は大会ごとに違い（「準決勝1」「SF1」…）、名前で決めると違う年に黙って壊れる。
+ * 代わりに、決勝の段の対戦を sort_order の順に並べた位置で決める
+ * （1・2 番目 = 準決勝、3 番目 = 決勝、4 番目 = 3位決定戦）。
+ * 4 つ以外のときは、どれが決勝か決められないので、並べずに「想定外の形」として知らせる。
+ */
+function buildKoBracket(
+  knockoutMatchups: BracketViewMatchupRow[],
+  teamById: Map<string, BracketViewTeamRow>,
+  leagueFinished: boolean
+): KoBracketView {
+  if (knockoutMatchups.length === 0) return { kind: 'not-registered' };
+  if (knockoutMatchups.length !== KNOCKOUT_MATCHUP_COUNT) {
+    return { kind: 'unexpected-shape', matchupCount: knockoutMatchups.length };
+  }
+
+  const [semifinal1, semifinal2, final, thirdPlace] = knockoutMatchups;
+  return {
+    kind: 'ready',
+    data: {
+      leagueFinished,
+      semifinals: [toKoMatch(semifinal1, teamById), toKoMatch(semifinal2, teamById)],
+      final: toKoMatch(final, teamById),
+      thirdPlace: toKoMatch(thirdPlace, teamById),
+      champion: championOf(final, teamById),
+    },
+  };
+}
+
 export function buildBracketView(input: BracketViewInput): BracketView {
   const classLabelById = classLabelsByDivisionId(input.divisions);
   const sortedTeams = [...input.teams].sort(
@@ -214,11 +300,18 @@ export function buildBracketView(input: BracketViewInput): BracketView {
     };
   });
 
+  // 予選が終わったか: 対戦が 1 つ以上あり、全部の対戦の中の試合が終わっている。
+  const leagueFinished =
+    leagueMatchups.length > 0 &&
+    leagueMatchups.every((matchup) => matchupResult(matchup.matches.map(toMatchInput)).finished);
+  const knockoutMatchups = matchups.filter((matchup) => matchup.stageFormat === KNOCKOUT_FORMAT);
+
   return {
     teams: sortedTeams.map((team) => ({ number: team.teamNumber, name: team.name })),
     leagueCards,
     standings,
     hasLeagueMatchups: leagueMatchups.length > 0,
+    koBracket: buildKoBracket(knockoutMatchups, teamById, leagueFinished),
     truncated: input.truncated,
   };
 }

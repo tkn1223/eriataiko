@@ -61,19 +61,23 @@ export type StandingRow = {
   isSelf: boolean;
 };
 
-/** 決勝トーナメントの枠 1 つ。まだ決まっていなければ label だけを持つ。 */
+/**
+ * 決勝トーナメントの枠 1 つ。
+ * チームが入っていれば label はチーム名・teamNumber はそのチームの番号（色が付く）。
+ * まだ入っていなければ label は空枠の名前（例: '予選1位'）で、薄字で出す。
+ */
 export type KoSlot = {
   label: string;
   isDecided: boolean;
+  teamNumber?: number;
 };
 
 export type KoMatch = {
   id: string;
-  /** '準決勝1' のように、勝者・敗者の未確定枠の文言を作るのに使う。 */
-  roundLabel: string;
   slotA: KoSlot;
   slotB: KoSlot;
   status: CardStatus;
+  /** 対戦内の勝ち試合数。status が 'waiting' のときは無い。 */
   scoreA?: number;
   scoreB?: number;
 };
@@ -91,3 +95,14 @@ export type KoBracketData = {
   thirdPlace: KoMatch;
   champion: Champion;
 };
+
+/**
+ * 決勝トーナメントのタブに何を出すか。
+ * - ready: 勝ち上がり表を出せる（決勝の段に対戦がちょうど 4 つ）
+ * - not-registered: 決勝の対戦がまだ 1 つも登録されていない
+ * - unexpected-shape: 4 つ以外。どれが決勝か決められないので、表にせず知らせる
+ */
+export type KoBracketView =
+  | { kind: 'ready'; data: KoBracketData }
+  | { kind: 'not-registered' }
+  | { kind: 'unexpected-shape'; matchupCount: number };

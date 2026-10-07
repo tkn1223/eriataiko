@@ -1,5 +1,6 @@
 'use client';
 
+import { classColorClasses } from '@/domain/class-labels';
 import type { CardMatch, LeagueCard, Team, TeamNumber } from '@/ui/bracket/sample-data';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 
@@ -7,18 +8,6 @@ type Props = {
   card: LeagueCard | null;
   teams: Team[];
   onClose: () => void;
-};
-
-const CLASS_TEXT_CLASS: Record<CardMatch['classLabel'], string> = {
-  '1部': 'text-class-1',
-  '2部': 'text-class-2',
-  '3部': 'text-class-3',
-};
-
-const CLASS_BG_CLASS: Record<CardMatch['classLabel'], string> = {
-  '1部': 'bg-class-1-bg',
-  '2部': 'bg-class-2-bg',
-  '3部': 'bg-class-3-bg',
 };
 
 function teamName(teams: Team[], teamNumber: TeamNumber) {
@@ -65,6 +54,7 @@ export function CardDetailSheet({ card, teams, onClose }: Props) {
 }
 
 function CardMatchRow({ match }: { match: CardMatch }) {
+  const classColors = classColorClasses(match.classLabel.colorNumber);
   const aWins =
     match.status === 'done' && match.scoreA !== undefined && match.scoreB !== undefined
       ? match.scoreA > match.scoreB
@@ -82,9 +72,9 @@ function CardMatchRow({ match }: { match: CardMatch }) {
       }`}
     >
       <span
-        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${CLASS_TEXT_CLASS[match.classLabel]} ${CLASS_BG_CLASS[match.classLabel]}`}
+        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${classColors.text} ${classColors.tint}`}
       >
-        {match.classLabel}
+        {match.classLabel.name}
       </span>
       <div className="min-w-0 flex-1">
         <p

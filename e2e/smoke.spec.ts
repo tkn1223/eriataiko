@@ -20,7 +20,9 @@ test('トップを開くと「結果LIVE」に飛ぶ', async ({ page }) => {
 
 test('ヘッダーと下のメニューが出る', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'バドミントン大会 進行管理' })).toBeVisible();
+  // ヘッダーの大会名は表（competitions.name）から読む。決め打ちの控えの文字
+  // （src/config/tournament.ts）が出ていたら、表につながっていないということ。
+  await expect(page.getByRole('heading', { name: 'えりあ太鼓カップ 2027' })).toBeVisible();
   await expect(page.getByRole('link', { name: /結果LIVE/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /myページ/ })).toBeVisible();
 });

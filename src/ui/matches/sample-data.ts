@@ -7,10 +7,10 @@
  * src/app/(app)/matches/page.tsx が渡す中身を差し替える。
  */
 
-/** チーム色は 1〜4 の 4 色のみ（globals.css の --color-team-1〜4）。得点入力の色分けに使う。 */
-export type TeamNumber = 1 | 2 | 3 | 4;
+import type { ClassLabel, TeamNumber } from '@/domain/class-labels';
 
-export type ClassLabel = '1部' | '2部' | '3部';
+// 色の決めごと（チーム 1〜4・部の色）は src/domain/class-labels.ts の 1 か所。ここでは型を使うだけ。
+export type { ClassLabel, TeamNumber };
 
 export type MatchStatus = 'done' | 'live' | 'waiting';
 
@@ -52,7 +52,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-1',
         orderInCourt: 1,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 1, players: ['佐藤', '鈴木'] },
@@ -66,7 +66,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-2',
         orderInCourt: 2,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 3, players: ['渡辺', '小林'] },
@@ -80,7 +80,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-3',
         orderInCourt: 3,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'live',
         teamA: { number: 1, players: ['中村'] },
@@ -92,7 +92,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-4',
         orderInCourt: 4,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 3, players: ['吉田', '斎藤'] },
@@ -103,7 +103,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-5',
         orderInCourt: 5,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['清水', '山口'] },
@@ -114,7 +114,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c1-6',
         orderInCourt: 6,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 3, players: ['橋本'] },
@@ -130,7 +130,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-1',
         orderInCourt: 1,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 2, players: ['前田', '藤田'] },
@@ -145,7 +145,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-2',
         orderInCourt: 2,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 4, players: ['村上'] },
@@ -156,7 +156,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-3',
         orderInCourt: 3,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'live',
         teamA: { number: 2, players: ['石井', '斉藤'] },
@@ -168,7 +168,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-4',
         orderInCourt: 4,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 4, players: ['青木', '福田'] },
@@ -179,7 +179,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-5',
         orderInCourt: 5,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 2, players: ['金子'] },
@@ -190,7 +190,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-6',
         orderInCourt: 6,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 4, players: ['原田', '松田'] },
@@ -201,7 +201,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c2-7',
         orderInCourt: 7,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 2, players: ['宮崎', '横山'] },
@@ -217,7 +217,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-1',
         orderInCourt: 1,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 1, players: ['高木', '桜井'] },
@@ -231,7 +231,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-2',
         orderInCourt: 2,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'live',
         teamA: { number: 2, players: ['松井', '菊地'] },
@@ -243,7 +243,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-3',
         orderInCourt: 3,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['小川'] },
@@ -254,7 +254,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-4',
         orderInCourt: 4,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 2, players: ['小野', '前川'] },
@@ -265,7 +265,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-5',
         orderInCourt: 5,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['小山', '大西'] },
@@ -276,7 +276,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c3-6',
         orderInCourt: 6,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 2, players: ['丸山'] },
@@ -292,7 +292,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-1',
         orderInCourt: 1,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 3, players: ['河野', '藤原'] },
@@ -307,7 +307,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-2',
         orderInCourt: 2,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 1回戦',
         status: 'live',
         teamA: { number: 1, players: ['杉山'] },
@@ -319,7 +319,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-3',
         orderInCourt: 3,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 3, players: ['小島', '福井'] },
@@ -330,7 +330,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-4',
         orderInCourt: 4,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['竹内', '望月'] },
@@ -341,7 +341,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-5',
         orderInCourt: 5,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 3, players: ['川口'] },
@@ -352,7 +352,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c4-6',
         orderInCourt: 6,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['浅野', '菅原'] },
@@ -368,7 +368,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c5-1',
         orderInCourt: 1,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 4, players: ['榊原'] },
@@ -379,7 +379,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c5-2',
         orderInCourt: 2,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         status: 'live',
         teamA: { number: 2, players: ['須藤', '柳田'] },
@@ -391,7 +391,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c5-3',
         orderInCourt: 3,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 4, players: ['市川', '古賀'] },
@@ -402,7 +402,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c5-4',
         orderInCourt: 4,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 2, players: ['本田'] },
@@ -413,7 +413,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c5-5',
         orderInCourt: 5,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 4, players: ['八木', '相馬'] },
@@ -429,7 +429,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c6-1',
         orderInCourt: 1,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 1, players: ['白石', '梅田'] },
@@ -443,7 +443,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c6-2',
         orderInCourt: 2,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'live',
         teamA: { number: 3, players: ['川崎'] },
@@ -455,7 +455,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c6-3',
         orderInCourt: 3,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['野村', '土屋'] },
@@ -466,7 +466,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c6-4',
         orderInCourt: 4,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'waiting',
         teamA: { number: 3, players: ['須田'] },
@@ -477,7 +477,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c6-5',
         orderInCourt: 5,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 3回戦',
         status: 'waiting',
         teamA: { number: 1, players: ['小池', '樋口'] },
@@ -494,7 +494,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-1',
         orderInCourt: 1,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 1, players: ['安田', '柏木'] },
@@ -508,7 +508,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-2',
         orderInCourt: 2,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         status: 'done',
         teamA: { number: 2, players: ['川上'] },
@@ -519,7 +519,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-3',
         orderInCourt: 3,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         status: 'done',
         teamA: { number: 1, players: ['金田', '寺田'] },
@@ -534,7 +534,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-4',
         orderInCourt: 4,
-        classLabel: '1部',
+        classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         status: 'done',
         teamA: { number: 3, players: ['服部'] },
@@ -545,7 +545,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-5',
         orderInCourt: 5,
-        classLabel: '2部',
+        classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 3回戦',
         status: 'done',
         teamA: { number: 1, players: ['米田', '本間'] },
@@ -559,7 +559,7 @@ export const sampleCourts: Court[] = [
       {
         id: 'c7-6',
         orderInCourt: 6,
-        classLabel: '3部',
+        classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 3回戦',
         status: 'done',
         teamA: { number: 3, players: ['角田'] },

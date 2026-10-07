@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation';
 import { AppShell } from '@/ui/app-shell';
+import { TOURNAMENT_NAME } from '@/config/tournament';
+import { findCurrentCompetition } from '@/db/competition';
 import { getSession } from '@/server/session';
 
 /**
@@ -18,5 +20,20 @@ import { getSession } from '@/server/session';
 export default async function AppLayout({ children }: LayoutProps<'/'>) {
   if (!(await getSession())) redirect('/enter');
 
-  return <AppShell>{children}</AppShell>;
+  return <AppShell title={await headerTitle()}>{children}</AppShell>;
+}
+
+/**
+ * ヘッダーに出す大会名。読めなければ控えの文字を出す。
+ *
+ * **ここで落とさない。** 失敗をそのまま投げると、ヘッダーのために
+ * メニュー付きの画面が全部真っ白になる。つながらないことは各ページが
+ * 日本語で知らせるので、外枠は控えの文字で立っていればよい。
+ */
+async function headerTitle(): Promise<string> {
+  try {
+    return (await findCurrentCompetition())?.name ?? TOURNAMENT_NAME;
+  } catch {
+    return TOURNAMENT_NAME;
+  }
 }

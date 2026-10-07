@@ -1,0 +1,467 @@
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { getSupabaseAdminClient } from '@/db/admin';
+import { findCourtsData, MAX_COURT_MATCHES, MAX_MATCHUPS_PER_STAGE } from '@/db/courts';
+
+/**
+ * `findCourtsData` を本物のデータベースに当てて確かめる。
+ *
+ * `build-courts-view.test.ts` は組み立てのロジックを偽物の入力で確かめている。
+ * ここでしか分からないのは**実際の表からどう読み出すか**。
+ *
+ * `src/db/me.test.ts` と同じやり方で、自分が作った大会の id をそのまま渡す
+ * （共有の「いまの大会」には触らないので、他のテストと同時に流しても競合しない）。
+ *
+ * 実行前に `npm run db:start` が必要。
+ */
+
+const admin = getSupabaseAdminClient();
+
+const tag = `test-courts-${Math.random().toString(36).slice(2, 10)}`;
+
+let competitionId: string;
+let divisionId: string;
+let teamAId: string;
+let teamBId: string;
+let leagueStageId: string;
+let knockoutStageId: string;
+let decidedMatchupId: string;
+let undecidedMatchupId: string;
+let myPlayerId: string;
+let partnerPlayerId: string;
+let opponentPlayerId: string;
+let liveMatchId: string;
+let waitingMatchId: string;
+let undecidedMatchId: string;
+let doneMatchId: string;
+let myParticipantId: string;
+
+beforeAll(async () => {
+  const competition = await admin
+    .from('competitions')
+    .insert({ name: `${tag} 大会`, held_on: '2027-05-01' })
+    .select('id')
+    .single();
+  expect(competition.error, `大会の作成に失敗: ${competition.error?.message}`).toBeNull();
+  competitionId = competition.data!.id;
+
+  const division = await admin
+    .from('divisions')
+    .insert({ competition_id: competitionId, name: '1部', sort_order: 10 })
+    .select('id')
+    .single();
+  divisionId = division.data!.id;
+
+  const teams = await admin
+    .from('teams')
+    .insert([
+      { competition_id: competitionId, team_number: 1, name: `${tag} チームA` },
+      { competition_id: competitionId, team_number: 3, name: `${tag} チームB` },
+    ])
+    .select('id, team_number');
+  expect(teams.error, `チームの作成に失敗: ${teams.error?.message}`).toBeNull();
+  teamAId = teams.data!.find((t) => t.team_number === 1)!.id;
+  teamBId = teams.data!.find((t) => t.team_number === 3)!.id;
+
+  const stages = await admin
+    .from('stages')
+    .insert([
+      {
+        competition_id: competitionId,
+        name: '予選リーグ',
+        format: 'league',
+        sort_order: 10,
+      },
+      {
+        competition_id: competitionId,
+        name: '決勝トーナメント',
+        format: 'knockout',
+        sort_order: 20,
+      },
+    ])
+    .select('id, format');
+  expect(stages.error, `段の作成に失敗: ${stages.error?.message}`).toBeNull();
+  leagueStageId = stages.data!.find((s) => s.format === 'league')!.id;
+  knockoutStageId = stages.data!.find((s) => s.format === 'knockout')!.id;
+
+  const matchups = await admin
+    .from('matchups')
+    .insert([
+      {
+        stage_id: leagueStageId,
+        round_name: '予選 1回戦',
+        side_a_team_id: teamAId,
+        side_b_team_id: teamBId,
+      },
+      {
+        stage_id: knockoutStageId,
+        round_name: '準決勝1',
+        side_a_team_id: teamAId,
+        side_b_slot_label: '予選4位',
+      },
+    ])
+    .select('id, round_name');
+  expect(matchups.error, `対戦の作成に失敗: ${matchups.error?.message}`).toBeNull();
+  decidedMatchupId = matchups.data!.find((m) => m.round_name === '予選 1回戦')!.id;
+  undecidedMatchupId = matchups.data!.find((m) => m.round_name === '準決勝1')!.id;
+
+  const players = await admin
+    .from('players')
+    .insert([
+      { player_number: 899921, name: `${tag} 自分` },
+      { player_number: 899922, name: `${tag} 相方` },
+      { player_number: 899923, name: `${tag} 相手` },
+    ])
+    .select('id, player_number');
+  expect(players.error, `選手の作成に失敗: ${players.error?.message}`).toBeNull();
+  myPlayerId = players.data!.find((p) => p.player_number === 899921)!.id;
+  partnerPlayerId = players.data!.find((p) => p.player_number === 899922)!.id;
+  opponentPlayerId = players.data!.find((p) => p.player_number === 899923)!.id;
+
+  const participants = await admin
+    .from('participants')
+    .insert([
+      {
+        competition_id: competitionId,
+        player_id: myPlayerId,
+        team_id: teamAId,
+        division_id: divisionId,
+      },
+      {
+        competition_id: competitionId,
+        player_id: partnerPlayerId,
+        team_id: teamAId,
+        division_id: divisionId,
+      },
+      {
+        competition_id: competitionId,
+        player_id: opponentPlayerId,
+        team_id: teamBId,
+        division_id: divisionId,
+      },
+    ])
+    .select('id, player_id');
+  expect(participants.error, `参加者の作成に失敗: ${participants.error?.message}`).toBeNull();
+  myParticipantId = participants.data!.find((p) => p.player_id === myPlayerId)!.id;
+  const partnerParticipantId = participants.data!.find((p) => p.player_id === partnerPlayerId)!.id;
+  const opponentParticipantId = participants.data!.find(
+    (p) => p.player_id === opponentPlayerId
+  )!.id;
+
+  const matches = await admin
+    .from('matches')
+    .insert([
+      {
+        matchup_id: decidedMatchupId,
+        division_id: divisionId,
+        order_in_matchup: 1,
+        status: 'live',
+        max_game_count: 1,
+        court_number: 90,
+        order_in_court: 1,
+      },
+      {
+        matchup_id: decidedMatchupId,
+        division_id: divisionId,
+        order_in_matchup: 2,
+        status: 'waiting',
+        max_game_count: 1,
+        court_number: 90,
+        order_in_court: 2,
+      },
+      {
+        matchup_id: undecidedMatchupId,
+        division_id: divisionId,
+        order_in_matchup: 1,
+        status: 'waiting',
+        max_game_count: 3,
+        court_number: 91,
+        order_in_court: 1,
+      },
+      // 終わった試合。コート用の読み込みには入らず、件数（消化数）にだけ数えられる。
+      {
+        matchup_id: decidedMatchupId,
+        division_id: divisionId,
+        order_in_matchup: 3,
+        status: 'done',
+        max_game_count: 1,
+        court_number: 92,
+        order_in_court: 1,
+      },
+    ])
+    .select('id, matchup_id, status');
+  expect(matches.error, `試合の作成に失敗: ${matches.error?.message}`).toBeNull();
+  liveMatchId = matches.data!.find((m) => m.status === 'live')!.id;
+  waitingMatchId = matches.data!.find(
+    (m) => m.status === 'waiting' && m.matchup_id === decidedMatchupId
+  )!.id;
+  undecidedMatchId = matches.data!.find((m) => m.matchup_id === undecidedMatchupId)!.id;
+  doneMatchId = matches.data!.find((m) => m.status === 'done')!.id;
+
+  const matchPlayers = await admin.from('match_players').insert([
+    { match_id: liveMatchId, side: 'a', participant_id: myParticipantId, order_in_pair: 1 },
+    {
+      match_id: liveMatchId,
+      side: 'a',
+      participant_id: partnerParticipantId,
+      order_in_pair: 2,
+    },
+    {
+      match_id: liveMatchId,
+      side: 'b',
+      participant_id: opponentParticipantId,
+      order_in_pair: 1,
+    },
+    { match_id: waitingMatchId, side: 'a', participant_id: myParticipantId, order_in_pair: 1 },
+    {
+      match_id: waitingMatchId,
+      side: 'b',
+      participant_id: opponentParticipantId,
+      order_in_pair: 1,
+    },
+    // undecidedMatchId は side_b の相手がまだ決まっていないので match_players を入れない
+    {
+      match_id: undecidedMatchId,
+      side: 'a',
+      participant_id: partnerParticipantId,
+      order_in_pair: 1,
+    },
+  ]);
+  expect(matchPlayers.error, `出場者の作成に失敗: ${matchPlayers.error?.message}`).toBeNull();
+
+  const gameScores = await admin
+    .from('game_scores')
+    .insert([{ match_id: liveMatchId, game_number: 1, side_a_score: 12, side_b_score: 9 }]);
+  expect(gameScores.error, `得点の作成に失敗: ${gameScores.error?.message}`).toBeNull();
+});
+
+afterAll(async () => {
+  const { error } = await admin.from('competitions').delete().eq('id', competitionId);
+  if (error) throw new Error(`後片付けに失敗（大会）: ${error.message}`);
+
+  const { error: playersError } = await admin
+    .from('players')
+    .delete()
+    .in('id', [myPlayerId, partnerPlayerId, opponentPlayerId]);
+  if (playersError) throw new Error(`後片付けに失敗（選手）: ${playersError.message}`);
+});
+
+describe('findCourtsData', () => {
+  test('部（名前つき）・段・試合が読める', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.divisions).toContainEqual({ id: divisionId, name: '1部', sortOrder: 10 });
+    expect(data.stages.map((s) => s.name).sort()).toEqual(
+      ['予選リーグ', '決勝トーナメント'].sort()
+    );
+    expect(data.truncated).toBe(false);
+  });
+
+  test('コート用の試合は live と waiting だけ。終わった試合は読まない', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.matches.map((m) => m.matchId).sort()).toEqual(
+      [liveMatchId, waitingMatchId, undecidedMatchId].sort()
+    );
+    expect(data.matches.map((m) => m.matchId)).not.toContain(doneMatchId);
+    expect(data.matches.every((m) => m.status === 'live' || m.status === 'waiting')).toBe(true);
+  });
+
+  test('段ごとの試合数と終了数は、件数として読める（終わった試合も数に入る）', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    const league = data.stages.find((s) => s.id === leagueStageId)!;
+    const knockout = data.stages.find((s) => s.id === knockoutStageId)!;
+    expect(league).toMatchObject({ totalMatches: 3, doneMatches: 1 });
+    expect(knockout).toMatchObject({ totalMatches: 1, doneMatches: 0 });
+  });
+
+  test('進行中の試合に、両ペアの名前・チーム番号・得点が入っている', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+    const live = data.matches.find((m) => m.matchId === liveMatchId)!;
+
+    expect(live.status).toBe('live');
+    expect(live.roundName).toBe('予選 1回戦');
+    expect(live.courtNumber).toBe(90);
+    expect(live.sideA.teamNumber).toBe(1);
+    // a 側・b 側のチームを取り違えていないか
+    // （チーム番号は 1〜4 だけ。5 以上は 20260920000000_halls_and_team_limit.sql が弾く）
+    expect(live.sideB.teamNumber).toBe(3);
+    expect(live.sideA.players.map((p) => p.name).sort()).toEqual(
+      [`${tag} 自分`, `${tag} 相方`].sort()
+    );
+    expect(live.sideB.players.map((p) => p.name)).toEqual([`${tag} 相手`]);
+    expect(live.gameScores).toContainEqual({ gameNumber: 1, sideAScore: 12, sideBScore: 9 });
+  });
+
+  test('相手がまだ決まっていない対戦は、空枠ラベルが入り選手名は空', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+    const undecided = data.matches.find((m) => m.matchId === undecidedMatchId)!;
+
+    expect(undecided.sideB.slotLabel).toBe('予選4位');
+    expect(undecided.sideB.players).toEqual([]);
+    expect(undecided.sideB.teamNumber).toBeNull();
+    // 決まっている側（a）は名前が入る
+    expect(undecided.sideA.players.map((p) => p.name)).toEqual([`${tag} 相方`]);
+  });
+
+  test('自分の participants.id が myParticipantId として読める', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.myParticipantId).toBe(myParticipantId);
+  });
+
+  test('playerId が null（観戦者）のときは myParticipantId が null', async () => {
+    const data = await findCourtsData(competitionId, null);
+
+    expect(data.myParticipantId).toBeNull();
+  });
+
+  test('指定した大会にその人の参加者情報が無ければ myParticipantId は null', async () => {
+    const noSuchPlayer = await admin
+      .from('players')
+      .insert({ player_number: 899929, name: `${tag} 出ない人` })
+      .select('id')
+      .single();
+    expect(noSuchPlayer.error).toBeNull();
+
+    try {
+      const data = await findCourtsData(competitionId, noSuchPlayer.data!.id);
+      expect(data.myParticipantId).toBeNull();
+    } finally {
+      await admin.from('players').delete().eq('id', noSuchPlayer.data!.id);
+    }
+  });
+});
+
+/**
+ * 試合が多い大会。件数は数えるだけなので 100 件を超えても正しく、
+ * コート用の読み込みは上限を超えたら「超えた」と分かる（黙って欠けさせない）。
+ */
+describe('findCourtsData（試合が多い大会）', () => {
+  /** 小さな大会を 1 つ作り、試合を決まった数だけ入れて、渡した関数を実行して、片づける。 */
+  async function withBigCompetition(
+    statuses: { status: 'waiting' | 'live' | 'done'; count: number }[],
+    run: (bigCompetitionId: string, bigStageId: string) => Promise<void>,
+    // 件数は対戦ごとに数えて段で足すので、対戦を複数にして足し算まで確かめる
+    matchupCount = 3
+  ) {
+    const bigCompetition = await admin
+      .from('competitions')
+      .insert({ name: `${tag} 多い大会`, held_on: '2027-06-01' })
+      .select('id')
+      .single();
+    expect(bigCompetition.error).toBeNull();
+    const bigCompetitionId = bigCompetition.data!.id;
+
+    try {
+      const bigDivision = await admin
+        .from('divisions')
+        .insert({ competition_id: bigCompetitionId, name: '1部', sort_order: 10 })
+        .select('id')
+        .single();
+      const bigStage = await admin
+        .from('stages')
+        .insert({
+          competition_id: bigCompetitionId,
+          name: '予選リーグ',
+          format: 'league',
+          sort_order: 10,
+        })
+        .select('id')
+        .single();
+      const bigMatchups = await admin
+        .from('matchups')
+        .insert(
+          Array.from({ length: matchupCount }, (_, index) => ({
+            stage_id: bigStage.data!.id,
+            round_name: `予選 ${index + 1}回戦`,
+            side_a_slot_label: '予選1位',
+            side_b_slot_label: '予選2位',
+          }))
+        )
+        .select('id');
+      expect(bigMatchups.error, `対戦の作成に失敗: ${bigMatchups.error?.message}`).toBeNull();
+      const bigMatchupIds = bigMatchups.data!.map((row) => row.id);
+
+      let orderInMatchup = 0;
+      const rows = statuses.flatMap(({ status, count }) =>
+        Array.from({ length: count }, () => {
+          orderInMatchup += 1;
+          return {
+            matchup_id: bigMatchupIds[orderInMatchup % bigMatchupIds.length],
+            division_id: bigDivision.data!.id,
+            order_in_matchup: orderInMatchup,
+            status,
+            max_game_count: 1,
+            court_number: 1 + (orderInMatchup % 10),
+            order_in_court: orderInMatchup,
+          };
+        })
+      );
+      const inserted = await admin.from('matches').insert(rows);
+      expect(inserted.error, `試合の作成に失敗: ${inserted.error?.message}`).toBeNull();
+
+      await run(bigCompetitionId, bigStage.data!.id);
+    } finally {
+      const { error } = await admin.from('competitions').delete().eq('id', bigCompetitionId);
+      if (error) throw new Error(`後片付けに失敗（多い大会）: ${error.message}`);
+    }
+  }
+
+  test('終わった試合が 100 件を超えても、消化数は正しい数が出て、コート用には 1 件も読まない', async () => {
+    await withBigCompetition(
+      [
+        { status: 'done', count: 130 },
+        { status: 'live', count: 1 },
+        { status: 'waiting', count: 1 },
+      ],
+      async (bigCompetitionId, bigStageId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.stages.find((s) => s.id === bigStageId)).toMatchObject({
+          totalMatches: 132,
+          doneMatches: 130,
+        });
+        expect(data.matches).toHaveLength(2);
+        expect(data.truncated).toBe(false);
+      }
+    );
+  });
+
+  test('コート用の試合が上限を超えたら、黙って欠けさせず truncated で分かる', async () => {
+    await withBigCompetition(
+      [{ status: 'waiting', count: MAX_COURT_MATCHES + 1 }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(true);
+        // 超えた 1 件は「読み切れたか」の判定にだけ使い、渡さない
+        expect(data.matches).toHaveLength(MAX_COURT_MATCHES);
+      }
+    );
+  });
+
+  test('上限ちょうどなら truncated は false（読み切れている）', async () => {
+    await withBigCompetition(
+      [{ status: 'waiting', count: MAX_COURT_MATCHES }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(false);
+        expect(data.matches).toHaveLength(MAX_COURT_MATCHES);
+      }
+    );
+  });
+
+  test('1 段の対戦が上限を超えたら、消化数が欠けたまま出さず truncated で分かる', async () => {
+    await withBigCompetition(
+      [{ status: 'done', count: 1 }],
+      async (bigCompetitionId) => {
+        const data = await findCourtsData(bigCompetitionId, null);
+
+        expect(data.truncated).toBe(true);
+      },
+      MAX_MATCHUPS_PER_STAGE + 1
+    );
+  });
+});

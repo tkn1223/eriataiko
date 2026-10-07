@@ -33,7 +33,7 @@ describe('CardDetailSheet', () => {
 
     for (const match of card.matches) {
       const row = screen.getByTestId(`card-match-${match.id}`);
-      expect(within(row).getByText(match.classLabel)).toBeInTheDocument();
+      expect(within(row).getByText(match.classLabel.name)).toBeInTheDocument();
       expect(within(row).getByText(match.teamAPlayers.join('・'))).toBeInTheDocument();
       expect(within(row).getByText(match.teamBPlayers.join('・'))).toBeInTheDocument();
       expect(within(row).getByText(`${match.scoreA}-${match.scoreB}`)).toBeInTheDocument();

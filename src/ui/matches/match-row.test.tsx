@@ -6,7 +6,7 @@ import type { CourtMatch } from '@/ui/matches/sample-data';
 const doneMatch: CourtMatch = {
   id: 'm-done',
   orderInCourt: 1,
-  classLabel: '1部',
+  classLabel: { name: '1部', colorNumber: 1 },
   roundLabel: '予選 1回戦',
   status: 'done',
   teamA: { number: 1, players: ['佐藤', '鈴木'] },
@@ -21,7 +21,7 @@ const doneMatch: CourtMatch = {
 const liveMatch: CourtMatch = {
   id: 'm-live',
   orderInCourt: 3,
-  classLabel: '2部',
+  classLabel: { name: '2部', colorNumber: 2 },
   roundLabel: '予選 2回戦',
   status: 'live',
   teamA: { number: 3, players: ['渡辺'] },
@@ -34,7 +34,7 @@ const liveMatch: CourtMatch = {
 const waitingMatch: CourtMatch = {
   id: 'm-waiting',
   orderInCourt: 5,
-  classLabel: '3部',
+  classLabel: { name: '3部', colorNumber: 3 },
   roundLabel: '予選 3回戦',
   status: 'waiting',
   teamA: { number: 1, players: ['中村'] },

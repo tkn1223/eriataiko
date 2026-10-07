@@ -5,27 +5,41 @@ export type Database = {
     Tables: {
       competitions: {
         Row: {
+          court_count: number | null;
           created_at: string;
+          hall_id: string | null;
           held_on: string;
           id: string;
           is_current: boolean;
           name: string;
         };
         Insert: {
+          court_count?: number | null;
           created_at?: string;
+          hall_id?: string | null;
           held_on: string;
           id?: string;
           is_current?: boolean;
           name: string;
         };
         Update: {
+          court_count?: number | null;
           created_at?: string;
+          hall_id?: string | null;
           held_on?: string;
           id?: string;
           is_current?: boolean;
           name?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: 'competitions_hall_id_fkey';
+            columns: ['hall_id'];
+            isOneToOne: false;
+            referencedRelation: 'halls';
+            referencedColumns: ['id'];
+          },
+        ];
       };
       divisions: {
         Row: {
@@ -96,6 +110,27 @@ export type Database = {
             referencedColumns: ['id'];
           },
         ];
+      };
+      halls: {
+        Row: {
+          court_count: number;
+          created_at: string;
+          id: string;
+          name: string;
+        };
+        Insert: {
+          court_count: number;
+          created_at?: string;
+          id?: string;
+          name: string;
+        };
+        Update: {
+          court_count?: number;
+          created_at?: string;
+          id?: string;
+          name?: string;
+        };
+        Relationships: [];
       };
       match_players: {
         Row: {

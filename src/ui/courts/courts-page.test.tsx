@@ -1,10 +1,148 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { CourtsPage } from '@/ui/courts/courts-page';
-import { sampleCourts } from '@/ui/courts/sample-data';
+import type { Court, CourtTeam } from '@/ui/courts/types';
 
-function renderPage() {
-  return render(<CourtsPage courts={sampleCourts} completedMatches={2} totalMatches={48} />);
+function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
+  return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
+}
+
+/**
+ * 8 面ぶんの見本の値を自前で組む（`/courts` は DB につながったので、固定の
+ * sample-data.ts はもう無い。`/me` と同じ形。src/ui/me/my-page.test.tsx）。
+ */
+function buildCourts(): Court[] {
+  return [
+    {
+      // 予選（上限1ゲーム）。20-19 から始まる。押せば数字が動く。
+      courtNumber: 1,
+      live: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        roundLabel: '予選 1回戦',
+        teamA: team({ teamNumber: 1, players: ['佐々木', '井上'] }),
+        teamB: team({ teamNumber: 2, players: ['田中', '木村'] }),
+        isMine: false,
+        scores: [{ gameNumber: 1, sideAScore: 20, sideBScore: 19 }],
+        maxGameCount: 1,
+      },
+      next: {
+        classLabel: { name: '2部', colorNumber: 2 },
+        teamA: team({ teamNumber: 3, players: ['川口', '浜田'] }),
+        teamB: team({ teamNumber: 4, players: ['小林', '西村'] }),
+        isMine: false,
+      },
+    },
+    {
+      courtNumber: 2,
+      live: {
+        classLabel: { name: '2部', colorNumber: 2 },
+        roundLabel: '予選 1回戦',
+        teamA: team({ teamNumber: 3, players: ['山田', '中川'] }),
+        teamB: team({ teamNumber: 4, players: ['清水', '岡本'] }),
+        isMine: false,
+        scores: [{ gameNumber: 1, sideAScore: 14, sideBScore: 11 }],
+        maxGameCount: 1,
+      },
+      next: null,
+    },
+    {
+      // 0対0のまま。「まだ点が入っていません」を確かめる。自分の試合。
+      courtNumber: 3,
+      live: {
+        classLabel: { name: '3部', colorNumber: 3 },
+        roundLabel: '予選 2回戦',
+        teamA: team({ teamNumber: 1, players: ['鈴木', '高橋'] }),
+        teamB: team({ teamNumber: 2, players: ['伊藤', '渡辺'] }),
+        isMine: true,
+        scores: [],
+        maxGameCount: 1,
+      },
+      next: null,
+    },
+    {
+      // 「＋」の連打テストに使う。加藤・斎藤（B）5点。
+      courtNumber: 4,
+      live: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        roundLabel: '予選 2回戦',
+        teamA: team({ teamNumber: 3, players: ['松本', '中村'] }),
+        teamB: team({ teamNumber: 4, players: ['加藤', '斎藤'] }),
+        isMine: false,
+        scores: [{ gameNumber: 1, sideAScore: 8, sideBScore: 5 }],
+        maxGameCount: 1,
+      },
+      next: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        teamA: team({ teamNumber: 1, players: ['吉田', '山口'] }),
+        teamB: team({ teamNumber: 2, players: ['佐藤', '森'] }),
+        isMine: false,
+      },
+    },
+    {
+      // 決勝（上限3ゲーム）。第2ゲームまで入っている（5-8 進行中）。
+      courtNumber: 5,
+      live: {
+        classLabel: { name: '2部', colorNumber: 2 },
+        roundLabel: '決勝トーナメント 準決勝',
+        teamA: team({ teamNumber: 1, players: ['石川', '前田'] }),
+        teamB: team({ teamNumber: 2, players: ['藤田', '岡田'] }),
+        isMine: false,
+        scores: [
+          { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+          { gameNumber: 2, sideAScore: 5, sideBScore: 8 },
+        ],
+        maxGameCount: 3,
+      },
+      next: null,
+    },
+    {
+      // 決勝（上限3ゲーム）。1-1 で同点。
+      courtNumber: 6,
+      live: {
+        classLabel: { name: '3部', colorNumber: 3 },
+        roundLabel: '決勝トーナメント 準決勝',
+        teamA: team({ teamNumber: 3, players: ['長谷川', '五十嵐'] }),
+        teamB: team({ teamNumber: 4, players: ['小早川', '日下部'] }),
+        isMine: false,
+        scores: [
+          { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+          { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
+        ],
+        maxGameCount: 3,
+      },
+      next: null,
+    },
+    {
+      courtNumber: 7,
+      live: null,
+      next: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        teamA: team({ teamNumber: 3, players: ['斉藤', '坂本'] }),
+        teamB: team({ teamNumber: 4, players: ['遠藤', '青木'] }),
+        isMine: true,
+      },
+    },
+    {
+      courtNumber: 8,
+      live: null,
+      next: null,
+    },
+  ];
+}
+
+function renderPage(overrides: Partial<React.ComponentProps<typeof CourtsPage>> = {}) {
+  return render(
+    <CourtsPage
+      courts={buildCourts()}
+      stageLabel="予選リーグ"
+      completedMatches={2}
+      totalMatches={48}
+      canInput
+      emptyReason={null}
+      truncated={false}
+      {...overrides}
+    />
+  );
 }
 
 describe('CourtsPage', () => {
@@ -13,11 +151,18 @@ describe('CourtsPage', () => {
     expect(screen.getByText('結果LIVE')).toBeInTheDocument();
   });
 
-  test('「予選リーグ」のラベルと「2/48 試合消化」が出る', () => {
+  test('渡された段のラベルと消化数が出る', () => {
     renderPage();
 
     expect(screen.getByText('予選リーグ')).toBeInTheDocument();
     expect(screen.getByText('2/48 試合消化')).toBeInTheDocument();
+  });
+
+  test('決勝トーナメントに切り替わったラベルもそのまま出る', () => {
+    renderPage({ stageLabel: '決勝トーナメント', completedMatches: 0, totalMatches: 3 });
+
+    expect(screen.getByText('決勝トーナメント')).toBeInTheDocument();
+    expect(screen.getByText('0/3 試合消化')).toBeInTheDocument();
   });
 
   test('「まだ保存されません」の帯が出る', () => {
@@ -28,42 +173,112 @@ describe('CourtsPage', () => {
     ).toBeInTheDocument();
   });
 
-  test('コートのカードが8枚出る', () => {
+  test('渡されたコートの数だけカードが出る（8 枚に固定しない）', () => {
     renderPage();
 
     for (let courtNumber = 1; courtNumber <= 8; courtNumber += 1) {
       expect(screen.getByTestId(`court-card-${courtNumber}`)).toBeInTheDocument();
     }
+    expect(screen.getAllByTestId(/^court-card-/)).toHaveLength(8);
+  });
+
+  test('9・10 番のコートだけが渡されたら、その 2 枚だけが出る（番号の飛んだ並びのまま）', () => {
+    const courts: Court[] = [9, 10].map((courtNumber) => ({
+      courtNumber,
+      live: null,
+      next: {
+        classLabel: { name: '1部', colorNumber: 1 },
+        teamA: team({ players: ['斉藤', '坂本'] }),
+        teamB: team({ players: ['遠藤', '青木'] }),
+        isMine: false,
+      },
+    }));
+    renderPage({ courts });
+
+    expect(screen.getAllByTestId(/^court-card-/).map((card) => card.dataset.testid)).toEqual([
+      'court-card-9',
+      'court-card-10',
+    ]);
+  });
+
+  describe('コートのカードが 0 枚のとき、理由ごとの案内を出す', () => {
+    test('コートがまだ決まっていないとき「コートがまだ決まっていません」', () => {
+      renderPage({ courts: [], emptyReason: 'courts-undecided' });
+
+      expect(screen.getByText('コートがまだ決まっていません')).toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+    });
+
+    test('全部終わったとき「全部終わりました」と、対戦表へのリンクが出る', () => {
+      renderPage({ courts: [], emptyReason: 'all-finished' });
+
+      expect(screen.getByText('全部終わりました')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /対戦表/ })).toHaveAttribute('href', '/bracket');
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+    });
+
+    test('試合が 1 つも登録されていないときは、別の文面で案内する', () => {
+      renderPage({ courts: [], emptyReason: 'no-matches' });
+
+      expect(screen.getByText('まだ試合が登録されていません')).toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+    });
+
+    test('カードがあるときは案内を出さない', () => {
+      renderPage();
+
+      expect(screen.queryByText('コートがまだ決まっていません')).not.toBeInTheDocument();
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('読み込みが上限を超えたとき', () => {
+    test('黙らず、出しきれていないかもしれないと日本語で知らせる', () => {
+      renderPage({ truncated: true });
+
+      expect(screen.getByRole('alert')).toHaveTextContent('出しきれていない');
+    });
+
+    test('超えていなければ知らせない', () => {
+      renderPage({ truncated: false });
+
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
   });
 
   test('「＋」を押すと得点が1増える', () => {
     renderPage();
     const card = screen.getByTestId('court-card-1');
 
-    // コート1 は佐々木・井上（A）15点 / 田中・木村（B）12点 から始まる
-    expect(within(card).getByText('15')).toBeInTheDocument();
+    expect(within(card).getByText('20')).toBeInTheDocument();
 
-    fireEvent.click(within(card).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
-    expect(within(card).getByText('16')).toBeInTheDocument();
+    fireEvent.click(
+      within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+    );
+    expect(within(card).getByText('21')).toBeInTheDocument();
   });
 
   test('「−」を押すと得点が1減る', () => {
     renderPage();
     const card = screen.getByTestId('court-card-1');
 
-    expect(within(card).getByText('12')).toBeInTheDocument();
+    expect(within(card).getByText('19')).toBeInTheDocument();
 
-    fireEvent.click(within(card).getByRole('button', { name: '田中・木村の得点を1減らす' }));
-    expect(within(card).getByText('11')).toBeInTheDocument();
+    fireEvent.click(
+      within(card).getByRole('button', { name: '田中・木村の第1ゲームの得点を1減らす' })
+    );
+    expect(within(card).getByText('18')).toBeInTheDocument();
   });
 
   test('「−」を押しても0より下にはならない', () => {
     renderPage();
-    const card = screen.getByTestId('court-card-6');
+    const card = screen.getByTestId('court-card-4');
 
-    // コート6 は 長谷川・村上（A）5点 から始まる
     for (let i = 0; i < 10; i += 1) {
-      fireEvent.click(within(card).getByRole('button', { name: '長谷川・村上の得点を1減らす' }));
+      fireEvent.click(
+        within(card).getByRole('button', { name: '加藤・斎藤の第1ゲームの得点を1減らす' })
+      );
     }
     expect(within(card).getByText('0')).toBeInTheDocument();
   });
@@ -73,25 +288,91 @@ describe('CourtsPage', () => {
     const card1 = screen.getByTestId('court-card-1');
     const card2 = screen.getByTestId('court-card-2');
 
-    fireEvent.click(within(card1).getByRole('button', { name: '佐々木・井上の得点を1増やす' }));
+    fireEvent.click(
+      within(card1).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+    );
 
-    expect(within(card1).getByText('16')).toBeInTheDocument();
-    // コート2 は 山田・中川（A）20点のまま変わらない
-    expect(within(card2).getByText('20')).toBeInTheDocument();
+    expect(within(card1).getByText('21')).toBeInTheDocument();
+    expect(within(card2).getByText('14')).toBeInTheDocument();
   });
 
-  test('「ゲーム終了」を押すと、いまの得点がチップになり、次のゲーム（0-0）が始まる', () => {
+  test('決勝（上限3ゲーム）は、第2ゲームの枠に既に入っている点をそのまま押して動かせる', () => {
+    renderPage();
+    const card = screen.getByTestId('court-card-5');
+
+    expect(within(card).getByText('第1ゲーム')).toBeInTheDocument();
+    expect(within(card).getByText('第2ゲーム')).toBeInTheDocument();
+    expect(within(card).getByText('第3ゲーム')).toBeInTheDocument();
+
+    fireEvent.click(
+      within(card).getByRole('button', { name: '藤田・岡田の第2ゲームの得点を1増やす' })
+    );
+    expect(within(card).getByText('9')).toBeInTheDocument();
+  });
+
+  test('勝ちゲーム数に差が付いていれば「試合を終了する」→確認画面の「OK」で試合終了になる', () => {
+    renderPage();
+    const card = screen.getByTestId('court-card-4');
+
+    fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+    expect(screen.getByText('この試合を終了します')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+    expect(within(card).getByText('終了')).toBeInTheDocument();
+    expect(within(card).queryByText('LIVE')).not.toBeInTheDocument();
+    expect(within(card).queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    expect(within(card).getByText('第1ゲーム 8-5')).toBeInTheDocument();
+    expect(within(card).getByText(/勝ち/)).toBeInTheDocument();
+    expect(within(card).getByText(/1-0/)).toBeInTheDocument();
+  });
+
+  test('確認画面で「戻る」を押すと何も変わらずに閉じる', () => {
+    renderPage();
+    const card = screen.getByTestId('court-card-4');
+
+    fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(within(card).getByText('LIVE')).toBeInTheDocument();
+  });
+
+  test('0対0のコートで「試合を終了する」を押すと「まだ点が入っていません」と出て、確認画面は出ない', () => {
     renderPage();
     const card = screen.getByTestId('court-card-3');
 
-    // コート3 は自分の試合。鈴木・高橋（A）14点 / 伊藤・渡辺（B）11点、1ゲーム目、終わったゲームは無い
-    expect(within(card).getByText('予選 2回戦・1ゲーム目')).toBeInTheDocument();
-    expect(within(card).queryByText(/第\d+ゲーム/)).not.toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
 
-    fireEvent.click(within(card).getByRole('button', { name: 'ゲーム終了' }));
+    expect(within(card).getByRole('status')).toHaveTextContent('まだ点が入っていません');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 
-    expect(within(card).getByText('第1ゲーム 14-11')).toBeInTheDocument();
-    expect(within(card).getByText('予選 2回戦・2ゲーム目')).toBeInTheDocument();
-    expect(within(card).getAllByText('0')).toHaveLength(2);
+  test('同点（勝ちゲーム数が同数）のコートで「試合を終了する」を押すと「同点では終了できません」と出る', () => {
+    renderPage();
+    const card = screen.getByTestId('court-card-6');
+
+    fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+
+    expect(within(card).getByRole('status')).toHaveTextContent('同点では終了できません');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  describe('canInput が false（観戦者）', () => {
+    test('どのコートにも「−」「＋」「試合を終了する」が出ない', () => {
+      renderPage({ canInput: false });
+
+      expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /得点を1減らす/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    });
+
+    test('得点は数字で見える', () => {
+      renderPage({ canInput: false });
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('20')).toBeInTheDocument();
+      expect(within(card).getByText('19')).toBeInTheDocument();
+    });
   });
 });

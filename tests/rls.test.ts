@@ -57,6 +57,8 @@ describe('大会データの表は anon から読めるが書けない', () => {
 
   const cases: Record<string, Case> = {};
   let sparePlayerId = '';
+  /** チームの追加を試す先。サンプルの大会はチーム 1〜4 が埋まっていて、空き番号が無い。 */
+  let spareCompetitionId = '';
 
   beforeAll(async () => {
     const one = async (table: string, columns = 'id') => {
@@ -66,6 +68,7 @@ describe('大会データの表は anon から読めるが書けない', () => {
     };
 
     const competition = await one('competitions');
+    const hall = await one('halls');
     const division = await one('divisions');
     const team = await one('teams');
     const player = await one('players');
@@ -85,6 +88,16 @@ describe('大会データの表は anon から読めるが書けない', () => {
       .select('id')
       .single();
     sparePlayerId = spare.data!.id;
+
+    // チームは 1 大会に 4 つまで（色が 4 色しかない）。サンプルの大会は 1〜4 が
+    // 埋まっているので、空の大会を 1 つ作ってそこへの追加を試す。
+    // ここを埋まっている大会にすると、RLS ではなく重複で落ちて意味が無くなる。
+    const spareCompetition = await admin
+      .from('competitions')
+      .insert({ name: 'rls-テスト用（空の大会）', held_on: '2099-01-02' })
+      .select('id')
+      .single();
+    spareCompetitionId = spareCompetition.data!.id;
 
     // 出場者がまだ 1 人もいない試合を探す（決勝の枠はこれに当たる）。
     // 埋まっている試合を狙うと、RLS ではなく重複で落ちて意味が無くなる。
@@ -118,9 +131,15 @@ describe('大会データの表は anon から読めるが書けない', () => {
       update: { id: division.id, column: 'name', value: '書き換えた' },
       keepId: division.id,
     };
+    cases.halls = {
+      insert: { name: 'anon が勝手に追加した会場', court_count: 8 },
+      findInserted: { name: 'anon が勝手に追加した会場' },
+      update: { id: hall.id, column: 'name', value: '書き換えた' },
+      keepId: hall.id,
+    };
     cases.teams = {
-      insert: { competition_id: competition.id, team_number: 99, name: 'anon が勝手に追加' },
-      findInserted: { team_number: 99 },
+      insert: { competition_id: spareCompetitionId, team_number: 1, name: 'anon が勝手に追加' },
+      findInserted: { competition_id: spareCompetitionId, team_number: 1 },
       update: { id: team.id, column: 'name', value: '書き換えた' },
       keepId: team.id,
     };
@@ -190,10 +209,14 @@ describe('大会データの表は anon から読めるが書けない', () => {
 
   afterAll(async () => {
     if (sparePlayerId) await admin.from('players').delete().eq('id', sparePlayerId);
+    if (spareCompetitionId) {
+      await admin.from('competitions').delete().eq('id', spareCompetitionId);
+    }
   });
 
   const tables = [
     'competitions',
+    'halls',
     'divisions',
     'teams',
     'players',

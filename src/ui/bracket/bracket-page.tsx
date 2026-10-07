@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { CardDetailSheet } from '@/ui/bracket/card-detail-sheet';
 import { KoBracket } from '@/ui/bracket/ko-bracket';
 import { LeagueMatrix } from '@/ui/bracket/league-matrix';
-import type { KoBracketData, LeagueCard, StandingRow, Team } from '@/ui/bracket/sample-data';
+import type { KoBracketData, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
 import { StandingsTable } from '@/ui/bracket/standings-table';
 
 type Tab = 'league' | 'tournament';
@@ -14,21 +14,32 @@ type Props = {
   leagueCards: LeagueCard[];
   standings: StandingRow[];
   koBracket: KoBracketData;
+  /** 読む上限を超えて、星取表や順位が出しきれていないかもしれない。 */
+  truncated: boolean;
 };
 
 /**
  * 対戦表画面。
  *
- * 表示だけを担当する。データの出どころ（DB かダミーか）は知らない。
- * 本物のデータをつなぐときは、渡す props を差し替えるだけでよい。
+ * 表示だけを担当する。データの出どころは知らない
+ * （読むのは `src/db/bracket.ts`、画面の形に組むのは `src/usecases/build-bracket-view.ts`）。
  */
-export function BracketPage({ teams, leagueCards, standings, koBracket }: Props) {
+export function BracketPage({ teams, leagueCards, standings, koBracket, truncated }: Props) {
   const [tab, setTab] = useState<Tab>('league');
   const [selectedCard, setSelectedCard] = useState<LeagueCard | null>(null);
 
   return (
     <div className="mx-auto max-w-md px-4 py-4">
       <h1 className="mb-[14px] text-[18px] font-black">対戦表</h1>
+
+      {truncated && (
+        <p
+          role="alert"
+          className="text-live mb-[14px] rounded-[10px] bg-red-100 px-3 py-2 text-[12px] font-extrabold"
+        >
+          試合の数が多すぎて、出しきれていない対戦があるかもしれません。運営の方に知らせてください。
+        </p>
+      )}
 
       <div className="bg-segment mb-5 flex gap-1 rounded-full p-1">
         <TabButton label="予選リーグ" active={tab === 'league'} onClick={() => setTab('league')} />

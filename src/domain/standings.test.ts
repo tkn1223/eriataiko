@@ -102,8 +102,13 @@ describe('buildStandings（順位表）', () => {
   const teamE = { teamId: 'team-e' };
   const teamF = { teamId: 'team-f' };
 
-  function matchup(sideATeamId: string, sideBTeamId: string, matches: MatchInput[]): MatchupInput {
-    return { sideATeamId, sideBTeamId, matches };
+  function matchup(
+    sideATeamId: string,
+    sideBTeamId: string,
+    matches: MatchInput[],
+    stageFormat = 'league'
+  ): MatchupInput {
+    return { sideATeamId, sideBTeamId, stageFormat, matches };
   }
 
   test('順位表の勝敗は、終わった対戦だけで数えられる（進行中・未実施は入らない）', () => {
@@ -320,5 +325,51 @@ describe('buildStandings（順位表）', () => {
     const rows = buildStandings([teamA, teamB, teamC], []);
 
     expect(rows.map((row) => row.teamId)).toEqual(['team-a', 'team-b', 'team-c']);
+  });
+
+  // #62: 決勝トーナメントの勝ちを予選の順位表に数えてしまう（エラーは出ない）のを、計算の側で防ぐ。
+  describe('決勝トーナメントの対戦は順位表に数えない（#62）', () => {
+    const leagueMatchups = [
+      matchup('team-a', 'team-b', [doneMatch(21, 10)]),
+      matchup('team-c', 'team-d', [doneMatch(21, 19), doneMatch(10, 21)]),
+    ];
+    // 予選で勝っていない B が決勝で勝つ、というふうに順位を入れ替えてしまう並び。
+    const knockoutMatchups = [
+      matchup('team-b', 'team-a', [doneMatch(21, 10), doneMatch(21, 10)], 'knockout'),
+      matchup('team-d', 'team-c', [doneMatch(21, 10)], 'knockout'),
+    ];
+
+    test('buildStandings に決勝の対戦を混ぜて渡しても、混ぜないときと同じ結果になる', () => {
+      const teams = [teamA, teamB, teamC, teamD];
+
+      const withoutKnockout = buildStandings(teams, leagueMatchups);
+      const withKnockout = buildStandings(teams, [...leagueMatchups, ...knockoutMatchups]);
+
+      expect(withKnockout).toEqual(withoutKnockout);
+    });
+
+    test('終わった決勝の対戦だけを渡すと、全チームが 0 勝 0 敗のままになる', () => {
+      const rows = buildStandings([teamA, teamB], knockoutMatchups.slice(0, 1));
+
+      for (const row of rows) {
+        expect([
+          row.wins,
+          row.losses,
+          row.draws,
+          row.gamesWon,
+          row.gamesLost,
+          row.pointDiff,
+        ]).toEqual([0, 0, 0, 0, 0, 0]);
+      }
+    });
+
+    test('数えるのは stageFormat が league の対戦だけ（知らない値も数えない）', () => {
+      const rows = buildStandings(
+        [teamA, teamB],
+        [matchup('team-a', 'team-b', [doneMatch(21, 10)], 'something-else')]
+      );
+
+      expect(rows.every((row) => row.wins === 0 && row.losses === 0)).toBe(true);
+    });
   });
 });

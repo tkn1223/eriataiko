@@ -72,10 +72,19 @@ export function matchupResult(matches: MatchInput[]): MatchupResult {
   return { finished: true, winner: leadingSide(wonMatches), wonMatches };
 }
 
+/** 順位表に数える段の種類（`stages.format` の値）。決勝トーナメントは 'knockout' で、数えない。 */
+const LEAGUE_FORMAT = 'league';
+
 /** matchups の 1 行。順位計算に要るぶんだけ持つ。 */
 export type MatchupInput = {
   sideATeamId: string;
   sideBTeamId: string;
+  /**
+   * その対戦が属する段の種類。`stages.format` と同じ名前・値（'league' / 'knockout'）。
+   * DB の行は string なので、ここも string にして型合わせが要らないようにしている。
+   * 必須にしてあるのは、渡し忘れると決勝の勝ちが予選の順位に混ざる（エラーは出ない。#62）ため。
+   */
+  stageFormat: string;
   matches: MatchInput[];
 };
 
@@ -85,7 +94,7 @@ export type TeamInput = {
 };
 
 /**
- * 順位表の 1 行。画面の行（src/ui/bracket/sample-data.ts の StandingRow）とは別物で、
+ * 順位表の 1 行。画面の行（src/ui/bracket/types.ts の StandingRow）とは別物で、
  * こちらはチーム番号や強調表示を持たない（チームの識別は teamId だけ）。
  */
 export type TeamStanding = {
@@ -181,7 +190,9 @@ function compareByRankKey(a: Totals, b: Totals): number {
 /**
  * チームの一覧と対戦の一覧から、順位表を返す。
  *
- * 数えるのは終わった対戦だけ（決めたこと 4）。同順位は人数ぶん順位を飛ばす
+ * 数えるのは**予選リーグ（`stageFormat === 'league'`）の**終わった対戦だけ（決めたこと 4、#62）。
+ * 「順位は予選だけで決まる」は大会のルールそのものなので、呼ぶ側に任せず、ここで決勝の対戦を弾く。
+ * 同順位は人数ぶん順位を飛ばす
  * （例: 1, 2, 2, 4）。並びが完全に同じ場合は入力順を保つ（安定ソート）。
  */
 export function buildStandings(teams: TeamInput[], matchups: MatchupInput[]): TeamStanding[] {
@@ -193,6 +204,8 @@ export function buildStandings(teams: TeamInput[], matchups: MatchupInput[]): Te
   });
 
   for (const matchup of matchups) {
+    if (matchup.stageFormat !== LEAGUE_FORMAT) continue;
+
     const result = matchupResult(matchup.matches);
     if (!result.finished) continue;
 

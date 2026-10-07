@@ -3,7 +3,6 @@ import { findCurrentCompetition } from '@/db/competition';
 import { getSession } from '@/server/session';
 import { loadBracketPage } from '@/usecases/load-bracket-page';
 import { BracketPage } from '@/ui/bracket/bracket-page';
-import { sampleKoBracket } from '@/ui/bracket/sample-data';
 import { ConnectionErrorBlock } from '@/ui/components/connection-error-block';
 import { ErrorBlock } from '@/ui/components/error-block';
 
@@ -69,7 +68,7 @@ export default async function Page() {
       teams={state.view.teams}
       leagueCards={state.view.leagueCards}
       standings={state.view.standings}
-      koBracket={sampleKoBracket}
+      koBracket={state.view.koBracket}
       truncated={state.view.truncated}
     />
   );

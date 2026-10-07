@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { Champion, KoBracketData, KoMatch, KoSlot } from '@/ui/bracket/sample-data';
+import type { Champion, KoBracketData, KoMatch, KoSlot } from '@/ui/bracket/types';
 
 type Props = {
   data: KoBracketData;

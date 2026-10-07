@@ -1,20 +1,104 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { BracketPage } from '@/ui/bracket/bracket-page';
-import {
-  sampleKoBracket,
-  sampleLeagueCards,
-  sampleStandings,
-  sampleTeams,
-} from '@/ui/bracket/sample-data';
+import type { KoBracketData, LeagueCard, StandingRow, Team } from '@/ui/bracket/types';
 
-function renderPage() {
+const teams: Team[] = [
+  { number: 1, name: '愛知南' },
+  { number: 2, name: '愛知中央' },
+];
+
+const leagueCards: LeagueCard[] = [
+  {
+    id: 'card-1-2',
+    teamA: 1,
+    teamB: 2,
+    status: 'done',
+    gamesWonA: 2,
+    gamesWonB: 1,
+    matches: [
+      {
+        id: 'm-1',
+        classLabel: { name: '1部', colorNumber: 1 },
+        status: 'done',
+        teamAPlayers: ['佐藤', '鈴木'],
+        teamBPlayers: ['山田', '田中'],
+        gamesWonA: 1,
+        gamesWonB: 0,
+      },
+    ],
+  },
+];
+
+const standings: StandingRow[] = [
+  {
+    rank: 1,
+    teamNumber: 1,
+    wins: 1,
+    losses: 0,
+    draws: 0,
+    gamesWon: 2,
+    gamesLost: 1,
+    pointDiff: 10,
+    isSelf: false,
+  },
+  {
+    rank: 2,
+    teamNumber: 2,
+    wins: 0,
+    losses: 1,
+    draws: 0,
+    gamesWon: 1,
+    gamesLost: 2,
+    pointDiff: -10,
+    isSelf: true,
+  },
+];
+
+const waitingSlot = (label: string) => ({ label, isDecided: false });
+const koBracket: KoBracketData = {
+  leagueFinished: false,
+  semifinals: [
+    {
+      id: 'semi-1',
+      roundLabel: '準決勝1',
+      slotA: waitingSlot('予選1位'),
+      slotB: waitingSlot('予選4位'),
+      status: 'waiting',
+    },
+    {
+      id: 'semi-2',
+      roundLabel: '準決勝2',
+      slotA: waitingSlot('予選2位'),
+      slotB: waitingSlot('予選3位'),
+      status: 'waiting',
+    },
+  ],
+  final: {
+    id: 'final',
+    roundLabel: '決勝',
+    slotA: waitingSlot('準決勝1 勝者'),
+    slotB: waitingSlot('準決勝2 勝者'),
+    status: 'waiting',
+  },
+  thirdPlace: {
+    id: 'third',
+    roundLabel: '3位決定戦',
+    slotA: waitingSlot('準決勝1 敗者'),
+    slotB: waitingSlot('準決勝2 敗者'),
+    status: 'waiting',
+  },
+  champion: { decided: false },
+};
+
+function renderPage(overrides: { truncated?: boolean } = {}) {
   return render(
     <BracketPage
-      teams={sampleTeams}
-      leagueCards={sampleLeagueCards}
-      standings={sampleStandings}
-      koBracket={sampleKoBracket}
+      teams={teams}
+      leagueCards={leagueCards}
+      standings={standings}
+      koBracket={koBracket}
+      truncated={overrides.truncated ?? false}
     />
   );
 }
@@ -53,5 +137,17 @@ describe('BracketPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /閉じる/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('読む上限を超えていたら、出しきれていないかもしれないと知らせる', () => {
+    renderPage({ truncated: true });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('出しきれていない');
+  });
+
+  test('上限を超えていなければ、その知らせは出ない', () => {
+    renderPage({ truncated: false });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

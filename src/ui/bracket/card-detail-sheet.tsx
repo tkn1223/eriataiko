@@ -1,7 +1,7 @@
 'use client';
 
 import { classColorClasses } from '@/domain/class-labels';
-import type { CardMatch, LeagueCard, Team, TeamNumber } from '@/ui/bracket/sample-data';
+import type { CardMatch, LeagueCard, Team } from '@/ui/bracket/types';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 
 type Props = {
@@ -10,7 +10,7 @@ type Props = {
   onClose: () => void;
 };
 
-function teamName(teams: Team[], teamNumber: TeamNumber) {
+function teamName(teams: Team[], teamNumber: number) {
   return teams.find((team) => team.number === teamNumber)?.name ?? '';
 }
 
@@ -55,14 +55,12 @@ export function CardDetailSheet({ card, teams, onClose }: Props) {
 
 function CardMatchRow({ match }: { match: CardMatch }) {
   const classColors = classColorClasses(match.classLabel.colorNumber);
+  // 勝ちゲーム数の多いほうを太字にするのは、終わった試合だけ（進行中はまだ決まっていない）
+  const hasGames = match.gamesWonA !== undefined && match.gamesWonB !== undefined;
   const aWins =
-    match.status === 'done' && match.scoreA !== undefined && match.scoreB !== undefined
-      ? match.scoreA > match.scoreB
-      : false;
+    match.status === 'done' && hasGames ? (match.gamesWonA ?? 0) > (match.gamesWonB ?? 0) : false;
   const bWins =
-    match.status === 'done' && match.scoreA !== undefined && match.scoreB !== undefined
-      ? match.scoreB > match.scoreA
-      : false;
+    match.status === 'done' && hasGames ? (match.gamesWonB ?? 0) > (match.gamesWonA ?? 0) : false;
 
   return (
     <li
@@ -89,9 +87,9 @@ function CardMatchRow({ match }: { match: CardMatch }) {
         </p>
       </div>
       <div className="shrink-0 text-right">
-        {match.status !== 'waiting' && match.scoreA !== undefined && match.scoreB !== undefined ? (
+        {match.status !== 'waiting' && hasGames ? (
           <p className="tabular text-accent text-[12px] font-extrabold">
-            {match.scoreA}-{match.scoreB}
+            {match.gamesWonA}-{match.gamesWonB}
           </p>
         ) : (
           <p className="text-[11px] font-bold text-gray-400">未</p>

@@ -617,6 +617,20 @@ describe('決勝トーナメント（勝ち上がり表）', () => {
       }
     );
 
+    test.each([
+      ['準決勝2 と決勝', { final: { sortOrder: 20 } }],
+      ['決勝と3位決定戦', { third: { sortOrder: 30 } }],
+    ] as const)(
+      '4 つでも並び順（sort_order）が重なっていると（%s）、どれが決勝か決められないので並べない',
+      (_label, overrides) => {
+        const view = buildBracketView(
+          input([leagueUnfinished, ...fourKnockoutMatchups(overrides)])
+        );
+
+        expect(view.koBracket).toEqual({ kind: 'duplicate-sort-order' });
+      }
+    );
+
     test('予選の対戦は決勝の対戦の数に入らない', () => {
       const view = buildBracketView(
         input([

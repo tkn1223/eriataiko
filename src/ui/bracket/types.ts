@@ -101,8 +101,11 @@ export type KoBracketData = {
  * - ready: 勝ち上がり表を出せる（決勝の段に対戦がちょうど 4 つ）
  * - not-registered: 決勝の対戦がまだ 1 つも登録されていない
  * - unexpected-shape: 4 つ以外。どれが決勝か決められないので、表にせず知らせる
+ * - duplicate-sort-order: 4 つだが並び順（sort_order）が重なっている。並べるたびに
+ *   どれが決勝かが入れ替わりうるので、表にせず知らせる
  */
 export type KoBracketView =
   | { kind: 'ready'; data: KoBracketData }
   | { kind: 'not-registered' }
-  | { kind: 'unexpected-shape'; matchupCount: number };
+  | { kind: 'unexpected-shape'; matchupCount: number }
+  | { kind: 'duplicate-sort-order' };

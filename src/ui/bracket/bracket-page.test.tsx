@@ -170,4 +170,17 @@ describe('BracketPage', () => {
     expect(screen.getByText(/想定と違う形で登録されています（対戦が 5 件）/)).toBeInTheDocument();
     expect(screen.queryByText('準決勝')).not.toBeInTheDocument();
   });
+
+  test('決勝の対戦の並び順が重なっていれば、そのことが分かる一言つきで運営に知らせるよう案内が出る', () => {
+    renderPage({ koBracket: { kind: 'duplicate-sort-order' } });
+
+    fireEvent.click(screen.getByRole('button', { name: '決勝トーナメント' }));
+
+    expect(
+      screen.getByText(
+        '決勝トーナメントの組み合わせが、想定と違う形で登録されています（対戦の並び順が重なっています）。運営の方に知らせてください。'
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText('準決勝')).not.toBeInTheDocument();
+  });
 });

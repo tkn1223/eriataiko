@@ -1,7 +1,28 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CourtsPage } from '@/ui/courts/courts-page';
+import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 import type { Court, CourtTeam } from '@/ui/courts/types';
+
+/**
+ * ＋−を押すと保存の入口（use-score-sync.ts）へ実際に fetch する。
+ * ここでは画面の動き（表示・連打・呼出待ちの昇格）だけを見たいので、
+ * 送信そのものは常に成功したことにしておく（送る・送り直す仕組み自体の確認は
+ * use-score-sync.test.tsx が担当する）。
+ */
+beforeEach(() => {
+  // 送れていない点の預かり場所はアプリ全体で 1 つ。前のテストの点を持ち越さない。
+  appScoreSyncStore.dispose();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }))
+  );
+});
+
+afterEach(() => {
+  appScoreSyncStore.dispose();
+  vi.unstubAllGlobals();
+});
 
 function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
   return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
@@ -17,6 +38,7 @@ function buildCourts(): Court[] {
       // 予選（上限1ゲーム）。20-19 から始まる。押せば数字が動く。
       courtNumber: 1,
       live: {
+        matchId: 'match-1',
         classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 1回戦',
         teamA: team({ teamNumber: 1, players: ['佐々木', '井上'] }),
@@ -26,15 +48,19 @@ function buildCourts(): Court[] {
         maxGameCount: 1,
       },
       next: {
+        matchId: 'match-1-next',
         classLabel: { name: '2部', colorNumber: 2 },
+        roundLabel: '予選 2回戦',
         teamA: team({ teamNumber: 3, players: ['川口', '浜田'] }),
         teamB: team({ teamNumber: 4, players: ['小林', '西村'] }),
         isMine: false,
+        maxGameCount: 1,
       },
     },
     {
       courtNumber: 2,
       live: {
+        matchId: 'match-2',
         classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '予選 1回戦',
         teamA: team({ teamNumber: 3, players: ['山田', '中川'] }),
@@ -49,6 +75,7 @@ function buildCourts(): Court[] {
       // 0対0のまま。「まだ点が入っていません」を確かめる。自分の試合。
       courtNumber: 3,
       live: {
+        matchId: 'match-3',
         classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 2回戦',
         teamA: team({ teamNumber: 1, players: ['鈴木', '高橋'] }),
@@ -63,6 +90,7 @@ function buildCourts(): Court[] {
       // 「＋」の連打テストに使う。加藤・斎藤（B）5点。
       courtNumber: 4,
       live: {
+        matchId: 'match-4',
         classLabel: { name: '1部', colorNumber: 1 },
         roundLabel: '予選 2回戦',
         teamA: team({ teamNumber: 3, players: ['松本', '中村'] }),
@@ -72,16 +100,20 @@ function buildCourts(): Court[] {
         maxGameCount: 1,
       },
       next: {
+        matchId: 'match-4-next',
         classLabel: { name: '1部', colorNumber: 1 },
+        roundLabel: '予選 3回戦',
         teamA: team({ teamNumber: 1, players: ['吉田', '山口'] }),
         teamB: team({ teamNumber: 2, players: ['佐藤', '森'] }),
         isMine: false,
+        maxGameCount: 1,
       },
     },
     {
       // 決勝（上限3ゲーム）。第2ゲームまで入っている（5-8 進行中）。
       courtNumber: 5,
       live: {
+        matchId: 'match-5',
         classLabel: { name: '2部', colorNumber: 2 },
         roundLabel: '決勝トーナメント 準決勝',
         teamA: team({ teamNumber: 1, players: ['石川', '前田'] }),
@@ -99,6 +131,7 @@ function buildCourts(): Court[] {
       // 決勝（上限3ゲーム）。1-1 で同点。
       courtNumber: 6,
       live: {
+        matchId: 'match-6',
         classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '決勝トーナメント 準決勝',
         teamA: team({ teamNumber: 3, players: ['長谷川', '五十嵐'] }),
@@ -113,13 +146,17 @@ function buildCourts(): Court[] {
       next: null,
     },
     {
+      // 呼出待ち。選手（canInput）なら次の試合の枠が出る。
       courtNumber: 7,
       live: null,
       next: {
+        matchId: 'match-7-next',
         classLabel: { name: '1部', colorNumber: 1 },
+        roundLabel: '予選 4回戦',
         teamA: team({ teamNumber: 3, players: ['斉藤', '坂本'] }),
         teamB: team({ teamNumber: 4, players: ['遠藤', '青木'] }),
         isMine: true,
+        maxGameCount: 1,
       },
     },
     {
@@ -165,12 +202,23 @@ describe('CourtsPage', () => {
     expect(screen.getByText('0/3 試合消化')).toBeInTheDocument();
   });
 
-  test('「まだ保存されません」の帯が出る', () => {
-    renderPage();
+  test('選手には「試合の終了はまだ記録されません」の帯が出る', () => {
+    renderPage({ canInput: true });
 
     expect(
-      screen.getByText('入れた点はまだ保存されません（画面を閉じると消えます）')
+      screen.getByText('試合の終了はまだ記録されません（点は保存されます）')
     ).toBeInTheDocument();
+  });
+
+  test('観戦者には帯が出ない', () => {
+    renderPage({ canInput: false });
+
+    expect(
+      screen.queryByText('試合の終了はまだ記録されません（点は保存されます）')
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('入れた点はまだ保存されません（画面を閉じると消えます）')
+    ).not.toBeInTheDocument();
   });
 
   test('渡されたコートの数だけカードが出る（8 枚に固定しない）', () => {
@@ -187,10 +235,13 @@ describe('CourtsPage', () => {
       courtNumber,
       live: null,
       next: {
+        matchId: `match-${courtNumber}-next`,
         classLabel: { name: '1部', colorNumber: 1 },
+        roundLabel: '予選 1回戦',
         teamA: team({ players: ['斉藤', '坂本'] }),
         teamB: team({ players: ['遠藤', '青木'] }),
         isMine: false,
+        maxGameCount: 1,
       },
     }));
     renderPage({ courts });
@@ -373,6 +424,316 @@ describe('CourtsPage', () => {
 
       expect(within(card).getByText('20')).toBeInTheDocument();
       expect(within(card).getByText('19')).toBeInTheDocument();
+    });
+
+    test('呼出待ちのコートに枠は出ない（今までどおり見るだけ）', () => {
+      renderPage({ canInput: false });
+      const card = screen.getByTestId('court-card-7');
+
+      expect(within(card).getByText('呼出待ち')).toBeInTheDocument();
+      expect(within(card).queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('保存（use-score-sync.ts を通して入口に送る）', () => {
+    test('「＋」を押すと、そのゲームの今の点数が保存の入口に送られる', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+      const [url, init] = vi.mocked(fetch).mock.calls[0];
+      expect(url).toBe('/api/matches/match-1/scores');
+      expect(JSON.parse(init?.body as string)).toEqual({
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+      });
+    });
+
+    test('描き直される前に「＋」を10回押しても1点も落とさず、最後に送る点数も10増えた値になる', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-4');
+      const plus = within(card).getByRole('button', {
+        name: '加藤・斎藤の第1ゲームの得点を1増やす',
+      });
+
+      // 1 つの act の中で押すと、10 回押し終わるまで描き直されない（いちばん厳しい連打）
+      act(() => {
+        for (let i = 0; i < 10; i += 1) fireEvent.click(plus);
+      });
+
+      expect(within(card).getByText('15', { exact: true })).toBeInTheDocument();
+      await waitFor(() => {
+        const calls = vi.mocked(fetch).mock.calls;
+        expect(JSON.parse(calls[calls.length - 1][1]?.body as string)).toEqual({
+          gameNumber: 1,
+          sideAScore: 8,
+          sideBScore: 15,
+        });
+      });
+    });
+
+    test('保存に失敗すると「保存できていません」の案内が出る', async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 500 }));
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+
+      await waitFor(() =>
+        expect(within(card).getByRole('status')).toHaveTextContent('保存できていません')
+      );
+    });
+  });
+
+  describe('呼出待ちのコートで選手が点を入れる', () => {
+    test('次の試合の枠が出て、押せる', () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      expect(screen.getByText('呼出待ち')).toBeInTheDocument();
+      expect(within(card).getByText('第1ゲーム')).toBeInTheDocument();
+      expect(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      ).toBeInTheDocument();
+    });
+
+    test('最初の1点でLIVEの見た目に切り替わる', () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
+      expect(within(card).getByText('1', { exact: true })).toBeInTheDocument();
+    });
+
+    test('1点入れてから0対0に戻しても、LIVEの見た目のまま（入口の側も呼出待ちに戻さない）', () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1減らす' })
+      );
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('最初の1点も保存の入口に送られる', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      fireEvent.click(
+        within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+      const [url, init] = vi.mocked(fetch).mock.calls[0];
+      expect(url).toBe('/api/matches/match-7-next/scores');
+      expect(JSON.parse(init?.body as string)).toEqual({
+        gameNumber: 1,
+        sideAScore: 1,
+        sideBScore: 0,
+      });
+    });
+  });
+
+  // 仕様 2026-10-04: 送れていない点は、結果LIVE の画面より長生きする。
+  // 下のメニューで別の画面に移る = この画面を外す（unmount）、戻る = 作り直す（render）。
+  describe('別の画面に移っても、送れていない点を預かる', () => {
+    const PLUS_COURT_1 = '佐々木・井上の第1ゲームの得点を1増やす';
+
+    test('送れない状態で「＋」を押して画面を外しても、送り直しを続けて保存の入口に届く', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+
+      first.unmount();
+
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2), { timeout: 3000 });
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[1][1]?.body as string)).toEqual({
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+      });
+    });
+
+    test('送れていない点があるまま結果LIVE に戻ると、押した数字のまま「保存できていません」が出る', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toHaveTextContent(
+          '保存できていません'
+        )
+      );
+      first.unmount();
+
+      // サーバーから読み直した数字は、まだ押す前の 20-19
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('21', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByText('20', { exact: true })).not.toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    test('別の画面にいる間に保存できたら、戻ったとき「保存できていません」は出ていない', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2), { timeout: 3000 });
+      // 返事が預かり場所に反映されるのを待つ
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // サーバーは保存された 21-19 を返す
+      const courts = buildCourts();
+      courts[0].live!.scores = [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }];
+      renderPage({ courts });
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('21', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByRole('status')).not.toBeInTheDocument();
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+
+    test('呼出待ちのコートで入れた最初の 1 点が送れていないまま戻ると、LIVE の見た目で数字が残る', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-7')).getByRole('button', {
+          name: '斉藤・坂本の第1ゲームの得点を1増やす',
+        })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-7')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).getByText('1', { exact: true })).toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    test('呼出待ちのコートで 1 点入れて 0 対 0 に戻し、送れていないまま戻っても LIVE の見た目のまま', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      const firstCard = screen.getByTestId('court-card-7');
+      fireEvent.click(
+        within(firstCard).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
+      );
+      fireEvent.click(
+        within(firstCard).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1減らす' })
+      );
+      await waitFor(() => expect(within(firstCard).getByRole('status')).toBeInTheDocument());
+      expect(within(firstCard).getByText('LIVE')).toBeInTheDocument();
+      first.unmount();
+
+      renderPage();
+      const card = screen.getByTestId('court-card-7');
+
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      expect(within(card).queryByText('呼出待ち')).not.toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+    });
+
+    // 選手として押した点が送れないまま、観戦者として入り直して結果LIVE を開いた場合。
+    // 観戦者は点を入れないので、預かっている数字も案内も混ぜない。
+    test('選手として押した点が送れていないまま観戦者で開いても、数字も「保存できていません」も混ざらない', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+
+      renderPage({ canInput: false });
+      const card = screen.getByTestId('court-card-1');
+
+      expect(within(card).getByText('20', { exact: true })).toBeInTheDocument();
+      expect(within(card).queryByText('21', { exact: true })).not.toBeInTheDocument();
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('送れていない点がある試合で「試合を終了する」を押したとき', () => {
+    function finishCourt1() {
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      return card;
+    }
+
+    test('終了しても「保存できていません」の案内が消えない。送れたら消える', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      await waitFor(() => expect(within(card).getByRole('status')).toBeInTheDocument());
+
+      finishCourt1();
+
+      expect(within(card).getByText('終了')).toBeInTheDocument();
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+
+      // 送り直しが成功すると、終了したカードからも案内が消える
+      await waitFor(() => expect(within(card).queryByRole('status')).not.toBeInTheDocument(), {
+        timeout: 3000,
+      });
+    });
+
+    test('送れている試合を終了しても、案内は出ない', async () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+
+      finishCourt1();
+
+      expect(within(card).getByText('終了')).toBeInTheDocument();
+      expect(within(card).queryByRole('status')).not.toBeInTheDocument();
     });
   });
 });

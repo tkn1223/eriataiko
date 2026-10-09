@@ -9,8 +9,13 @@ import {
   COURT_9_SAVED_SCORE,
   createCourtsBaseScenario,
   createFinalScenario,
+  createSaveScenario,
   deleteCourtsBaseScenario,
   deleteFinalScenario,
+  deleteSaveScenario,
+  findMatchIdByCourtNumber,
+  findMatchStatus,
+  findSavedGameScore,
   FINAL_COURT_NUMBER,
   FINAL_KNOCKOUT_COMPLETED_MATCHES,
   FINAL_KNOCKOUT_TOTAL_MATCHES,
@@ -18,13 +23,19 @@ import {
   LONG_NAME_COURT_NUMBER,
   LONG_TEAM_A_NAMES,
   LONG_TEAM_B_NAMES,
+  REJECT_COURT_NUMBER,
+  REJECT_TEAM_A_NAMES,
   SCORE_COURT_NUMBER,
   SCORE_TEAM_A_NAMES,
   SCORE_TEAM_B_NAMES,
+  markRejectMatchDone,
   SLOT_LABEL_COURT_NUMBER,
   SLOT_LABEL_TEXT,
   SKIPPED_COURT_NUMBERS,
   SLOT_TEAM_A_NAMES,
+  WAITING_ONLY_COURT_NUMBER,
+  WAITING_ONLY_TEAM_A_NAMES,
+  WAITING_ONLY_TEAM_B_NAMES,
   ZERO_SCORE_COURT_NUMBER,
 } from './helpers/courts-scenario';
 
@@ -100,6 +111,19 @@ async function personNamesSplitAcrossLines(
     }
     return split;
   }, personNames);
+}
+
+/**
+ * 「＋」を 10 回、**間に描画を挟まずに**押す。
+ *
+ * Playwright の tap / click を 1 回ずつ await すると、押すたびに画面が描き直されてから
+ * 次が押されるので、「描き直される前に 2 回目が来る」取りこぼしを見逃す（実際に見逃していた）。
+ * ブラウザの中で 10 回続けて click を送り、いちばん厳しい連打を再現する。
+ */
+async function tapTenTimesAtOnce(button: import('@playwright/test').Locator) {
+  await button.evaluate((element: HTMLElement) => {
+    for (let i = 0; i < 10; i += 1) element.click();
+  });
 }
 
 test.beforeAll(createCourtsBaseScenario);
@@ -218,13 +242,21 @@ test('「予選リーグ」のラベルと、いまの段の試合消化数が�
   ).toBeVisible();
 });
 
-test('「まだ保存されません」の帯が出る', async ({ page }) => {
+test('選手には「試合の終了はまだ記録されません」の帯が出る', async ({ page }) => {
+  await enterAsPlayer(page, '愛知南', 'たろう');
+  await page.goto('/courts');
+
+  await expect(page.getByText('試合の終了はまだ記録されません（点は保存されます）')).toBeVisible();
+});
+
+test('観戦者には帯が出ない', async ({ page }) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
+  await expect(page.getByText('試合の終了はまだ記録されません（点は保存されます）')).toHaveCount(0);
   await expect(
     page.getByText('入れた点はまだ保存されません（画面を閉じると消えます）')
-  ).toBeVisible();
+  ).toHaveCount(0);
 });
 
 test.describe('あなたの試合', () => {
@@ -275,6 +307,11 @@ test.describe('観戦者', () => {
 });
 
 test.describe('選手として入った人の操作', () => {
+  // ＋−を押すと保存されるので（1-b）、テストごとに作り直して前のテストの点を持ち越さない。
+  // 最後にもう一度作り直し、このあとのテストには作ったままの点を見せる。
+  test.beforeEach(createCourtsBaseScenario);
+  test.afterAll(createCourtsBaseScenario);
+
   test('「＋」を押すと得点が1増え、「−」で1減る。0より下にはならない', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
@@ -361,12 +398,7 @@ test.describe('選手として入った人の操作', () => {
     const plus = card.getByRole('button', {
       name: `${SCORE_TEAM_B_NAMES.join('・')}の第1ゲームの得点を1増やす`,
     });
-    await plus.scrollIntoViewIfNeeded();
-
-    const box = (await plus.boundingBox())!;
-    for (let i = 0; i < 10; i += 1) {
-      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-    }
+    await tapTenTimesAtOnce(plus);
 
     // 村上・福田（B）は0点から始まる
     await expect(card.getByText('10', { exact: true })).toBeVisible();
@@ -508,7 +540,8 @@ for (const width of [375, 390]) {
  * 「決勝トーナメント」に変わってしまうため。
  */
 test.describe('決勝トーナメントが始まったとき', () => {
-  test.beforeAll(createFinalScenario);
+  // ＋を押すと保存されるので（1-b）、テストごとに作り直して前のテストの点を持ち越さない
+  test.beforeEach(createFinalScenario);
   test.afterAll(deleteFinalScenario);
 
   test('ラベルと試合消化数が「決勝トーナメント」に切り替わる', async ({ page }) => {
@@ -530,6 +563,22 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await expect(card.getByText('第1ゲーム')).toBeVisible();
     await expect(card.getByText('第2ゲーム')).toBeVisible();
     await expect(card.getByText('第3ゲーム')).toBeVisible();
+  });
+
+  test('決勝の第2ゲームに入れた点は、第2ゲームとして保存される（第1ゲームは変わらない）', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, FINAL_COURT_NUMBER);
+    const teamAName = FINAL_TEAM_A_NAMES.join('・');
+    await card.getByRole('button', { name: `${teamAName}の第2ゲームの得点を1増やす` }).click();
+
+    const matchId = await findMatchIdByCourtNumber(FINAL_COURT_NUMBER);
+    await expect.poll(async () => (await findSavedGameScore(matchId, 2))?.sideAScore).toBe(16);
+    // 第1ゲーム（21-19）は触っていないので変わらない
+    expect(await findSavedGameScore(matchId, 1)).toEqual({ sideAScore: 21, sideBScore: 19 });
   });
 
   test('同点（勝ちゲーム数が同数）のコートで「試合を終了する」を押すと「同点では終了できません」と出る', async ({
@@ -637,6 +686,370 @@ test.describe('決勝トーナメントが始まったとき', () => {
         page.locator('[data-testid^="court-card-"] span')
       );
       expect(splitAcrossLines).toEqual([]);
+
+      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(scrollWidth).toBe(innerWidth);
+    });
+  }
+});
+
+/**
+ * ＋−を押したら保存する（1-b）。
+ * 専用の試合（`createSaveScenario`）を使う。基本シナリオとは別に、テストごとに作り直して
+ * 最後に消す（決勝シナリオと同じやり方。e2e/helpers/courts-scenario.ts）。
+ * 作り直すので、どのテストも前のテストが押した点や試合の状態を当てにしない。
+ *
+ * 送信そのものを失敗させる確認（`page.route`）や、DB の値を直接読む確認は、
+ * この describe の中だけで行う。
+ */
+test.describe('保存（1-b）', () => {
+  test.beforeEach(createSaveScenario);
+  test.afterAll(deleteSaveScenario);
+
+  test('呼出待ちのコートに次の試合の枠が出て、最初の1点でLIVEになり、保存される。開き直してもLIVEのまま', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(card.getByText('第1ゲーム')).toBeVisible();
+
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+
+    await expect(card.getByText('LIVE')).toBeVisible();
+    await expect(card.getByText('呼出待ち')).toHaveCount(0);
+
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    await expect.poll(() => findMatchStatus(matchId)).toBe('live');
+    await expect
+      .poll(() => findSavedGameScore(matchId, 1))
+      .toEqual({
+        sideAScore: 1,
+        sideBScore: 0,
+      });
+
+    await page.reload();
+    const reloadedCard = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    await expect(reloadedCard.getByText('LIVE')).toBeVisible();
+    await expect(reloadedCard.getByText('1', { exact: true })).toBeVisible();
+  });
+
+  test('－を押しても保存され、0より下にはならない。＋を10回連打すると保存される点数も10増える', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamBName = WAITING_ONLY_TEAM_B_NAMES.join('・');
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    const plus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1増やす` });
+    const minus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1減らす` });
+
+    // ＋で 1、－で 0 に戻る。どちらも保存される
+    await plus.click();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(1);
+    await minus.click();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
+
+    // － を押しても 0 より下にはならない（A 側も 0 なので、B 側の数字を「－」のとなりで見る）
+    await minus.click();
+    await expect(minus.locator('xpath=following-sibling::span[1]')).toHaveText('0');
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
+
+    await tapTenTimesAtOnce(plus);
+
+    await expect(card.getByText('10', { exact: true })).toBeVisible();
+    await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(10);
+  });
+
+  test('保存に失敗すると案内が出て、つながり直すと自動で送り直されてDBに最新値が入る', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+    const plus = card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` });
+
+    await page.route('**/api/matches/*/scores', (route) => route.abort());
+    await plus.click();
+
+    // 数字は押した分だけ残る（0 から 1 になる）
+    await expect(card.getByText('1', { exact: true })).toBeVisible();
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+
+    await page.unroute('**/api/matches/*/scores');
+
+    // 自動で送り直され、案内が消える（最大 10 秒間隔なので余裕を見て待つ）
+    await expect(card.getByRole('status')).toHaveCount(0, { timeout: 15_000 });
+
+    const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    await expect
+      .poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideAScore), { timeout: 15_000 })
+      .toBe(1);
+  });
+
+  test('入口に断られたとき（終了済み）は、その理由がコートに出る', async ({ page }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, REJECT_COURT_NUMBER);
+    const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+    await markRejectMatchDone();
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+
+    await expect(card.getByRole('status')).toContainText('終了した試合です');
+  });
+
+  test('送れていない点があるまま画面を閉じようとすると確認が出る', async ({ page }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, REJECT_COURT_NUMBER);
+    const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+    await markRejectMatchDone();
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+    await expect(card.getByRole('status')).toBeVisible();
+
+    const defaultPrevented = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(defaultPrevented).toBe(true);
+  });
+
+  test('送れていない点が無ければ、画面を閉じようとしても確認は出ない', async ({ page }) => {
+    await enterAsViewer(page);
+    await page.goto('/courts');
+
+    const defaultPrevented = await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    expect(defaultPrevented).toBe(false);
+  });
+
+  /**
+   * 別の画面に移っても、送れていない点を預かる（仕様 2026-10-04 の書き直し）。
+   *
+   * 下のメニューのリンクは同じページの中での移動（ブラウザは閉じていない）なので、
+   * `page.goto` ではなくメニューを押して移る。`goto` だとアプリごと読み直されて、
+   * 預かり場所も空になり、確かめたいことを確かめられない。
+   *
+   * 失敗は `page.route` で作る。呼出待ち（コート 8）の最初の 1 点で試す。
+   */
+  test.describe('別の画面に移っても、送れていない点を預かる', () => {
+    const SCORES_URL = '**/api/matches/*/scores';
+
+    async function pressPlusWhileOffline(page: import('@playwright/test').Page) {
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+
+      const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+      const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+      await page.route(SCORES_URL, (route) => route.abort());
+      await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+      await expect(card.getByRole('status')).toContainText('保存できていません');
+    }
+
+    /**
+     * 下のメニューを押して移る。開発サーバーは左下に Next.js の丸いバッジ（nextjs-portal）を
+     * 重ねて出し、「結果LIVE」の上を覆って押せなくする（本番には無い）。実際の画面の見た目を
+     * 変えたくないので、バッジだけを隠してから押す。
+     */
+    async function goToTab(page: import('@playwright/test').Page, label: string) {
+      await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+      await page.getByRole('navigation', { name: 'メインメニュー' }).getByText(label).click();
+    }
+
+    test('送れない状態で＋を押し、下のメニューで「myページ」へ移ってから電波が戻ると、その点がDBに保存される', async ({
+      page,
+    }) => {
+      await pressPlusWhileOffline(page);
+
+      await goToTab(page, 'myページ');
+      await expect(page).toHaveURL(/\/me$/);
+      await page.unroute(SCORES_URL);
+
+      const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+      await expect
+        .poll(() => findSavedGameScore(matchId, 1), { timeout: 20_000 })
+        .toEqual({ sideAScore: 1, sideBScore: 0 });
+    });
+
+    test('別の画面にいる間に保存できたら、結果LIVEに戻ったとき「保存できていません」は出ていない', async ({
+      page,
+    }) => {
+      await pressPlusWhileOffline(page);
+
+      await goToTab(page, 'myページ');
+      await expect(page).toHaveURL(/\/me$/);
+      await page.unroute(SCORES_URL);
+      const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+      await expect
+        .poll(() => findSavedGameScore(matchId, 1), { timeout: 20_000 })
+        .toEqual({ sideAScore: 1, sideBScore: 0 });
+
+      await goToTab(page, '結果LIVE');
+      await expect(page).toHaveURL(/\/courts$/);
+
+      const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+      await expect(card.getByText('LIVE')).toBeVisible();
+      await expect(card.getByText('1', { exact: true })).toBeVisible();
+      await expect(card.getByRole('status')).toHaveCount(0);
+    });
+
+    test('送れていない点があるまま結果LIVEに戻ると、押した数字のまま出て「保存できていません」が出ている', async ({
+      page,
+    }) => {
+      await pressPlusWhileOffline(page);
+
+      await goToTab(page, 'myページ');
+      await expect(page).toHaveURL(/\/me$/);
+      await goToTab(page, '結果LIVE');
+      await expect(page).toHaveURL(/\/courts$/);
+
+      // サーバーにはまだ届いていない（読み直した数字は 0 対 0 の呼出待ちのまま）
+      const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+      await expect(card.getByText('LIVE')).toBeVisible();
+      await expect(card.getByText('1', { exact: true })).toBeVisible();
+      await expect(card.getByRole('status')).toContainText('保存できていません');
+
+      // 電波が戻れば、戻ってきた画面の案内も消え、DB に入る
+      await page.unroute(SCORES_URL);
+      await expect(card.getByRole('status')).toHaveCount(0, { timeout: 20_000 });
+      const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+      await expect
+        .poll(() => findSavedGameScore(matchId, 1))
+        .toEqual({ sideAScore: 1, sideBScore: 0 });
+    });
+
+    test('送れていない点があるまま、メニューで移ったあとでも、ブラウザを閉じようとすると確認が出る', async ({
+      page,
+    }) => {
+      await pressPlusWhileOffline(page);
+      await goToTab(page, 'myページ');
+      await expect(page).toHaveURL(/\/me$/);
+
+      const defaultPrevented = await page.evaluate(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      expect(defaultPrevented).toBe(true);
+    });
+
+    test('観戦者には、移って戻っても「保存できていません」は出ない', async ({ page }) => {
+      await enterAsViewer(page);
+      await page.goto('/courts');
+      await goToTab(page, 'myページ');
+      await goToTab(page, '結果LIVE');
+      await expect(page).toHaveURL(/\/courts$/);
+
+      await expect(courtCard(page, WAITING_ONLY_COURT_NUMBER)).toBeVisible();
+      await expect(page.getByText('保存できていません')).toHaveCount(0);
+    });
+  });
+
+  /**
+   * 送れていない点がある試合で「試合を終了する」を押しても、案内を残す（仕様 2026-10-04 の決めたこと 4）。
+   * 進行中のコート（`REJECT_COURT_NUMBER`。作った時点では 2-0 の進行中。名前の「REJECT」は
+   * 別のテストが終了済みにして断られる状況を作るのに使うため。ここでは断らせない）を使う。
+   */
+  test.describe('送れていない点がある試合を終了したとき', () => {
+    const SCORES_URL = '**/api/matches/*/scores';
+
+    async function pressPlusThenFinish(page: import('@playwright/test').Page) {
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+
+      const card = courtCard(page, REJECT_COURT_NUMBER);
+      const teamAName = REJECT_TEAM_A_NAMES.join('・');
+      await page.route(SCORES_URL, (route) => route.abort());
+      await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+      await expect(card.getByRole('status')).toContainText('保存できていません');
+
+      await card.getByRole('button', { name: '試合を終了する' }).click();
+      await page.getByRole('button', { name: 'OK' }).click();
+      await expect(card.getByText('終了', { exact: true })).toBeVisible();
+      return card;
+    }
+
+    test('終了しても「保存できていません」が残り、送れたら消える。点はDBに入る', async ({
+      page,
+    }) => {
+      const card = await pressPlusThenFinish(page);
+
+      await expect(card.getByRole('status')).toContainText('保存できていません');
+
+      await page.unroute(SCORES_URL);
+      await expect(card.getByRole('status')).toHaveCount(0, { timeout: 20_000 });
+      await expect(card.getByText('終了', { exact: true })).toBeVisible();
+
+      const matchId = await findMatchIdByCourtNumber(REJECT_COURT_NUMBER);
+      await expect
+        .poll(() => findSavedGameScore(matchId, 1))
+        .toEqual({ sideAScore: 3, sideBScore: 0 });
+    });
+
+    for (const width of [375, 390]) {
+      test(`${width}px 幅で、終了したカードに案内が出た状態でも横にはみ出さない`, async ({
+        page,
+      }) => {
+        await page.setViewportSize({ width, height: 844 });
+        const card = await pressPlusThenFinish(page);
+        await expect(card.getByRole('status')).toBeVisible();
+
+        const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        }));
+        expect(innerWidth).toBe(width);
+        expect(scrollWidth).toBe(innerWidth);
+
+        // 案内がカードの外にはみ出していない
+        const stickingOut = await card.evaluate((element) => {
+          const cardRect = element.getBoundingClientRect();
+          return Array.from(element.querySelectorAll('*'))
+            .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+            .filter(
+              ({ rect }) =>
+                rect.width > 0 &&
+                (rect.right > cardRect.right + 0.5 || rect.left < cardRect.left - 0.5)
+            )
+            .map(({ text }) => text);
+        });
+        expect(stickingOut).toEqual([]);
+      });
+    }
+  });
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、保存できていない案内が出た状態でも横にはみ出さない`, async ({
+      page,
+    }) => {
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/courts');
+
+      const card = courtCard(page, REJECT_COURT_NUMBER);
+      const teamAName = REJECT_TEAM_A_NAMES.join('・');
+
+      await markRejectMatchDone();
+      await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+      await expect(card.getByRole('status')).toBeVisible();
 
       const { scrollWidth, innerWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,

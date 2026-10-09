@@ -43,6 +43,8 @@ export type CourtTeam = {
 };
 
 export type LiveMatch = {
+  /** `matches.id`。得点を保存する入口（`POST /api/matches/[matchId]/scores`）の宛先。 */
+  matchId: string;
   classLabel: ClassLabel;
   /** 例: '予選 1回戦' */
   roundLabel: string;
@@ -67,14 +69,60 @@ export type LiveScore = {
   scores: GameScore[];
   /** 試合が終わったか。終わったコートは得点を押せなくする。 */
   finished: boolean;
+  /**
+   * 1 点でも入ったことがあるか。呼出待ちから入力を始めたコートを、0 対 0 に戻しても
+   * LIVE の見た目のままにするのに使う（入口の側も一度 LIVE にした試合は呼出待ちに戻さない）。
+   * 進行中として読み込んだコートは最初から true。
+   */
+  started: boolean;
 };
 
 export type NextMatch = {
+  /**
+   * `matches.id`。呼出待ちのコートで先に枠を出すのに使う
+   * （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1）。
+   */
+  matchId: string;
   classLabel: ClassLabel;
+  /** 例: '予選 1回戦'。呼出待ちの枠を LIVE の見た目に切り替えたときにも使う。 */
+  roundLabel: string;
   teamA: CourtTeam;
   teamB: CourtTeam;
   /** 自分の次の試合には名前を強調する。 */
   isMine: boolean;
+  /** LIVE に切り替わったときに並べる枠の数。DB の `matches.max_game_count` と同じ。 */
+  maxGameCount: number;
+};
+
+/**
+ * 送る・送り直す仕組み（`use-score-sync.ts`）がコートに渡す、いまの保存状況。
+ * どちらも無ければ何も出さない。
+ */
+export type ScoreSyncStatus = {
+  /** つながらない・5xx・429 で送り直している間の案内。無ければ null。 */
+  retryingMessage: string | null;
+  /** 4xx で断られ、送り直さないと決めたときの日本語の理由。無ければ null。 */
+  rejectedMessage: string | null;
+};
+
+/**
+ * 試合 1 つぶんの、預かり場所（`use-score-sync.ts`）の中身。
+ * 画面を作り直したとき（下のメニューで別の画面から戻ったとき）に、
+ * サーバーから読んだ数字より「まだ送れていない数字」を優先して出すために、数字ごと渡す
+ * （docs/specs/2026-09-19-save-score-from-courts.md の「2026-10-04 の書き直し」）。
+ */
+export type MatchSyncState = ScoreSyncStatus & {
+  /**
+   * この試合で一度でも 0 対 0 以外の点を押したか（あとで 0 対 0 に戻しても true）。
+   * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
+   * （`LiveScore.started` と同じ決まり）。
+   */
+  started: boolean;
+  /**
+   * まだサーバーに届いたと確かめられていないゲームの、いま押している点数
+   * （送信中・送り直し待ち・入口に断られたまま、のどれも含む）。無ければ空。
+   */
+  unsentScores: GameScore[];
 };
 
 export type Court = {
@@ -84,3 +132,14 @@ export type Court = {
   /** 次の試合。無ければコートに「次」は出さない。 */
   next: NextMatch | null;
 };
+
+/**
+ * このコートにいま入力できる試合の id。進行中があればその試合、無くて
+ * 呼出待ち（選手だけ）なら次の試合。どちらも無ければ null（入力できない）。
+ * `use-score-sync.ts` の `sync` に渡す宛先や、`statusByMatchId` を引く鍵に使う。
+ */
+export function activeMatchId(court: Court, canInput: boolean): string | null {
+  if (court.live) return court.live.matchId;
+  if (canInput && court.next) return court.next.matchId;
+  return null;
+}

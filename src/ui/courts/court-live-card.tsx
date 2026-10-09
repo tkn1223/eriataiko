@@ -170,6 +170,34 @@ function syncLines(syncStatus: ScoreSyncStatus | null, canInput: boolean): strin
   ].filter((line): line is string => line !== null);
 }
 
+/**
+ * 実際にプレーされたゲームの得点を、小さな札で並べる
+ * （終わった試合・終了を送っている試合・1 つ前で同じ見た目にする）。
+ */
+function PlayedGameChips({
+  games,
+  showGameNumber,
+}: {
+  games: GameScore[];
+  showGameNumber: boolean;
+}) {
+  if (games.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap gap-1.5">
+      {games.map((score) => (
+        <li
+          key={score.gameNumber}
+          className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
+        >
+          {showGameNumber
+            ? `第${score.gameNumber}ゲーム ${score.sideAScore}-${score.sideBScore}`
+            : `${score.sideAScore}-${score.sideBScore}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** 案内は 1 つの status にまとめる（行ごとに別の status にすると、読み上げが重なる）。 */
 function StatusLines({ lines }: { lines: string[] }) {
   if (lines.length === 0) return null;
@@ -313,18 +341,7 @@ export function CourtLiveCard({
       <TeamNameLine team={live.teamB} />
 
       {finished ? (
-        playedGames.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {playedGames.map((score) => (
-              <li
-                key={score.gameNumber}
-                className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
-              >
-                {`第${score.gameNumber}ゲーム ${score.sideAScore}-${score.sideBScore}`}
-              </li>
-            ))}
-          </ul>
-        )
+        <PlayedGameChips games={playedGames} showGameNumber />
       ) : (
         <div className="flex flex-col gap-2">
           {frames.map((frame) => (
@@ -646,18 +663,7 @@ function FixingPanel({
       <TeamNameLine team={match.teamB} />
 
       {finishing ? (
-        playedGames.length > 0 && (
-          <ul className="flex flex-wrap gap-1.5">
-            {playedGames.map((score) => (
-              <li
-                key={score.gameNumber}
-                className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
-              >
-                {`第${score.gameNumber}ゲーム ${score.sideAScore}-${score.sideBScore}`}
-              </li>
-            ))}
-          </ul>
-        )
+        <PlayedGameChips games={playedGames} showGameNumber />
       ) : (
         <div className="flex flex-col gap-2">
           {frames.map((frame) => (
@@ -762,18 +768,8 @@ function PreviousRow({
         </span>
       </div>
 
-      {summary.playedGames.length > 0 && (
-        <ul className="flex flex-wrap gap-1.5">
-          {summary.playedGames.map((score) => (
-            <li
-              key={score.gameNumber}
-              className="tabular rounded-[6px] bg-gray-100 px-2 py-0.5 text-[11px] font-extrabold text-gray-500"
-            >
-              {`${score.sideAScore}-${score.sideBScore}`}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* 1 つ前は「1つ前」の行に収めたいので、ゲームの番号は省いて点だけ並べる */}
+      <PlayedGameChips games={summary.playedGames} showGameNumber={false} />
 
       <StatusLines lines={lines} />
 

@@ -26,8 +26,13 @@ function createFakeClient() {
   }> = [];
   const removeChannel = vi.fn();
 
+  // 本物（realtime-js）と同じく、同じ名前の接続がまだ閉じきっていなければ（離れる知らせへの返事を
+  // 待っている間は）、新しく作らずにその接続を返す。ここでは返事が来ないまま（閉じきらない）にしておく。
+  const handles = new Map<string, ReturnType<LiveClient['channel']>>();
   const client: LiveClient = {
     channel(name) {
+      const existing = handles.get(name);
+      if (existing) return existing;
       const record: (typeof channels)[number] = { name, bindings: [], status: null };
       channels.push(record);
       const channel = {
@@ -44,6 +49,7 @@ function createFakeClient() {
           return channel;
         },
       };
+      handles.set(name, channel);
       return channel;
     },
     removeChannel,
@@ -153,14 +159,20 @@ describe('createLiveHub', () => {
     expect(fake.removeChannel).toHaveBeenCalledTimes(1);
   });
 
-  test('止めたあとにまた使えば、新しく接続する', () => {
+  // 結果LIVE を離れてすぐ戻ると、前の接続はまだ閉じている途中のことがある（電波が細いと数秒）。
+  // 同じ名前で作り直すと、Supabase はその閉じかけの接続を返し、購読がつながらないまま
+  // 「自動更新が止まっています」が出続ける。毎回別の名前で新しく作る。
+  test('止めてすぐにまた使っても（前の接続が閉じきる前でも）、新しく接続する', () => {
     const fake = createFakeClient();
     const hub = createLiveHub(() => fake.client);
 
     collect(hub).unsubscribe();
-    collect(hub);
+    const { events } = collect(hub);
 
     expect(fake.channels).toHaveLength(2);
+    expect(fake.channels[1].status).not.toBeNull();
+    fake.channels[1].status?.('SUBSCRIBED');
+    expect(events).toEqual([{ type: 'connection', state: 'live' }]);
   });
 
   test('止めたあとに届いた変化は渡さない', () => {
@@ -174,16 +186,7 @@ describe('createLiveHub', () => {
     expect(events.filter((event) => event.type === 'change')).toEqual([]);
   });
 
-  test('最初につながったときは、読み直す必要は無い（recovered ではない）', () => {
-    const fake = createFakeClient();
-    const { events } = collect(createLiveHub(() => fake.client));
-
-    fake.setStatus('SUBSCRIBED');
-
-    expect(events).toEqual([{ type: 'connection', state: 'live', recovered: false }]);
-  });
-
-  test('途切れたら down。つながり直したら recovered で知らせる', () => {
+  test('つながったら live、途切れたら down、つながり直したら live を伝える', () => {
     const fake = createFakeClient();
     const { events } = collect(createLiveHub(() => fake.client));
 
@@ -192,9 +195,9 @@ describe('createLiveHub', () => {
     fake.setStatus('SUBSCRIBED');
 
     expect(events).toEqual([
-      { type: 'connection', state: 'live', recovered: false },
-      { type: 'connection', state: 'down', recovered: false },
-      { type: 'connection', state: 'live', recovered: true },
+      { type: 'connection', state: 'live' },
+      { type: 'connection', state: 'down' },
+      { type: 'connection', state: 'live' },
     ]);
   });
 
@@ -212,7 +215,7 @@ describe('createLiveHub', () => {
     ).toHaveLength(1);
   });
 
-  test('一度もつながらないまま失敗したときも down。そのあとつながれば recovered', () => {
+  test('一度もつながらないまま失敗したときも down。そのあとつながれば live', () => {
     const fake = createFakeClient();
     const { events } = collect(createLiveHub(() => fake.client));
 
@@ -220,8 +223,8 @@ describe('createLiveHub', () => {
     fake.setStatus('SUBSCRIBED');
 
     expect(events).toEqual([
-      { type: 'connection', state: 'down', recovered: false },
-      { type: 'connection', state: 'live', recovered: true },
+      { type: 'connection', state: 'down' },
+      { type: 'connection', state: 'live' },
     ]);
   });
 
@@ -233,7 +236,7 @@ describe('createLiveHub', () => {
 
     const late = collect(hub);
 
-    expect(late.events).toEqual([{ type: 'connection', state: 'live', recovered: false }]);
+    expect(late.events).toEqual([{ type: 'connection', state: 'live' }]);
   });
 });
 
@@ -242,9 +245,9 @@ describe('useLiveUpdates', () => {
     const fake = createFakeClient();
     const hub = createLiveHub(() => fake.client);
     const onChange = vi.fn();
-    const onRecovered = vi.fn();
+    const onConnected = vi.fn();
 
-    const { result, unmount } = renderHook(() => useLiveUpdates({ onChange, onRecovered }, hub));
+    const { result, unmount } = renderHook(() => useLiveUpdates({ onChange, onConnected }, hub));
     expect(result.current).toBe('connecting');
 
     act(() => fake.setStatus('SUBSCRIBED'));
@@ -257,13 +260,42 @@ describe('useLiveUpdates', () => {
 
     act(() => fake.setStatus('CHANNEL_ERROR'));
     expect(result.current).toBe('down');
-    expect(onRecovered).not.toHaveBeenCalled();
 
     act(() => fake.setStatus('SUBSCRIBED'));
     expect(result.current).toBe('live');
-    expect(onRecovered).toHaveBeenCalledTimes(1);
 
     unmount();
     expect(fake.removeChannel).toHaveBeenCalledTimes(1);
+  });
+
+  // 購読は、つながる前に起きた変化を届けない。開いたときも、サーバーが読んでからつながるまでの
+  // 変化（試合の終了・始まり）を取りこぼすので、最初につながったときも読み直す。
+  test('開いて最初につながったときも、途切れてからつながり直したときも、onConnected を 1 回ずつ呼ぶ', () => {
+    const fake = createFakeClient();
+    const hub = createLiveHub(() => fake.client);
+    const onConnected = vi.fn();
+    renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
+
+    act(() => fake.setStatus('SUBSCRIBED'));
+    expect(onConnected).toHaveBeenCalledTimes(1);
+
+    act(() => fake.setStatus('CHANNEL_ERROR'));
+    act(() => fake.setStatus('TIMED_OUT'));
+    expect(onConnected).toHaveBeenCalledTimes(1);
+
+    act(() => fake.setStatus('SUBSCRIBED'));
+    expect(onConnected).toHaveBeenCalledTimes(2);
+  });
+
+  test('つながっている接続を途中から使い始めた画面も、onConnected を 1 回呼ぶ', () => {
+    const fake = createFakeClient();
+    const hub = createLiveHub(() => fake.client);
+    renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected: vi.fn() }, hub));
+    act(() => fake.setStatus('SUBSCRIBED'));
+
+    const onConnected = vi.fn();
+    renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
+
+    expect(onConnected).toHaveBeenCalledTimes(1);
   });
 });

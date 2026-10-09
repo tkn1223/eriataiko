@@ -14,7 +14,7 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 
 type LiveConnection = 'connecting' | 'live' | 'down';
 const liveMock = vi.hoisted(() => ({
-  handlers: null as { onChange: (change: LiveChange) => void; onRecovered: () => void } | null,
+  handlers: null as { onChange: (change: LiveChange) => void; onConnected: () => void } | null,
   setConnection: null as ((connection: LiveConnection) => void) | null,
 }));
 vi.mock('@/ui/courts/use-live-updates', async () => {
@@ -1096,6 +1096,139 @@ describe('CourtsPage', () => {
     });
   });
 
+  /**
+   * 読み直しの最中に届いた変化と、自分が送った点の戻り（知らせの届く順番）。
+   * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md の「作りの結果」。
+   */
+  describe('読み直しと、届く順番', () => {
+    function deliver(change: LiveChange) {
+      act(() => liveMock.handlers!.onChange(change));
+    }
+
+    function rerenderWith(view: ReturnType<typeof renderPage>, board: CourtMatch[]) {
+      view.rerender(
+        <CourtsPage
+          board={board}
+          stageLabel="予選リーグ"
+          completedMatches={2}
+          totalMatches={48}
+          canInput
+          emptyReason={null}
+          truncated={false}
+        />
+      );
+    }
+
+    const MATCH_1_DONE: LiveChange = {
+      kind: 'match',
+      matchId: 'match-1',
+      status: 'done',
+      courtNumber: 1,
+      orderInCourt: 1,
+      finishedAt: '2026-10-09T01:00:00+00:00',
+      maxGameCount: 1,
+    };
+
+    test('読み直しの間に届いた試合の終了は、読み直した一覧（それより前に読んだもの）で消されない', async () => {
+      const view = renderPage({ canInput: false });
+      act(() => liveMock.handlers!.onConnected());
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+      // 読み直しの返事が来る前に、コート 1 の試合が終わった知らせが届く
+      deliver(MATCH_1_DONE);
+      expect(within(screen.getByTestId('court-card-1')).getByText('呼出待ち')).toBeInTheDocument();
+
+      // 届いた一覧は、終わる前に読んだもの（コート 1 はまだ進行中）
+      rerenderWith(view, boardFromCourts(buildCourts()));
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).queryByText('LIVE')).toBeNull()
+      );
+      expect(within(screen.getByTestId('court-card-1')).getByText('呼出待ち')).toBeInTheDocument();
+    });
+
+    test('読み直していないときに届いた変化は、あとの読み直しで当て直さない（読み直した一覧のほうが新しい）', async () => {
+      const view = renderPage({ canInput: false });
+      deliver({ kind: 'score', matchId: 'match-2', gameNumber: 1, sideAScore: 15, sideBScore: 11 });
+
+      act(() => liveMock.handlers!.onConnected());
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
+      // 読み直した一覧では、さらに点が進んでいる
+      rerenderWith(
+        view,
+        boardFromCourts(buildCourts()).map((match) =>
+          match.matchId === 'match-2'
+            ? { ...match, scores: [{ gameNumber: 1, sideAScore: 16, sideBScore: 11 }] }
+            : match
+        )
+      );
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-2')).getByText('16')).toBeInTheDocument()
+      );
+    });
+
+    test('送れた直後に、自分の 1 つ前の点の知らせが遅れて届いても、数字は戻らない', async () => {
+      renderPage({ canInput: true });
+      const card = screen.getByTestId('court-card-1');
+      const plus = within(card).getByRole('button', {
+        name: '佐々木・井上の第1ゲームの得点を1増やす',
+      });
+
+      fireEvent.click(plus); // 21 を送る
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      fireEvent.click(plus); // 22 を送る
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+      await act(async () => {}); // 22 の返事（保存できた）を受け取る
+
+      // 21 の知らせが、22 の返事より遅れて届く
+      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 19 });
+      expect(within(card).getByText('22')).toBeInTheDocument();
+
+      // そこで押しても、22 の次（23）を送る（21 の次の 22 をもう一度送らない）
+      fireEvent.click(plus);
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
+      expect(JSON.parse(vi.mocked(fetch).mock.calls[2][1]?.body as string)).toMatchObject({
+        sideAScore: 23,
+      });
+    });
+
+    test('自分の点が戻ってきたあとに届いた他の人の点は、そのまま映る', async () => {
+      renderPage({ canInput: true });
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+      await act(async () => {});
+
+      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 19 });
+      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 20 });
+
+      expect(within(card).getAllByText('20')).toHaveLength(1);
+      expect(within(card).getByText('21')).toBeInTheDocument();
+    });
+
+    test('自分の終了が読み直しの最中に受け付けられても、読み直した一覧で進行中に戻らない', async () => {
+      const view = renderPage({ canInput: true });
+      act(() => liveMock.handlers!.onConnected());
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
+
+      // 届いた一覧は、終了する前に読んだもの
+      rerenderWith(view, boardFromCourts(buildCourts()));
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).queryByText('LIVE')).toBeNull()
+      );
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+    });
+  });
+
   describe('自動更新が途切れたとき', () => {
     test('つながっている間と、開いた直後は案内を出さない', () => {
       renderPage();
@@ -1125,10 +1258,10 @@ describe('CourtsPage', () => {
       expect(screen.getByText(/自動更新が止まっています/)).toBeInTheDocument();
     });
 
-    test('つながり直したら、1 回だけ読み直す', async () => {
+    test('つながったら（開いて最初も、つながり直しも）、1 回だけ読み直す', async () => {
       renderPage();
 
-      act(() => liveMock.handlers!.onRecovered());
+      act(() => liveMock.handlers!.onConnected());
 
       await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
       await new Promise((resolve) => setTimeout(resolve, 600));
@@ -1252,6 +1385,36 @@ describe('CourtsPage', () => {
       );
       expect(within(row).getByRole('button', { name: '直す' })).toBeEnabled();
       expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
+    });
+
+    test('取り消せなかったあとで、別の人が直してもう一度終了したら、古い「取り消せませんでした」は消える', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      renderPage({ board: boardWithPrevious() });
+      reopenOnCourt1();
+      const row = () => screen.getByTestId('previous-match-1');
+      await waitFor(() =>
+        expect(within(row()).getByRole('status')).toHaveTextContent('取り消せませんでした')
+      );
+
+      const reopenedByOther: LiveChange = {
+        kind: 'match',
+        matchId: 'match-prev',
+        status: 'live',
+        courtNumber: 1,
+        orderInCourt: 1,
+        finishedAt: null,
+        maxGameCount: 1,
+      };
+      act(() => liveMock.handlers!.onChange(reopenedByOther));
+      act(() =>
+        liveMock.handlers!.onChange({
+          ...reopenedByOther,
+          status: 'done',
+          finishedAt: '2026-10-09T02:00:00+00:00',
+        })
+      );
+
+      expect(within(row()).queryByText(/取り消せませんでした/)).not.toBeInTheDocument();
     });
 
     test('入口に断られたときは、入口が返した理由が出る', async () => {

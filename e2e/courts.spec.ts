@@ -60,6 +60,16 @@ function courtCard(page: import('@playwright/test').Page, courtNumber: number) {
 }
 
 /**
+ * 他の人の変化を受け取る購読（Realtime の WebSocket）をつながらないままにする
+ * （電波が細くて、まだつながっていない状態）。
+ * 「別の人が終了した試合に、知らずに点を入れて断られる」を作るのに使う。購読がつながると、
+ * 終了の知らせや、つながったときの読み直しで画面が先に切り替わり、点を押せなくなる。
+ */
+async function keepRealtimeDisconnected(page: import('@playwright/test').Page) {
+  await page.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => socket.close());
+}
+
+/**
  * 折り返さない塊（whitespace-nowrap の span など）が 2 行にまたがっていないかを実測する。
  * 行が変わったかは矩形の上端で見る。矩形の「数」で見ると、React が
  * 「9 - 7」のような文字列を細かい text ノードに分けたときに 1 行でも複数になり、
@@ -813,6 +823,7 @@ test.describe('保存（1-b）', () => {
 
   test('入口に断られたとき（終了済み）は、その理由がコートに出る', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
+    await keepRealtimeDisconnected(page);
     await page.goto('/courts');
 
     const card = courtCard(page, REJECT_COURT_NUMBER);
@@ -826,6 +837,7 @@ test.describe('保存（1-b）', () => {
 
   test('送れていない点があるまま画面を閉じようとすると確認が出る', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
+    await keepRealtimeDisconnected(page);
     await page.goto('/courts');
 
     const card = courtCard(page, REJECT_COURT_NUMBER);
@@ -1059,6 +1071,7 @@ test.describe('保存（1-b）', () => {
     }) => {
       await enterAsPlayer(page, '愛知南', 'たろう');
       await page.setViewportSize({ width, height: 844 });
+      await keepRealtimeDisconnected(page);
       await page.goto('/courts');
 
       const card = courtCard(page, REJECT_COURT_NUMBER);

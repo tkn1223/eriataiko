@@ -218,10 +218,16 @@ export function buildCourtsView(input: CourtsViewInput): CourtsView {
 
   // 画面に渡す元データ。コートごとの 1 つ前だけを足す（古い終わった試合は渡さない。
   // 画面に渡るデータは、そのまま通信量になる）。
-  const board = [
-    ...remainingMatches,
-    ...newestFinishedPerCourt(input.previousMatches).filter((m) => m.status === 'done'),
-  ].map((match) => toCourtMatch(match, input.myParticipantId, classLabelById));
+  // コート用と 1 つ前の元は同時に別々に読むので、その間に終わった・取り消された試合は両方に入りうる。
+  // 同じ試合が 2 つあると、届いた変化が片方にしか当たらず、進行中と 1 つ前に二重に出るので、
+  // コート用のほうを残す（どちらが新しいかは分からないが、つながったときの読み直しで直る）。
+  const remainingIds = new Set(remainingMatches.map((m) => m.matchId));
+  const previousCandidates = input.previousMatches.filter(
+    (m) => m.status === 'done' && !remainingIds.has(m.matchId)
+  );
+  const board = [...remainingMatches, ...newestFinishedPerCourt(previousCandidates)].map((match) =>
+    toCourtMatch(match, input.myParticipantId, classLabelById)
+  );
   const courts = deriveCourts(board);
 
   const hasCardWithMatch = courts.some(

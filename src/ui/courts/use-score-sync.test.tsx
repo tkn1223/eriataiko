@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
+import { appScoreSyncStore, ECHO_WAIT_MS, useScoreSync } from '@/ui/courts/use-score-sync';
 
 /**
  * `use-score-sync.ts` のテスト。DOM（window の beforeunload・タイマー）が要るので
@@ -330,7 +330,7 @@ describe('useScoreSync', () => {
         first.result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
       });
 
-      expect(second.result.current.statusByMatchId['m']?.unsentScores).toEqual([
+      expect(second.result.current.statusByMatchId['m']?.pendingScores).toEqual([
         { gameNumber: 1, sideAScore: 1, sideBScore: 0 },
       ]);
     });
@@ -357,7 +357,7 @@ describe('useScoreSync', () => {
         finishRetrying: false,
         finishRejectedMessage: null,
         started: true,
-        unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
+        pendingScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
     });
 
@@ -376,11 +376,13 @@ describe('useScoreSync', () => {
       });
       first.unmount();
       await vi.advanceTimersByTimeAsync(1000);
+      // 購読での戻りを待ちきるまでたつ（戻り待ちは下の describe で確かめる）
+      await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
 
       const returned = renderHook(() => useScoreSync());
 
       expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
-      expect(returned.result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+      expect(returned.result.current.statusByMatchId['m']?.pendingScores).toEqual([]);
     });
 
     test('離れている間に返事が戻ってきても（成功）、印が付け替わる', async () => {
@@ -400,9 +402,18 @@ describe('useScoreSync', () => {
       await act(async () => {
         resolveFirst(jsonResponse(200, { ok: true }));
       });
+      // 購読で戻ってきた
+      act(() => {
+        appScoreSyncStore.noteRemoteScore({
+          matchId: 'm',
+          gameNumber: 1,
+          sideAScore: 3,
+          sideBScore: 1,
+        });
+      });
 
       const returned = renderHook(() => useScoreSync());
-      expect(returned.result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+      expect(returned.result.current.statusByMatchId['m']?.pendingScores).toEqual([]);
       expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
     });
 
@@ -460,11 +471,11 @@ describe('useScoreSync', () => {
         finishRetrying: false,
         finishRejectedMessage: null,
         started: true,
-        unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
+        pendingScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
     });
 
-    test('未送信の数字は、送信中のあいだも含めて、保存できたら無くなる', async () => {
+    test('手元の数字は、送信中も、送れて購読で戻ってくるまでも残り、戻ってきたら無くなる', async () => {
       let resolveFirst!: (response: Response) => void;
       vi.mocked(fetch).mockImplementationOnce(
         () =>
@@ -477,12 +488,127 @@ describe('useScoreSync', () => {
       act(() => {
         result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 });
       });
-      expect(result.current.statusByMatchId['m']?.unsentScores).toHaveLength(1);
+      expect(result.current.statusByMatchId['m']?.pendingScores).toHaveLength(1);
 
       await act(async () => {
         resolveFirst(jsonResponse(200, { ok: true }));
       });
-      expect(result.current.statusByMatchId['m']?.unsentScores).toEqual([]);
+      expect(result.current.statusByMatchId['m']?.pendingScores).toHaveLength(1);
+
+      act(() => {
+        appScoreSyncStore.noteRemoteScore({
+          matchId: 'm',
+          gameNumber: 1,
+          sideAScore: 3,
+          sideBScore: 1,
+        });
+      });
+      expect(result.current.statusByMatchId['m']?.pendingScores).toEqual([]);
+    });
+  });
+
+  /**
+   * 送れた点が購読（Realtime）で戻ってくるまでは、手元の値を優先する（戻り待ち）。
+   * 購読の知らせは書いた順に届くが、保存の返事より遅れることがある。自分の 1 つ前の値の知らせで
+   * 数字が戻らないようにする（use-score-sync.ts の先頭の説明）。
+   */
+  describe('戻り待ち（送れた点が購読で戻ってくるまで）', () => {
+    const KEY = { matchId: 'm', gameNumber: 1 };
+
+    function pendingOf(result: { current: ReturnType<typeof useScoreSync> }) {
+      return result.current.statusByMatchId['m']?.pendingScores ?? [];
+    }
+
+    function echo(sideAScore: number, sideBScore: number) {
+      act(() => appScoreSyncStore.noteRemoteScore({ ...KEY, sideAScore, sideBScore }));
+    }
+
+    async function sendAndSave(
+      result: { current: ReturnType<typeof useScoreSync> },
+      sideAScore: number
+    ) {
+      act(() => result.current.sync({ ...KEY, sideAScore, sideBScore: 0 }));
+      await act(async () => {});
+    }
+
+    test('5 → 6 と送れたあと、5 の知らせが遅れて届いても、手元の 6 を優先したまま。6 が戻ったら優先をやめる', async () => {
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { ok: true }));
+      const { result } = renderHook(() => useScoreSync());
+      await sendAndSave(result, 5);
+      await sendAndSave(result, 6);
+
+      echo(5, 0);
+      expect(pendingOf(result)).toEqual([{ gameNumber: 1, sideAScore: 6, sideBScore: 0 }]);
+
+      echo(6, 0);
+      expect(pendingOf(result)).toEqual([]);
+    });
+
+    test('自分の最後の値が戻る前に届いた別の値（それより前に書かれた他の人の点）では、優先をやめない', async () => {
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { ok: true }));
+      const { result } = renderHook(() => useScoreSync());
+      await sendAndSave(result, 5);
+
+      echo(4, 2);
+
+      expect(pendingOf(result)).toEqual([{ gameNumber: 1, sideAScore: 5, sideBScore: 0 }]);
+    });
+
+    test('戻ってこないまま待ちきったら、優先をやめる（接続が途切れていた・まだ購読していなかった）', async () => {
+      vi.useFakeTimers();
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { ok: true }));
+      const { result } = renderHook(() => useScoreSync());
+      await sendAndSave(result, 5);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS - 1);
+      });
+      expect(pendingOf(result)).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(pendingOf(result)).toEqual([]);
+    });
+
+    test('送れなかった値は待たない（送り直して届いた 1 回ぶんの戻りで、優先をやめる）', async () => {
+      vi.mocked(fetch)
+        .mockRejectedValueOnce(new Error('network down'))
+        .mockResolvedValue(jsonResponse(200, { ok: true }));
+      const { result } = renderHook(() => useScoreSync());
+      await sendAndSave(result, 5); // つながらない
+      await sendAndSave(result, 5); // 押し直して、同じ値が届く
+
+      echo(5, 0);
+
+      expect(pendingOf(result)).toEqual([]);
+    });
+
+    test('つながったとき（forgetAwaitingEchoes）は、それより前に送れた値を待つのをやめる。送信中の値は待ち続ける', async () => {
+      let resolveSecond!: (response: Response) => void;
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(jsonResponse(200, { ok: true }))
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveSecond = resolve;
+            })
+        );
+      const { result } = renderHook(() => useScoreSync());
+      await sendAndSave(result, 5);
+      act(() => appScoreSyncStore.forgetAwaitingEchoes());
+      expect(pendingOf(result)).toEqual([]);
+
+      act(() => result.current.sync({ ...KEY, sideAScore: 6, sideBScore: 0 })); // 送信中
+      act(() => appScoreSyncStore.forgetAwaitingEchoes());
+      await act(async () => {
+        resolveSecond(jsonResponse(200, { ok: true }));
+      });
+      // 6 は送信中だったので、届いたあとも戻りを待っている
+      expect(pendingOf(result)).toEqual([{ gameNumber: 1, sideAScore: 6, sideBScore: 0 }]);
+
+      echo(6, 0);
+      expect(pendingOf(result)).toEqual([]);
     });
   });
 
@@ -576,8 +702,10 @@ describe('useScoreSync', () => {
       act(() => {
         result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
       });
-      // 送信中も「まだ届いていない」ので確認は出る。返事（成功）が戻って、預かりが空になるまで待つ。
-      await waitFor(() => expect(result.current.statusByMatchId['m']?.unsentScores).toEqual([]));
+      // 送信中も「まだ届いていない」ので確認は出る。返事（成功）が戻るまで待つ。
+      // 購読での戻りを待っている間は、もう届いているので確認は出さない。
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await act(async () => {});
 
       expect(dispatchBeforeUnload()).toBe(false);
     });

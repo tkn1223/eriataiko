@@ -21,7 +21,7 @@ const UI_COMPONENT_FILES = [
   // Supabase の画面側の鍵でも書かない（AGENTS.md の「破ってはいけない 3 つ」の 1 番目）。
   'src/ui/courts/use-score-sync.ts',
   'src/ui/courts/save-retry-policy.ts',
-  'src/ui/courts/overlay-unsent-scores.ts',
+  'src/ui/courts/overlay-pending-scores.ts',
   'src/ui/courts/apply-live-change.ts',
   'src/ui/courts/derive-courts.ts',
   'src/ui/courts/live-board.ts',

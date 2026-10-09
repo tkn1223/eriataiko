@@ -53,40 +53,40 @@ function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> 
   };
 }
 
-const NO_UNSENT: Record<string, Pick<MatchSyncState, 'unsentScores'>> = {};
+const NO_PENDING: Record<string, Pick<MatchSyncState, 'pendingScores'>> = {};
 
-function unsentOf(matchId: string, gameNumber: number, a: number, b: number) {
+function pendingOf(matchId: string, gameNumber: number, a: number, b: number) {
   return {
     [matchId]: {
-      unsentScores: [{ gameNumber, sideAScore: a, sideBScore: b }],
+      pendingScores: [{ gameNumber, sideAScore: a, sideBScore: b }],
     },
-  } satisfies Record<string, Pick<MatchSyncState, 'unsentScores'>>;
+  } satisfies Record<string, Pick<MatchSyncState, 'pendingScores'>>;
 }
 
 describe('届いた点を当てる', () => {
   test('届いた行は、その試合のその枠の点になる', () => {
-    const result = applyLiveChange([match()], scoreChange(), NO_UNSENT);
+    const result = applyLiveChange([match()], scoreChange(), NO_PENDING);
 
     expect(result.board[0].scores).toEqual([{ gameNumber: 1, sideAScore: 11, sideBScore: 8 }]);
     expect(result.needsRefresh).toBe(false);
   });
 
   test('まだ無かった枠の点が届いたら、枠が足される（枠の番号順）', () => {
-    const result = applyLiveChange([match()], scoreChange({ gameNumber: 2 }), NO_UNSENT);
+    const result = applyLiveChange([match()], scoreChange({ gameNumber: 2 }), NO_PENDING);
 
     expect(result.board[0].scores.map((score) => score.gameNumber)).toEqual([1, 2]);
   });
 
   test('ほかの試合の点は動かない', () => {
     const board = [match(), match({ matchId: 'm-2', courtNumber: 2 })];
-    const result = applyLiveChange(board, scoreChange({ matchId: 'm-2' }), NO_UNSENT);
+    const result = applyLiveChange(board, scoreChange({ matchId: 'm-2' }), NO_PENDING);
 
     expect(result.board[0]).toBe(board[0]);
   });
 
   test('送れていない手元の点は、届いた古い点で上書きされない', () => {
     const board = [match({ scores: [{ gameNumber: 1, sideAScore: 12, sideBScore: 8 }] })];
-    const result = applyLiveChange(board, scoreChange(), unsentOf('m-1', 1, 12, 8));
+    const result = applyLiveChange(board, scoreChange(), pendingOf('m-1', 1, 12, 8));
 
     expect(result.board).toBe(board);
     expect(result.needsRefresh).toBe(false);
@@ -94,14 +94,18 @@ describe('届いた点を当てる', () => {
 
   test('送れていないのが別の枠なら、届いた枠の点は当たる', () => {
     const board = [match()];
-    const result = applyLiveChange(board, scoreChange({ gameNumber: 1 }), unsentOf('m-1', 2, 5, 0));
+    const result = applyLiveChange(
+      board,
+      scoreChange({ gameNumber: 1 }),
+      pendingOf('m-1', 2, 5, 0)
+    );
 
     expect(result.board[0].scores[0].sideAScore).toBe(11);
   });
 
   test('手元に無い試合の点が届いたら、読み直しを求める（点は当てない）', () => {
     const board = [match()];
-    const result = applyLiveChange(board, scoreChange({ matchId: 'unknown' }), NO_UNSENT);
+    const result = applyLiveChange(board, scoreChange({ matchId: 'unknown' }), NO_PENDING);
 
     expect(result.board).toBe(board);
     expect(result.needsRefresh).toBe(true);
@@ -112,7 +116,7 @@ describe('届いた点を当てる', () => {
     const result = applyLiveChange(
       board,
       scoreChange({ sideAScore: 10, sideBScore: 8 }),
-      NO_UNSENT
+      NO_PENDING
     );
 
     expect(result.board).toBe(board);
@@ -128,7 +132,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const result = applyLiveChange(
       board,
       matchChange({ matchId: 'next', status: 'live', orderInCourt: 2 }),
-      NO_UNSENT
+      NO_PENDING
     );
 
     const [court] = deriveCourts(result.board);
@@ -143,7 +147,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const result = applyLiveChange(
       board,
       matchChange({ status: 'done', finishedAt: '2026-10-09T01:00:00+00:00' }),
-      NO_UNSENT
+      NO_PENDING
     );
 
     const [court] = deriveCourts(result.board);
@@ -157,7 +161,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const board = [
       match({ status: 'done', finishedAt: '2026-10-09T01:00:00+00:00', reopened: false }),
     ];
-    const result = applyLiveChange(board, matchChange({ status: 'live' }), NO_UNSENT);
+    const result = applyLiveChange(board, matchChange({ status: 'live' }), NO_PENDING);
 
     expect(result.board[0].status).toBe('live');
     expect(result.board[0].finishedAt).toBeNull();
@@ -169,7 +173,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const result = applyLiveChange(
       board,
       matchChange({ status: 'done', finishedAt: '2026-10-09T02:00:00+00:00' }),
-      NO_UNSENT
+      NO_PENDING
     );
 
     expect(result.board[0].reopened).toBe(false);
@@ -180,7 +184,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const result = applyLiveChange(
       board,
       matchChange({ courtNumber: 4, orderInCourt: 7 }),
-      NO_UNSENT
+      NO_PENDING
     );
 
     expect(deriveCourts(result.board).map((court) => court.courtNumber)).toEqual([4]);
@@ -189,7 +193,7 @@ describe('届いた試合の状態の変化を当てる', () => {
 
   test('手元に無い試合の状態の変化が届いたら、読み直しを求める', () => {
     const board = [match()];
-    const result = applyLiveChange(board, matchChange({ matchId: 'unknown' }), NO_UNSENT);
+    const result = applyLiveChange(board, matchChange({ matchId: 'unknown' }), NO_PENDING);
 
     expect(result.board).toBe(board);
     expect(result.needsRefresh).toBe(true);
@@ -197,7 +201,7 @@ describe('届いた試合の状態の変化を当てる', () => {
 
   test('何も変わらない状態の届き（自分の書き込みの echo など）は、一覧を作り直さない', () => {
     const board = [match()];
-    const result = applyLiveChange(board, matchChange(), NO_UNSENT);
+    const result = applyLiveChange(board, matchChange(), NO_PENDING);
 
     expect(result.board).toBe(board);
     expect(result.needsRefresh).toBe(false);
@@ -208,7 +212,7 @@ describe('届いた試合の状態の変化を当てる', () => {
     const result = applyLiveChange(
       board,
       matchChange({ status: 'done', finishedAt: '2026-10-09T01:00:00+00:00' }),
-      unsentOf('m-1', 1, 12, 8)
+      pendingOf('m-1', 1, 12, 8)
     );
 
     expect(result.board[0].scores).toEqual([{ gameNumber: 1, sideAScore: 12, sideBScore: 8 }]);

@@ -39,21 +39,22 @@ export type LiveChangeResult = {
   needsRefresh: boolean;
 };
 
-/** 預かり場所の中身のうち、ここで見る部分（まだ送れていない点）だけ。 */
-type UnsentByMatchId = Record<string, Pick<MatchSyncState, 'unsentScores'>>;
+/** 預かり場所の中身のうち、ここで見る部分（届いた点より優先する手元の点）だけ。 */
+type PendingByMatchId = Record<string, Pick<MatchSyncState, 'pendingScores'>>;
 
 function applyScore(
   board: CourtMatch[],
   change: Extract<LiveChange, { kind: 'score' }>,
-  unsentByMatchId: UnsentByMatchId
+  pendingByMatchId: PendingByMatchId
 ): LiveChangeResult {
   const target = board.find((match) => match.matchId === change.matchId);
   if (!target) return { board, needsRefresh: true };
 
-  // 手元で押して、まだサーバーに届いたと確かめられていない点は、届いた点より優先する。
-  // 届いたのは自分の少し前の点や、他の人の古い点かもしれない。上書きすると押した点が消えて見える。
-  const unsent = unsentByMatchId[change.matchId]?.unsentScores ?? [];
-  if (unsent.some((score) => score.gameNumber === change.gameNumber)) {
+  // 手元で押して、まだサーバーに届いていない・届いたが購読でまだ戻ってきていない点は、
+  // 届いた点より優先する。届いたのは自分の少し前の点や、他の人の古い点かもしれない。
+  // 上書きすると押した点が消えて見え、そこで押すと 1 点ぶん数えそこねる。
+  const pending = pendingByMatchId[change.matchId]?.pendingScores ?? [];
+  if (pending.some((score) => score.gameNumber === change.gameNumber)) {
     return { board, needsRefresh: false };
   }
 
@@ -120,10 +121,10 @@ function applyMatch(
 export function applyLiveChange(
   board: CourtMatch[],
   change: LiveChange,
-  unsentByMatchId: UnsentByMatchId
+  pendingByMatchId: PendingByMatchId
 ): LiveChangeResult {
   return change.kind === 'score'
-    ? applyScore(board, change, unsentByMatchId)
+    ? applyScore(board, change, pendingByMatchId)
     : applyMatch(board, change);
 }
 

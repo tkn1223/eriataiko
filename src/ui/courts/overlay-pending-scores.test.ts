@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest';
-import { overlayUnsentScores } from '@/ui/courts/overlay-unsent-scores';
+import { overlayPendingScores } from '@/ui/courts/overlay-pending-scores';
 import type { CourtMatch, MatchSyncState } from '@/ui/courts/types';
 
 /**
- * サーバーから読んだ試合の一覧に、アプリの中で預かっている「まだ送れていない点」を重ねる。
+ * サーバーから読んだ試合の一覧に、アプリの中で預かっている「手元の点」（送れていない点と、
+ * 送れたが購読でまだ戻ってきていない点）を重ねる。
  * 結果LIVE を開いた（別の画面から戻った）とき、読み直したとき、どちらもこれを通す。
  * 重ねないと、押したはずの点が消えて見える（押した点はサーバーにまだ無いため）。
  * 仕様 2026-10-04 の「送れていない点がある間に結果LIVE に戻ると、押した数字のまま」。
@@ -36,29 +37,29 @@ function syncState(overrides: Partial<MatchSyncState>): MatchSyncState {
     finishRetrying: false,
     finishRejectedMessage: null,
     started: false,
-    unsentScores: [],
+    pendingScores: [],
     ...overrides,
   };
 }
 
-describe('overlayUnsentScores', () => {
+describe('overlayPendingScores', () => {
   test('未送信が無ければ、サーバーから読んだ一覧をそのまま返す', () => {
     const board = [match()];
 
-    expect(overlayUnsentScores(board, true, {})).toBe(board);
+    expect(overlayPendingScores(board, true, {})).toBe(board);
   });
 
   test('サーバーの数字と未送信の数字が違うときは、未送信の数字を優先する', () => {
-    const result = overlayUnsentScores([match()], true, {
-      'match-live': syncState({ unsentScores: [{ gameNumber: 1, sideAScore: 9, sideBScore: 6 }] }),
+    const result = overlayPendingScores([match()], true, {
+      'match-live': syncState({ pendingScores: [{ gameNumber: 1, sideAScore: 9, sideBScore: 6 }] }),
     });
 
     expect(result[0].scores).toEqual([{ gameNumber: 1, sideAScore: 9, sideBScore: 6 }]);
   });
 
   test('未送信が無いゲームはサーバーの数字のまま。未送信のゲームだけ置き換わり、ゲーム番号順に並ぶ', () => {
-    const result = overlayUnsentScores([match()], true, {
-      'match-live': syncState({ unsentScores: [{ gameNumber: 2, sideAScore: 1, sideBScore: 0 }] }),
+    const result = overlayPendingScores([match()], true, {
+      'match-live': syncState({ pendingScores: [{ gameNumber: 2, sideAScore: 1, sideBScore: 0 }] }),
     });
 
     expect(result[0].scores).toEqual([
@@ -68,12 +69,12 @@ describe('overlayUnsentScores', () => {
   });
 
   test('呼出待ち（未実施）の試合に押した点も、送れていなければ戻る', () => {
-    const result = overlayUnsentScores(
+    const result = overlayPendingScores(
       [match({ matchId: 'match-next', status: 'waiting', scores: [] })],
       true,
       {
         'match-next': syncState({
-          unsentScores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }],
+          pendingScores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }],
         }),
       }
     );
@@ -83,8 +84,8 @@ describe('overlayUnsentScores', () => {
 
   test('観戦者には、未送信があっても数字を混ぜない（観戦者は点を入れない）', () => {
     const board = [match()];
-    const result = overlayUnsentScores(board, false, {
-      'match-live': syncState({ unsentScores: [{ gameNumber: 1, sideAScore: 9, sideBScore: 6 }] }),
+    const result = overlayPendingScores(board, false, {
+      'match-live': syncState({ pendingScores: [{ gameNumber: 1, sideAScore: 9, sideBScore: 6 }] }),
     });
 
     expect(result).toBe(board);
@@ -92,8 +93,10 @@ describe('overlayUnsentScores', () => {
 
   test('別の試合の未送信は混ざらない', () => {
     const board = [match()];
-    const result = overlayUnsentScores(board, true, {
-      'match-other': syncState({ unsentScores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] }),
+    const result = overlayPendingScores(board, true, {
+      'match-other': syncState({
+        pendingScores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }],
+      }),
     });
 
     expect(result[0].scores).toEqual([{ gameNumber: 1, sideAScore: 8, sideBScore: 6 }]);

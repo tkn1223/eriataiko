@@ -24,16 +24,7 @@ import type { CourtMatchStatus } from '@/ui/courts/types';
 export type LiveConnection = 'connecting' | 'live' | 'down';
 
 export type LiveHubEvent =
-  | { type: 'change'; change: LiveChange }
-  | {
-      type: 'connection';
-      state: LiveConnection;
-      /**
-       * 途切れていたのが、つながり直した。間に入った変化を取り戻すため、呼び出し側が 1 回だけ
-       * 読み直す。開いて最初につながったときは false（サーバーが読んだばかりなので読み直さない）。
-       */
-      recovered: boolean;
-    };
+  { type: 'change'; change: LiveChange } | { type: 'connection'; state: LiveConnection };
 
 type Listener = (event: LiveHubEvent) => void;
 
@@ -117,6 +108,8 @@ export function createLiveHub(getClient: () => LiveClient): LiveHub {
   let client: LiveClient | null = null;
   let channel: LiveChannel | null = null;
   let state: LiveConnection = 'connecting';
+  /** 接続を作るたびに増やす番号。接続の名前に入れる（下の start の説明）。 */
+  let generation = 0;
 
   function emit(event: LiveHubEvent) {
     for (const listener of listeners) listener(event);
@@ -125,7 +118,11 @@ export function createLiveHub(getClient: () => LiveClient): LiveHub {
   function start() {
     state = 'connecting';
     client = getClient();
-    const current = client.channel('courts-live');
+    // 毎回別の名前で作る。Supabase は、同じ名前の接続が閉じている途中（離れる知らせへの返事待ち。
+    // 電波が細いと数秒）だと新しく作らずにそれを返し、その接続は二度とつながらない。
+    // 結果LIVE を離れてすぐ戻ったときに「自動更新が止まっています」が出続けてしまう。
+    generation += 1;
+    const current = client.channel(`courts-live-${generation}`);
     channel = current;
 
     const deliver =
@@ -157,16 +154,15 @@ export function createLiveHub(getClient: () => LiveClient): LiveHub {
         if (channel !== current) return;
 
         if (status === 'SUBSCRIBED') {
-          const recovered = state === 'down';
           state = 'live';
-          emit({ type: 'connection', state, recovered });
+          emit({ type: 'connection', state });
           return;
         }
         // 途切れ・失敗・時間切れ。Supabase は自動でつなぎ直すので、つながれば SUBSCRIBED が再び来る。
         // 続けて何度来ても、案内は 1 回だけ出す。
         if (state !== 'down') {
           state = 'down';
-          emit({ type: 'connection', state, recovered: false });
+          emit({ type: 'connection', state });
         }
       });
   }
@@ -185,7 +181,7 @@ export function createLiveHub(getClient: () => LiveClient): LiveHub {
         start();
       } else {
         // 途中から使い始めた人にも、いまの状態をすぐ伝える
-        listener({ type: 'connection', state, recovered: false });
+        listener({ type: 'connection', state });
       }
 
       return () => {
@@ -207,24 +203,40 @@ export const appLiveHub: LiveHub = createLiveHub(
 
 type Handlers = {
   onChange: (change: LiveChange) => void;
-  /** 途切れていたのが、つながり直した。ここで 1 回だけ読み直す。 */
-  onRecovered: () => void;
+  /**
+   * つながった（開いて最初に・途切れてからつながり直した）。ここで 1 回だけ読み直す。
+   * 購読は、つながる前に起きた変化を届けない。開いたときも、サーバーが読んでから
+   * つながるまでの数秒（体育館の電波では 10 秒近く）に起きた変化は届かない。点は次の 1 点で
+   * 追いつくが、試合の終了・始まり・取り消しは、そのコートの次の変化まで古いまま残り、
+   * 終わった試合が「直し中」に化けたり、観戦者に始まった試合が「呼出待ち」のまま見えたりする。
+   */
+  onConnected: () => void;
 };
 
 /** 結果LIVE を開いている間だけ、変化を受け取る。離れたら止める。戻り値は接続の状態。 */
 export function useLiveUpdates(handlers: Handlers, hub: LiveHub = appLiveHub): LiveConnection {
   const [connection, setConnection] = useState<LiveConnection>('connecting');
 
-  const handleEvent = useEffectEvent((event: LiveHubEvent) => {
+  const handleEvent = useEffectEvent((event: LiveHubEvent, becameLive: boolean) => {
     if (event.type === 'change') {
       handlers.onChange(event.change);
       return;
     }
     setConnection(event.state);
-    if (event.recovered) handlers.onRecovered();
+    if (becameLive) handlers.onConnected();
   });
 
-  useEffect(() => hub.subscribe(handleEvent), [hub]);
+  useEffect(() => {
+    // 「つながった」は、この画面から見て live でなかったのが live になったとき。
+    // 接続はアプリ全体で 1 本なので、途中から使い始めた画面には、いまの状態（live）が最初に届く。
+    // その画面も、自分が読み込んでからつながるまでの変化は受け取っていないので、同じく読み直す。
+    let live = false;
+    return hub.subscribe((event) => {
+      const becameLive = event.type === 'connection' && event.state === 'live' && !live;
+      if (event.type === 'connection') live = event.state === 'live';
+      handleEvent(event, becameLive);
+    });
+  }, [hub]);
 
   return connection;
 }

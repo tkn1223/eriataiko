@@ -40,6 +40,14 @@ import type { MatchSyncState } from '@/ui/courts/types';
  *
  * 送るか諦めるかの判断は `save-retry-policy.ts`。画面を離れても返事は反映し、送り直しも続ける。
  *
+ * **送れた点も、購読（Realtime）で戻ってくるまでは手元の値を優先する（戻り待ち）。**
+ * 購読の知らせは書いた順に届くが、保存の返事より遅れることがある。5 → 6 と送り、6 の返事が
+ * 先に来たあとで 5 の知らせが届くと、数字が 5 に戻って見え、そこで ＋ を押すと 6 をもう一度送って
+ * 1 点数えそこねる。そこで、送った値を順に覚えておき、届いた知らせが自分の送った値と一致したら
+ * そこまでを消す。自分の最後の値が戻ってくるまでに届いた別の値は、それより前に書かれた古い値なので
+ * 当てない（`noteRemoteScore` と `pendingScores`）。戻ってこないまま `ECHO_WAIT_MS` たったら諦める
+ * （接続が途切れていた・開いた直後でまだ購読していなかった、など）。
+ *
  * **書き方について**: このアプリは React Compiler 向けの ESLint ルール
  * （`react-hooks/refs` など）を有効にしている。「描画（レンダー）の最中に ref を読み書きしない」
  * が特に強いルールなので、進行中の送信をたくさん覚えておく置き場は `useRef` ではなく、
@@ -71,6 +79,12 @@ export type UseScoreSyncResult = {
 };
 
 const RETRYING_MESSAGE = '保存できていません・送り直しています';
+/**
+ * 送れた点が購読で戻ってくるのを待つ長さ。購読の知らせは混んでいると数秒遅れることがあるので長めに取る。
+ * 長すぎても困るのは、同じゲームを別の人も入れていて、かつ自分の知らせが失われたときに、
+ * 相手の点が映るのがこの長さだけ遅れることだけ（担当の表示が入るまでは 2 人で入れない運用）。
+ */
+export const ECHO_WAIT_MS = 10_000;
 /** 点が入口に断られているので、終了は送らなかった。点の側の理由は別に出ている。 */
 const FINISH_BLOCKED_MESSAGE = '点が保存できていないため、試合の終了は送っていません。';
 
@@ -89,6 +103,13 @@ type GameSyncState = {
   retryingMessage: string | null;
   rejectedMessage: string | null;
   retryTimer: ReturnType<typeof setTimeout> | null;
+  /**
+   * 送ったが、購読でまだ戻ってきていない値（送った順）。送れなかった値は取り除く。
+   * ファイル先頭の「戻り待ち」を参照。
+   */
+  awaitingEcho: Score[];
+  /** 戻り待ちを諦めるタイマー（最後に保存できてから `ECHO_WAIT_MS`）。 */
+  echoTimer: ReturnType<typeof setTimeout> | null;
   /**
    * 一度でも 0 対 0 以外の点を押したか。あとで 0 対 0 に戻しても true のまま。
    * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
@@ -127,6 +148,16 @@ function isUnsent(game: GameSyncState): boolean {
   return game.inFlight || !sameScore(game.savedAsOf, game.desired);
 }
 
+/** 届いた点より手元の値を優先する間か（送れていない、または送れたが購読でまだ戻ってきていない）。 */
+function isPending(game: GameSyncState): boolean {
+  return isUnsent(game) || game.awaitingEcho.length > 0;
+}
+
+function clearEchoTimer(game: GameSyncState) {
+  if (game.echoTimer) clearTimeout(game.echoTimer);
+  game.echoTimer = null;
+}
+
 /**
  * 進行中の送信をぜんぶ覚えておく置き場。**React の外**（ref でも state でもない、
  * ただの JavaScript のオブジェクト）に持つ。描画からは `useSyncExternalStore` 経由でだけ見る。
@@ -140,6 +171,16 @@ export type ScoreSyncStore = {
    * 画面を離れていて受け取る人がいなくても、送り直しは続く。
    */
   subscribeFinished: (listener: (matchId: string) => void) => () => void;
+  /**
+   * 購読で届いた点を知らせる。自分が送った値の戻りなら、そこまでの戻り待ちを消す。
+   * 画面に当ててよいかは、このあとの `pendingScores` で決まる（まだ手元が優先なら当てない）。
+   */
+  noteRemoteScore: (input: ScoreSyncInput) => void;
+  /**
+   * 戻り待ちをすべて諦める。購読がつながった（つながり直した）とき、それより前に送った値の戻りは
+   * もう届かないので呼ぶ（待ち続けると、そのゲームの他の人の点を `ECHO_WAIT_MS` のあいだ当てそこねる）。
+   */
+  forgetAwaitingEchoes: () => void;
   /** `useSyncExternalStore` に渡す。呼ぶたびに同じ中身なら同じ参照を返す。 */
   getSnapshot: () => Record<string, MatchSyncState>;
   subscribe: (listener: Listener) => () => void;
@@ -194,9 +235,9 @@ export function createScoreSyncStore(): ScoreSyncStore {
         finishRetrying: false,
         finishRejectedMessage: null,
         started: (existing?.started ?? false) || game.pointPressed,
-        unsentScores: [
-          ...(existing?.unsentScores ?? []),
-          ...(isUnsent(game) ? [{ gameNumber: game.gameNumber, ...game.desired }] : []),
+        pendingScores: [
+          ...(existing?.pendingScores ?? []),
+          ...(isPending(game) ? [{ gameNumber: game.gameNumber, ...game.desired }] : []),
         ],
       };
     }
@@ -206,7 +247,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
         retryingMessage: null,
         rejectedMessage: null,
         started: false,
-        unsentScores: [],
+        pendingScores: [],
       };
       next[finish.matchId] = {
         ...existing,
@@ -231,6 +272,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
     game.inFlight = true;
     game.retryTimer = null;
     const sending = game.desired;
+    game.awaitingEcho.push(sending);
 
     sendRequest({
       url: `/api/matches/${game.matchId}/scores`,
@@ -245,6 +287,8 @@ export function createScoreSyncStore(): ScoreSyncStore {
       const current = games.get(key);
       if (current !== game) return;
       current.inFlight = false;
+      // 届かなかった値は戻ってこない（届いていたとしても、戻りは他の人の点と同じ扱いで構わない）
+      if (!result.ok) current.awaitingEcho = current.awaitingEcho.filter((s) => s !== sending);
 
       // 画面を離れていても返事は反映する。返事を捨てると、保存できたのに「まだ保存できていない」と
       // 覚えたままになる（仕様 2026-10-04 の決めたこと 3）。
@@ -254,6 +298,12 @@ export function createScoreSyncStore(): ScoreSyncStore {
         current.retryingMessage = null;
         current.rejectedMessage = null;
         current.savedAsOf = sending;
+        clearEchoTimer(current);
+        current.echoTimer = setTimeout(() => {
+          current.echoTimer = null;
+          current.awaitingEcho = [];
+          notify();
+        }, ECHO_WAIT_MS);
         // 送っている間にさらに値が変わっていれば、最新の値をもう 1 回送る
         if (!sameScore(current.savedAsOf, current.desired)) attemptSend(key);
         // この試合の点が全部届いたなら、待たせていた終了を送る
@@ -358,6 +408,8 @@ export function createScoreSyncStore(): ScoreSyncStore {
           retryingMessage: null,
           rejectedMessage: null,
           retryTimer: null,
+          awaitingEcho: [],
+          echoTimer: null,
           pointPressed: false,
         };
         games.set(key, game);
@@ -398,6 +450,33 @@ export function createScoreSyncStore(): ScoreSyncStore {
       notify();
     },
 
+    noteRemoteScore(input) {
+      const game = games.get(keyOf(input.matchId, input.gameNumber));
+      if (!game || game.awaitingEcho.length === 0) return;
+
+      // 同じ値を 2 回送っていることがある（5 → 4 → 5）。古いほうの戻りから順に消す。
+      const echoed = game.awaitingEcho.findIndex((score) => sameScore(score, input));
+      if (echoed < 0) return;
+      game.awaitingEcho = game.awaitingEcho.slice(echoed + 1);
+      if (game.awaitingEcho.length === 0) clearEchoTimer(game);
+      notify();
+    },
+
+    forgetAwaitingEchoes() {
+      let changed = false;
+      for (const game of games.values()) {
+        if (game.awaitingEcho.length === 0) continue;
+        // 送信中の値（送るたびに末尾に足すので、いちばん後ろ）は、つながったあとに書かれて
+        // 戻ってくることがあるので残す
+        const keep = game.inFlight ? game.awaitingEcho.slice(-1) : [];
+        if (keep.length === game.awaitingEcho.length) continue;
+        game.awaitingEcho = keep;
+        if (keep.length === 0) clearEchoTimer(game);
+        changed = true;
+      }
+      if (changed) notify();
+    },
+
     subscribeFinished(listener) {
       finishedListeners.add(listener);
       return () => {
@@ -417,6 +496,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
     dispose() {
       for (const game of games.values()) {
         if (game.retryTimer) clearTimeout(game.retryTimer);
+        clearEchoTimer(game);
       }
       for (const finish of finishes.values()) {
         if (finish.retryTimer) clearTimeout(finish.retryTimer);

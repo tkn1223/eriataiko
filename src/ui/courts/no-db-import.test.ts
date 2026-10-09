@@ -15,6 +15,8 @@ const UI_COMPONENT_FILES = [
   'src/ui/courts/courts-page.tsx',
   'src/ui/courts/court-live-card.tsx',
   'src/ui/courts/finish-confirm-sheet.tsx',
+  'src/ui/courts/reopen-confirm-sheet.tsx',
+  'src/ui/courts/send-request.ts',
   // 送る・送り直す仕組み（use-score-sync.ts）は Route Handler 宛の fetch だけを使う。
   // Supabase の画面側の鍵でも書かない（AGENTS.md の「破ってはいけない 3 つ」の 1 番目）。
   'src/ui/courts/use-score-sync.ts',

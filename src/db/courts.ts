@@ -20,9 +20,13 @@ import type {
  * 1 本で兼ねていたころは、終わった試合ぶんだけ大会が進むほど重くなり、
  * 上限（100 件）を超えるとコートや消化数が**黙って**欠けた。
  *
+ * もう 1 つ、コートごとの「1 つ前」の元になる**最近終わった試合**を、上限つきで読む
+ * （終了の時刻が新しい順に `MAX_PREVIOUS_CANDIDATES` 件まで。終わった試合を全部は読まない）。
+ *
  * 当日いちばん開かれる画面で、体育館の電波は細い。順番待ちの段数を増やさないよう、
- * 大会の id が分かったあと、部・段と段ごとの件数・コート用の試合・自分の参加者情報の 4 回を
- * 同時に読む（`findCurrentCompetitionId` と合わせて 5 回・2 段。段の数が増えても回数は変わらない）。
+ * 大会の id が分かったあと、部・段と段ごとの件数・コート用の試合・最近終わった試合・
+ * 自分の参加者情報の 5 回を同時に読む（`findCurrentCompetitionId` と合わせて 6 回・2 段。
+ * 段の数が増えても回数は変わらない）。
  *
  * 一覧の上限（AGENTS.md の「一覧を読むクエリには .limit() を付ける」）は、
  * `src/db/snapshot.ts` と同じく**上限より 1 件多く読み**、超えたら `truncated` で分かるようにする
@@ -50,6 +54,16 @@ export const MAX_COURT_MATCHES = 200;
 const MAX_PLAYERS_PER_MATCH = 8;
 /** 決勝でも 3 ゲーム。上限ゲーム数を増やす運用にも耐えるよう余裕を持たせる。 */
 const MAX_GAME_SCORES_PER_MATCH = 10;
+/**
+ * 「1 つ前」の元にする、最近終わった試合の読み込み上限。
+ * ほしいのは**コートごとに一番新しい 1 つ**だけ。コートが 10 面あっても、動いているコートなら
+ * 直近 40 試合（1 面あたり平均 4 試合）のうちに必ず入る。逆に、ずっと前に最後の試合が終わった
+ * コートは入らないことがあるが、それは「さっきの試合を直す」場面ではない。
+ * 上限に届くのは普通のことなので、`withinLimit` のように「上限 + 1 件読んで欠けを知らせる」ことは
+ * しない（知らせると、欠けていない画面に「出しきれていません」の帯が出てしまう）。
+ * 1 試合ぶんが名前・得点つきで重いので、大きくしすぎない。
+ */
+export const MAX_PREVIOUS_CANDIDATES = 40;
 
 export type CourtsData = {
   /** 選手として入った人の participants.id。その大会に参加者情報が無ければ null。 */
@@ -59,6 +73,8 @@ export type CourtsData = {
   stages: CourtsViewStageRow[];
   /** 進行中（live）と未実施（waiting）の試合だけ。 */
   matches: CourtsViewMatchRow[];
+  /** 最近終わった試合（終了の時刻が新しい順。コートごとの「1 つ前」を選ぶ元）。 */
+  previousMatches: CourtsViewMatchRow[];
   /** どれかの読み込みが上限に達し、読み切れていない。 */
   truncated: boolean;
 };
@@ -83,10 +99,11 @@ export async function findCourtsData(
 ): Promise<CourtsData> {
   const supabase = createSupabaseServerClient();
 
-  const [divisions, stages, matches, myParticipantId] = await Promise.all([
+  const [divisions, stages, matches, previousMatches, myParticipantId] = await Promise.all([
     findDivisions(supabase, competitionId),
     findStagesWithCounts(supabase, competitionId),
     findCourtMatches(supabase, competitionId),
+    findRecentlyFinishedMatches(supabase, competitionId),
     playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
   ]);
 
@@ -95,6 +112,7 @@ export async function findCourtsData(
     divisions: divisions.rows,
     stages: stages.rows,
     matches: matches.rows,
+    previousMatches,
     truncated: divisions.overflowed || stages.overflowed || matches.overflowed,
   };
 }
@@ -157,17 +175,15 @@ function sumCounts(countsPerMatchup: { count: number }[][]): number {
 }
 
 /**
- * コートに出す試合（進行中と未実施）を、対戦・チーム番号・出場者の名前・得点ごと 1 回で読む。
+ * 試合を、対戦・チーム番号・出場者の名前・得点ごと 1 回で読むための土台（コート用の試合と
+ * 「1 つ前」の元が同じ形で読めるよう、選ぶ列と埋め込みの上限を 1 か所にまとめている）。
  *
  * 大会で絞るのに `divisions!inner` を使う。matches 自身は大会の id を持たないが、
  * 部は必ず大会に属する（`matches.division_id` は not null）ので、ここを通せば 1 段で絞れる。
  * チームは matchups から 2 本（a 側・b 側）出ているので、外部キーの名前で向きを指定する。
- *
- * 上限を超えたとき**どの行が欠けるかが決まっている**よう、コート番号・順番で並べる
- * （欠けるのはコートが未定の試合と、番号の大きいコートのほう）。
  */
-async function findCourtMatches(supabase: SupabaseReadClient, competitionId: string) {
-  const { data, error } = await supabase
+function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
+  return supabase
     .from('matches')
     .select(
       `id, status, max_game_count, court_number, order_in_court, finished_at, division_id,
@@ -181,55 +197,85 @@ async function findCourtMatches(supabase: SupabaseReadClient, competitionId: str
       game_scores(game_number, side_a_score, side_b_score)`
     )
     .eq('divisions.competition_id', competitionId)
+    .limit(MAX_PLAYERS_PER_MATCH, { referencedTable: 'match_players' })
+    .limit(MAX_GAME_SCORES_PER_MATCH, { referencedTable: 'game_scores' });
+}
+
+type MatchRow = NonNullable<Awaited<ReturnType<typeof selectMatchRows>>['data']>[number];
+
+function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
+  const players = match.match_players.map((row) => ({
+    side: row.side,
+    participantId: row.participant_id,
+    orderInPair: row.order_in_pair,
+    name: row.participants.players.name,
+  }));
+
+  return {
+    matchId: match.id,
+    status: match.status,
+    maxGameCount: match.max_game_count,
+    courtNumber: match.court_number,
+    orderInCourt: match.order_in_court,
+    finishedAt: match.finished_at,
+    divisionId: match.division_id,
+    stageId: match.matchups.stage_id,
+    roundName: match.matchups.round_name,
+    sideA: toSideRow(
+      match.matchups.side_a_team?.team_number ?? null,
+      match.matchups.side_a_slot_label,
+      players,
+      'a'
+    ),
+    sideB: toSideRow(
+      match.matchups.side_b_team?.team_number ?? null,
+      match.matchups.side_b_slot_label,
+      players,
+      'b'
+    ),
+    gameScores: match.game_scores.map((row) => ({
+      gameNumber: row.game_number,
+      sideAScore: row.side_a_score,
+      sideBScore: row.side_b_score,
+    })),
+  };
+}
+
+/**
+ * コートに出す試合（進行中と未実施）を、対戦・チーム番号・出場者の名前・得点ごと 1 回で読む。
+ *
+ * 上限を超えたとき**どの行が欠けるかが決まっている**よう、コート番号・順番で並べる
+ * （欠けるのはコートが未定の試合と、番号の大きいコートのほう）。
+ */
+async function findCourtMatches(supabase: SupabaseReadClient, competitionId: string) {
+  const { data, error } = await selectMatchRows(supabase, competitionId)
     .in('status', ['live', 'waiting'])
     .order('court_number', { ascending: true })
     .order('order_in_court', { ascending: true })
-    .limit(MAX_PLAYERS_PER_MATCH, { referencedTable: 'match_players' })
-    .limit(MAX_GAME_SCORES_PER_MATCH, { referencedTable: 'game_scores' })
     .limit(MAX_COURT_MATCHES + 1);
   if (error) throw error;
 
   const { rows, overflowed } = withinLimit(data ?? [], MAX_COURT_MATCHES);
+  return { rows: rows.map(toViewMatchRow), overflowed };
+}
 
-  const matches: CourtsViewMatchRow[] = rows.map((match) => {
-    const players = match.match_players.map((row) => ({
-      side: row.side,
-      participantId: row.participant_id,
-      orderInPair: row.order_in_pair,
-      name: row.participants.players.name,
-    }));
+/**
+ * 最近終わった試合を、終了の時刻が新しい順に `MAX_PREVIOUS_CANDIDATES` 件まで読む。
+ * コートごとの「1 つ前」を選ぶ元（選ぶのは `build-courts-view.ts`）。
+ *
+ * 終了の時刻が無い試合（取り込んだだけで一度も画面から終了していない）と、コートが決まっていない
+ * 試合は、新しさも行き先も決められないので読まない。
+ */
+async function findRecentlyFinishedMatches(supabase: SupabaseReadClient, competitionId: string) {
+  const { data, error } = await selectMatchRows(supabase, competitionId)
+    .eq('status', 'done')
+    .not('finished_at', 'is', null)
+    .not('court_number', 'is', null)
+    .order('finished_at', { ascending: false })
+    .limit(MAX_PREVIOUS_CANDIDATES);
+  if (error) throw error;
 
-    return {
-      matchId: match.id,
-      status: match.status,
-      maxGameCount: match.max_game_count,
-      courtNumber: match.court_number,
-      orderInCourt: match.order_in_court,
-      finishedAt: match.finished_at,
-      divisionId: match.division_id,
-      stageId: match.matchups.stage_id,
-      roundName: match.matchups.round_name,
-      sideA: toSideRow(
-        match.matchups.side_a_team?.team_number ?? null,
-        match.matchups.side_a_slot_label,
-        players,
-        'a'
-      ),
-      sideB: toSideRow(
-        match.matchups.side_b_team?.team_number ?? null,
-        match.matchups.side_b_slot_label,
-        players,
-        'b'
-      ),
-      gameScores: match.game_scores.map((row) => ({
-        gameNumber: row.game_number,
-        sideAScore: row.side_a_score,
-        sideBScore: row.side_b_score,
-      })),
-    };
-  });
-
-  return { rows: matches, overflowed };
+  return (data ?? []).map(toViewMatchRow);
 }
 
 function toSideRow(

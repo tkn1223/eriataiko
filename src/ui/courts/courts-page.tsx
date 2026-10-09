@@ -4,12 +4,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
-import { applyLiveChange, type LiveChange } from '@/ui/courts/apply-live-change';
-import { CourtLiveCard } from '@/ui/courts/court-live-card';
+import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
+import { CourtLiveCard, type FixActions, type ReopenState } from '@/ui/courts/court-live-card';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import { createLiveBoard } from '@/ui/courts/live-board';
 import { overlayUnsentScores } from '@/ui/courts/overlay-unsent-scores';
 import { createRefreshScheduler } from '@/ui/courts/refresh-scheduler';
+import { shouldRetry } from '@/ui/courts/save-retry-policy';
+import { sendRequest } from '@/ui/courts/send-request';
 import {
   activeMatchId,
   type CourtMatch,
@@ -81,6 +83,10 @@ function EmptyCourtsNotice({ reason }: { reason: CourtsEmptyReason }) {
   );
 }
 
+/** 終了の取り消しがつながらない・サーバーの一時的な失敗で届かなかったとき。自動では送り直さない。 */
+const REOPEN_RETRY_MESSAGE = '取り消せませんでした。電波を確かめて、もう一度押してください。';
+const REOPEN_REJECTED_FALLBACK = '取り消せませんでした。画面を更新してから確認してください。';
+
 /** 読み直しの依頼をまとめる間隔（src/ui/courts/refresh-scheduler.ts）。 */
 const REFRESH_SETTLE_MS = 300;
 const REFRESH_MIN_INTERVAL_MS = 3000;
@@ -144,7 +150,14 @@ export function CourtsPage({
   useEffect(() => {
     if (renderedServerBoard.current === serverBoard) return;
     renderedServerBoard.current = serverBoard;
-    liveBoard.set(overlayUnsentScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()));
+    // 取り消して直している試合の印（表には痕が残らない）も引き継ぐ
+    liveBoard.set(
+      overlayUnsentScores(
+        carryOverReopened(serverBoard, liveBoard.get()),
+        canInput,
+        appScoreSyncStore.getSnapshot()
+      )
+    );
   }, [serverBoard, canInput, liveBoard]);
 
   // 読み直しは、依頼をまとめて連続しないようにする。
@@ -192,13 +205,11 @@ export function CourtsPage({
 
   const courts = useMemo(() => deriveCourts(board), [board]);
 
-  /** 1 コート・1 ゲームの枠の得点を 1 点だけ動かし、その点数を保存の入口に送る。 */
-  function changeScore(courtNumber: number, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
+  /** 1 つの試合の 1 ゲームの得点を 1 点だけ動かし、その点数を保存の入口に送る。 */
+  function changeScoreOfMatch(matchId: string, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
     const latestBoard = liveBoard.get();
-    const court = deriveCourts(latestBoard).find((c) => c.courtNumber === courtNumber);
-    const matchId = court ? activeMatchId(court, canInput) : null;
     const target = latestBoard.find((match) => match.matchId === matchId);
-    if (!matchId || !target) return;
+    if (!target) return;
 
     const index = target.scores.findIndex((score) => score.gameNumber === gameNumber);
     const existing = target.scores[index] ?? { gameNumber, sideAScore: 0, sideBScore: 0 };
@@ -223,18 +234,77 @@ export function CourtsPage({
     });
   }
 
+  /** そのコートで、いま点を入れられる試合（今の試合、無ければ呼出待ちの次の試合）の id。 */
+  function activeMatchIdOfCourt(courtNumber: number): string | null {
+    const court = deriveCourts(liveBoard.get()).find((c) => c.courtNumber === courtNumber);
+    return court ? activeMatchId(court, canInput) : null;
+  }
+
+  function changeScore(courtNumber: number, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
+    const matchId = activeMatchIdOfCourt(courtNumber);
+    if (matchId) changeScoreOfMatch(matchId, gameNumber, side, delta);
+  }
+
   /**
    * 確認画面の「OK」で呼ばれる。終了を預かり場所に載せる（点が届いてから送られる）。
    * 画面は「終了を送っています」を出し、記録されたら次の試合に切り替わる。
    */
   function finishMatch(courtNumber: number) {
-    const court = deriveCourts(liveBoard.get()).find((c) => c.courtNumber === courtNumber);
-    const matchId = court ? activeMatchId(court, canInput) : null;
-    if (!matchId) return;
-    finish(matchId);
+    const matchId = activeMatchIdOfCourt(courtNumber);
+    if (matchId) finish(matchId);
   }
 
-  const hasCardWithMatch = courts.some((court) => court.live !== null || court.next !== null);
+  // 終了の取り消し（「直す」）。点や終了と違って、自動では送り直さない（取り消しは押した人が
+  // 結果を見て決める操作で、勝手に繰り返すと、あとから別の人が終了したのを取り消してしまうため）。
+  // 失敗したら理由を出して、もう一度押してもらう。
+  const [reopenStates, setReopenStates] = useState<Record<string, ReopenState>>({});
+
+  async function reopenMatch(matchId: string) {
+    if (reopenStates[matchId]?.pending) return;
+    setReopenStates((previous) => ({ ...previous, [matchId]: { pending: true, error: null } }));
+
+    const result = await sendRequest({ url: `/api/matches/${matchId}/result`, method: 'DELETE' });
+
+    if (result.ok) {
+      setReopenStates((previous) => {
+        const rest = { ...previous };
+        delete rest[matchId];
+        return rest;
+      });
+      // 取り消されたら、その場で「直し中」にする（Realtime が止まっていても本人の画面は変わる）
+      liveBoard.set(
+        liveBoard
+          .get()
+          .map((match) =>
+            match.matchId === matchId
+              ? { ...match, status: 'live', finishedAt: null, reopened: true }
+              : match
+          )
+      );
+      return;
+    }
+
+    const error = shouldRetry(result)
+      ? REOPEN_RETRY_MESSAGE
+      : result.kind === 'http'
+        ? (result.message ?? REOPEN_REJECTED_FALLBACK)
+        : REOPEN_RETRY_MESSAGE;
+    setReopenStates((previous) => ({ ...previous, [matchId]: { pending: false, error } }));
+  }
+
+  /** 直し中の試合と 1 つ前に渡す操作。今の試合と違い、試合の id ごとに呼ぶ。 */
+  const fixActions: FixActions = {
+    syncStatusOf: (matchId) => statusByMatchId[matchId] ?? null,
+    reopenStateOf: (matchId) => reopenStates[matchId] ?? null,
+    onIncrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, 1),
+    onDecrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, -1),
+    onFinishMatch: (matchId) => finish(matchId),
+    onReopen: (matchId) => void reopenMatch(matchId),
+  };
+
+  const hasCardWithMatch = courts.some(
+    (court) => court.live !== null || court.next !== null || court.fixing.length > 0
+  );
   const shownEmptyReason = currentEmptyReason(board, hasCardWithMatch, emptyReason);
 
   return (
@@ -306,6 +376,7 @@ export function CourtsPage({
                 changeScore(court.courtNumber, gameNumber, side, -1)
               }
               onFinishMatch={() => finishMatch(court.courtNumber)}
+              fix={fixActions}
             />
           );
         })}

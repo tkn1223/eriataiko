@@ -53,17 +53,14 @@ function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> 
   };
 }
 
-const NO_UNSENT: Record<string, MatchSyncState> = {};
+const NO_UNSENT: Record<string, Pick<MatchSyncState, 'unsentScores'>> = {};
 
 function unsentOf(matchId: string, gameNumber: number, a: number, b: number) {
   return {
     [matchId]: {
-      retryingMessage: null,
-      rejectedMessage: null,
-      started: true,
       unsentScores: [{ gameNumber, sideAScore: a, sideBScore: b }],
     },
-  } satisfies Record<string, MatchSyncState>;
+  } satisfies Record<string, Pick<MatchSyncState, 'unsentScores'>>;
 }
 
 describe('届いた点を当てる', () => {

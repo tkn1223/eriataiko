@@ -19,6 +19,18 @@ function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
   return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
 }
 
+/** 保存の状況（案内なし）に、必要な部分だけ上書きする。 */
+function syncStatusOf(overrides: Partial<ScoreSyncStatus> = {}): ScoreSyncStatus {
+  return {
+    retryingMessage: null,
+    rejectedMessage: null,
+    finishing: false,
+    finishRetrying: false,
+    finishRejectedMessage: null,
+    ...overrides,
+  };
+}
+
 const baseLive: NonNullable<Court['live']> = {
   matchId: 'match-live-1',
   classLabel: { name: '2部', colorNumber: 2 },
@@ -296,10 +308,10 @@ describe('CourtLiveCard', () => {
   describe('保存の状況（syncStatus）', () => {
     test('送り直している間は「保存できていません」の案内が出る', () => {
       renderLiveCard({
-        syncStatus: {
+        syncStatus: syncStatusOf({
           retryingMessage: '保存できていません・送り直しています',
           rejectedMessage: null,
-        },
+        }),
       });
 
       expect(screen.getByRole('status')).toHaveTextContent('保存できていません・送り直しています');
@@ -307,10 +319,10 @@ describe('CourtLiveCard', () => {
 
     test('入口に断られたときは、その理由が出る', () => {
       renderLiveCard({
-        syncStatus: {
+        syncStatus: syncStatusOf({
           retryingMessage: null,
           rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
-        },
+        }),
       });
 
       expect(screen.getByRole('status')).toHaveTextContent(
@@ -319,7 +331,9 @@ describe('CourtLiveCard', () => {
     });
 
     test('保存できていれば何も出ない', () => {
-      renderLiveCard({ syncStatus: { retryingMessage: null, rejectedMessage: null } });
+      renderLiveCard({
+        syncStatus: syncStatusOf({ retryingMessage: null, rejectedMessage: null }),
+      });
 
       expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
     });
@@ -329,10 +343,10 @@ describe('CourtLiveCard', () => {
     test('試合が終了した状態でも、送り直している間は「保存できていません」が残る', () => {
       renderLiveCard({
         finished: true,
-        syncStatus: {
+        syncStatus: syncStatusOf({
           retryingMessage: '保存できていません・送り直しています',
           rejectedMessage: null,
-        },
+        }),
       });
 
       expect(screen.getByText('終了')).toBeInTheDocument();
@@ -342,10 +356,10 @@ describe('CourtLiveCard', () => {
     test('試合が終了した状態でも、入口に断られた理由は残る', () => {
       renderLiveCard({
         finished: true,
-        syncStatus: {
+        syncStatus: syncStatusOf({
           retryingMessage: null,
           rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
-        },
+        }),
       });
 
       expect(screen.getByRole('status')).toHaveTextContent('終了した試合です');
@@ -354,7 +368,7 @@ describe('CourtLiveCard', () => {
     test('試合が終了した状態で、送れていれば何も出ない', () => {
       renderLiveCard({
         finished: true,
-        syncStatus: { retryingMessage: null, rejectedMessage: null },
+        syncStatus: syncStatusOf({ retryingMessage: null, rejectedMessage: null }),
       });
 
       expect(screen.queryByRole('status')).not.toBeInTheDocument();
@@ -364,10 +378,10 @@ describe('CourtLiveCard', () => {
       renderLiveCard({
         canInput: false,
         finished: true,
-        syncStatus: {
+        syncStatus: syncStatusOf({
           retryingMessage: '保存できていません・送り直しています',
           rejectedMessage: null,
-        },
+        }),
       });
 
       expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();

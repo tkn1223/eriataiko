@@ -261,12 +261,10 @@ describe('CourtsPage', () => {
     expect(screen.getByText('0/3 試合消化')).toBeInTheDocument();
   });
 
-  test('選手には「試合の終了はまだ記録されません」の帯が出る', () => {
+  test('選手にも「試合の終了はまだ記録されません」の帯は出ない（終了が記録されるようになった）', () => {
     renderPage({ canInput: true });
 
-    expect(
-      screen.getByText('試合の終了はまだ記録されません（点は保存されます）')
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/試合の終了はまだ記録されません/)).not.toBeInTheDocument();
   });
 
   test('観戦者には帯が出ない', () => {
@@ -757,48 +755,166 @@ describe('CourtsPage', () => {
     });
   });
 
-  describe('送れていない点がある試合で「試合を終了する」を押したとき', () => {
+  /**
+   * 「試合を終了する」→「OK」で、終了を預かり場所（use-score-sync.ts）に載せる。
+   * 送れていない点があれば、点が届いてから終了を送る。押したら「終了を送っています」を出し、
+   * 記録されたらそのコートは次の試合に切り替わる。
+   */
+  describe('試合の終了を送る', () => {
+    type Handler = () => Promise<Response>;
+
+    function ok(): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    }
+
+    /** 点の保存（/scores）と終了（/result）の返事を、宛先ごとに決める。 */
+    function routeFetch(handlers: { scores?: Handler; result?: Handler }) {
+      vi.mocked(fetch).mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/scores')) return (handlers.scores ?? ok)();
+        if (url.endsWith('/result')) return (handlers.result ?? ok)();
+        throw new Error(`想定外の宛先: ${url}`);
+      });
+    }
+
+    function calledUrls() {
+      return vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    }
+
     function finishCourt1() {
       const card = screen.getByTestId('court-card-1');
       fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
-      return card;
     }
 
-    test('終了しても「保存できていません」の案内が消えない。送れたら消える', async () => {
-      vi.mocked(fetch)
-        .mockRejectedValueOnce(new Error('network down'))
-        .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-      renderPage();
-      const card = screen.getByTestId('court-card-1');
+    function pressPlusOnCourt1() {
       fireEvent.click(
-        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+        within(screen.getByTestId('court-card-1')).getByRole('button', {
+          name: '佐々木・井上の第1ゲームの得点を1増やす',
+        })
       );
-      await waitFor(() => expect(within(card).getByRole('status')).toBeInTheDocument());
+    }
 
-      finishCourt1();
+    test('確認画面を開いただけ、戻っただけでは、終了を送らない', () => {
+      routeFetch({});
+      renderPage();
 
-      expect(within(card).getByText('終了')).toBeInTheDocument();
-      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: '試合を終了する' })
+      );
+      fireEvent.click(screen.getByRole('button', { name: '戻る' }));
 
-      // 送り直しが成功すると、終了したカードからも案内が消える
-      await waitFor(() => expect(within(card).queryByRole('status')).not.toBeInTheDocument(), {
-        timeout: 3000,
-      });
+      expect(calledUrls()).toEqual([]);
     });
 
-    test('送れている試合を終了しても、案内は出ない', async () => {
+    test('OK を押すと終了を送り、送っている間は「終了を送っています」と終わった見た目になる', async () => {
+      routeFetch({ result: () => new Promise(() => {}) });
       renderPage();
-      const card = screen.getByTestId('court-card-1');
-      fireEvent.click(
-        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
-      );
-      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
 
       finishCourt1();
 
+      const card = screen.getByTestId('court-card-1');
+      expect(within(card).getByRole('status')).toHaveTextContent('終了を送っています');
       expect(within(card).getByText('終了')).toBeInTheDocument();
-      expect(within(card).queryByRole('status')).not.toBeInTheDocument();
+      expect(
+        within(card).queryByRole('button', { name: '試合を終了する' })
+      ).not.toBeInTheDocument();
+      expect(calledUrls()).toEqual(['/api/matches/match-1/result']);
+    });
+
+    test('終了が記録されると、そのコートは次の試合に切り替わる（読み直さない）', async () => {
+      routeFetch({});
+      renderPage();
+
+      finishCourt1();
+
+      // 終わった試合（佐々木・井上）は外れて、次の試合の呼出待ちになる
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('court-card-1')).queryByText('佐々木')
+        ).not.toBeInTheDocument()
+      );
+      const card = screen.getByTestId('court-card-1');
+      expect(within(card).getByText('呼出待ち')).toBeInTheDocument();
+      expect(within(card).getByText('川口')).toBeInTheDocument();
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    test('自動更新が止まっていても、終了が記録された本人の画面はその場で切り替わる', async () => {
+      routeFetch({});
+      renderPage();
+      act(() => liveMock.setConnection!('down'));
+
+      finishCourt1();
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('court-card-1')).queryByText('佐々木')
+        ).not.toBeInTheDocument()
+      );
+    });
+
+    test('送れていない点があるまま終了を押すと、点の案内と「終了を送っています」が出て、点が届くまで終了は送らない', async () => {
+      let attempt = 0;
+      routeFetch({
+        scores: () => {
+          attempt += 1;
+          return attempt === 1 ? Promise.reject(new Error('network down')) : ok();
+        },
+      });
+      renderPage();
+      pressPlusOnCourt1();
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toHaveTextContent(
+          '保存できていません'
+        )
+      );
+
+      finishCourt1();
+
+      const card = screen.getByTestId('court-card-1');
+      expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
+      expect(within(card).getByRole('status')).toHaveTextContent('終了を送っています');
+      expect(calledUrls()).toEqual(['/api/matches/match-1/scores']);
+
+      // 点の送り直しが成功したあとで、終了が送られる
+      await waitFor(
+        () =>
+          expect(calledUrls()).toEqual([
+            '/api/matches/match-1/scores',
+            '/api/matches/match-1/scores',
+            '/api/matches/match-1/result',
+          ]),
+        { timeout: 3000 }
+      );
+    });
+
+    test('終了を入口に断られたら、日本語の理由が出て、もう一度「試合を終了する」を押せる', async () => {
+      routeFetch({
+        result: () =>
+          Promise.resolve(
+            new Response(JSON.stringify({ error: '同点では終了できません。' }), { status: 400 })
+          ),
+      });
+      renderPage();
+
+      finishCourt1();
+
+      const card = screen.getByTestId('court-card-1');
+      await waitFor(() =>
+        expect(within(card).getByRole('status')).toHaveTextContent('同点では終了できません。')
+      );
+      expect(within(card).getByRole('status')).not.toHaveTextContent('終了を送っています');
+      expect(within(card).getByRole('button', { name: '試合を終了する' })).toBeInTheDocument();
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+    });
+
+    test('観戦者には、終了を送る仕組みが働かない（ボタンが出ない）', () => {
+      routeFetch({});
+      renderPage({ canInput: false });
+
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+      expect(calledUrls()).toEqual([]);
     });
   });
 

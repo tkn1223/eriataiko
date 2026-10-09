@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
-import { UnsavedNotice } from '@/ui/components/unsaved-notice';
 import { applyLiveChange, type LiveChange } from '@/ui/courts/apply-live-change';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
 import { deriveCourts } from '@/ui/courts/derive-courts';
@@ -82,9 +81,6 @@ function EmptyCourtsNotice({ reason }: { reason: CourtsEmptyReason }) {
   );
 }
 
-/** 試合の終了はまだ記録されない旨を、得点を入れる人（選手）にだけ出す。 */
-const PLAYER_UNSAVED_NOTICE = '試合の終了はまだ記録されません（点は保存されます）';
-
 /** 読み直しの依頼をまとめる間隔（src/ui/courts/refresh-scheduler.ts）。 */
 const REFRESH_SETTLE_MS = 300;
 const REFRESH_MIN_INTERVAL_MS = 3000;
@@ -134,7 +130,7 @@ export function CourtsPage({
   truncated,
 }: Props) {
   const router = useRouter();
-  const { sync, statusByMatchId } = useScoreSync();
+  const { sync, finish, statusByMatchId } = useScoreSync();
 
   // 開いたときの様子は、サーバーから読んだ試合に、アプリの中で預かっている「まだ送れていない点」を
   // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。overlay-unsent-scores.ts）。
@@ -173,8 +169,26 @@ export function CourtsPage({
     onRecovered: () => refreshScheduler.request(),
   });
 
-  // 試合の終了は、今は画面の中だけで終わった見た目にする（データベースへの記録はまだ）。
-  const [finishedMatchIds, setFinishedMatchIds] = useState<ReadonlySet<string>>(new Set());
+  // 終了が受け付けられたら、すぐ表に反映する（Realtime が止まっていても、押した本人の画面は変わる）。
+  // あとから本当の終了の時刻が届けば、それに置き換わる。
+  useEffect(
+    () =>
+      appScoreSyncStore.subscribeFinished((matchId) => {
+        liveBoard.set(
+          liveBoard.get().map((match) =>
+            match.matchId === matchId
+              ? {
+                  ...match,
+                  status: 'done',
+                  finishedAt: new Date().toISOString(),
+                  reopened: false,
+                }
+              : match
+          )
+        );
+      }),
+    [liveBoard]
+  );
 
   const courts = useMemo(() => deriveCourts(board), [board]);
 
@@ -209,12 +223,15 @@ export function CourtsPage({
     });
   }
 
-  /** 確認画面の「OK」で呼ばれる。そのコートを終了した見た目にする（記録はまだしない）。 */
+  /**
+   * 確認画面の「OK」で呼ばれる。終了を預かり場所に載せる（点が届いてから送られる）。
+   * 画面は「終了を送っています」を出し、記録されたら次の試合に切り替わる。
+   */
   function finishMatch(courtNumber: number) {
     const court = deriveCourts(liveBoard.get()).find((c) => c.courtNumber === courtNumber);
     const matchId = court ? activeMatchId(court, canInput) : null;
     if (!matchId) return;
-    setFinishedMatchIds((previous) => new Set(previous).add(matchId));
+    finish(matchId);
   }
 
   const hasCardWithMatch = courts.some((court) => court.live !== null || court.next !== null);
@@ -232,12 +249,6 @@ export function CourtsPage({
           {completedMatches}/{totalMatches} 試合消化
         </span>
       </div>
-
-      {canInput && (
-        <div className="mb-[14px]">
-          <UnsavedNotice text={PLAYER_UNSAVED_NOTICE} />
-        </div>
-      )}
 
       {connection === 'down' && (
         <p
@@ -271,7 +282,8 @@ export function CourtsPage({
             matchId && activeMatch
               ? {
                   scores: activeMatch.scores,
-                  finished: finishedMatchIds.has(matchId),
+                  // 終了を送っている間は、終わった見た目にする（記録されたら次の試合に切り替わる）
+                  finished: syncStatus?.finishing ?? false,
                   // 進行中の試合は最初から LIVE。呼出待ちの次の試合は、1 点でも入った（自分が押した・
                   // 他の人が入れた）時点で LIVE の見た目になり、0 対 0 に戻しても LIVE のまま。
                   started:

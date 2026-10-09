@@ -34,6 +34,9 @@ type Props = {
   onFinishMatch: () => void;
 };
 
+const FINISHING_MESSAGE = '終了を送っています';
+const FINISHING_RETRYING_MESSAGE = '終了を送っています・送り直しています';
+
 /**
  * 呼出待ちの次の試合を、進行中の試合と同じ形にして扱えるようにする。
  *
@@ -175,6 +178,19 @@ export function CourtLiveCard({
     };
   });
 
+  // 選手にだけ出す案内。点の保存の案内（断られた理由 > 送り直し中）と、終了の案内を並べる。
+  const statusLines: string[] = canInput
+    ? [
+        syncStatus?.rejectedMessage ?? syncStatus?.retryingMessage ?? null,
+        syncStatus?.finishRejectedMessage ?? null,
+        syncStatus?.finishing
+          ? syncStatus.finishRetrying
+            ? FINISHING_RETRYING_MESSAGE
+            : FINISHING_MESSAGE
+          : null,
+      ].filter((line): line is string => line !== null)
+    : [];
+
   function handleFinishClick() {
     if (!hasAnyPoint(scores)) {
       setNotice('まだ点が入っていません');
@@ -278,20 +294,18 @@ export function CourtLiveCard({
       )}
 
       {/* 送れていない点の案内は、試合を終了したあとも残す（仕様 2026-10-04 の決めたこと 4）。
-          終了の記録は 1-d まで画面の中だけで、点の保存とは別の話。ここで消すと、
-          送れていない点があるのに「保存できた」ように見える。 */}
-      {canInput &&
-        (syncStatus?.rejectedMessage ? (
-          <p role="status" className="text-live text-[13px] font-bold">
-            {syncStatus.rejectedMessage}
-          </p>
-        ) : (
-          syncStatus?.retryingMessage && (
-            <p role="status" className="text-live text-[13px] font-bold">
-              {syncStatus.retryingMessage}
+          「終了を送っています」は終了の記録がサーバーに受け付けられるまで出す。
+          ここで消すと、送れていない点があるのに「保存できた」ように見える。
+          案内は 1 つの status にまとめる（行ごとに別の status にすると、読み上げが重なる）。 */}
+      {statusLines.length > 0 && (
+        <div role="status" className="flex flex-col gap-0.5">
+          {statusLines.map((line) => (
+            <p key={line} className="text-live text-[13px] font-bold">
+              {line}
             </p>
-          )
-        ))}
+          ))}
+        </div>
+      )}
 
       {!finished && canInput && (
         <>

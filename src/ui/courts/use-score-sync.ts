@@ -2,12 +2,8 @@
 
 import { useSyncExternalStore } from 'react';
 import { hasAnyPoint } from '@/domain/scoring';
-import {
-  rejectionMessage,
-  retryDelayMs,
-  shouldRetry,
-  type SendResult,
-} from '@/ui/courts/save-retry-policy';
+import { rejectionMessage, retryDelayMs, shouldRetry } from '@/ui/courts/save-retry-policy';
+import { sendRequest } from '@/ui/courts/send-request';
 import type { MatchSyncState } from '@/ui/courts/types';
 
 /**
@@ -20,6 +16,11 @@ import type { MatchSyncState } from '@/ui/courts/types';
  * - つながらない／5xx／429 → 間隔を空けて自動で送り直す（save-retry-policy.ts の判断）
  * - それ以外の 4xx → 送り直さず、応答の日本語の理由を残す
  * - まだ保存できていない値がある間は、ブラウザを閉じる・更新しようとしたら確認を出す（beforeunload）
+ * - **試合の終了（`POST /api/matches/[matchId]/result`）も同じ預かり場所を通す。** 「試合を終了する」を
+ *   押したときに送れていない点があれば、予約して、その試合の点が全部届いてから終了を送る
+ *   （終了を先に送ると、サーバーにはまだ無い点を数えずに勝敗が決まってしまう）。押したあとは
+ *   「終了を送っています」を出し、得点係は待たずに別の画面や別のコートへ移れる
+ *   （仕様 docs/specs/2026-10-09-courts-live-and-finish.md の決めたこと 3）
  *
  * **預かる場所（`appScoreSyncStore`）はアプリ全体で 1 つ。** 結果LIVE の画面とは別に、
  * このファイルが読み込まれたときに 1 度だけ作り、ブラウザのタブを閉じる・更新するまで生き続ける。
@@ -58,6 +59,11 @@ export type UseScoreSyncResult = {
   /** そのゲームの「いまの点数」を送る。呼ぶたびに送りたい値を最新にする。 */
   sync: (input: ScoreSyncInput) => void;
   /**
+   * 試合の終了を送る。その試合の点が全部届いてから送り、失敗したら送り直す。
+   * 送っている途中にもう一度呼んでも、送るのは 1 本だけ。
+   */
+  finish: (matchId: string) => void;
+  /**
    * 試合 id ごとの案内と、まだ送れていない数字。表示するコートが `statusByMatchId[matchId]` を見る。
    * 一度でも送った試合だけが入る（送っていない試合は無い）。
    */
@@ -65,6 +71,8 @@ export type UseScoreSyncResult = {
 };
 
 const RETRYING_MESSAGE = '保存できていません・送り直しています';
+/** 点が入口に断られているので、終了は送らなかった。点の側の理由は別に出ている。 */
+const FINISH_BLOCKED_MESSAGE = '点が保存できていないため、試合の終了は送っていません。';
 
 type Score = { sideAScore: number; sideBScore: number };
 
@@ -90,50 +98,26 @@ type GameSyncState = {
   pointPressed: boolean;
 };
 
+type FinishState = {
+  matchId: string;
+  /**
+   * - waiting: その試合の点が全部届くのを待っている（まだ何も送っていない）
+   * - sending: 終了を送っている
+   * - retrying: 送れなかったので、間隔を空けて送り直すのを待っている
+   * - rejected: 送らない（入口に断られた・点が断られている）。もう一度押せば最初からやり直す
+   */
+  phase: 'waiting' | 'sending' | 'retrying' | 'rejected';
+  attempt: number;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  rejectedMessage: string | null;
+};
+
 function keyOf(matchId: string, gameNumber: number): string {
   return `${matchId}:${gameNumber}`;
 }
 
 function sameScore(a: Score | null, b: Score): boolean {
   return a !== null && a.sideAScore === b.sideAScore && a.sideBScore === b.sideBScore;
-}
-
-/** 応答の本文から日本語のエラーメッセージ（`{ error: string }`）を取り出す。取れなければ null。 */
-async function readErrorMessage(response: Response): Promise<string | null> {
-  try {
-    const body: unknown = await response.json();
-    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
-      return body.error;
-    }
-  } catch {
-    // 本文が JSON でない・空のときは既定文言（save-retry-policy.ts）に任せる
-  }
-  return null;
-}
-
-/**
- * 実際の送信。**画面側の Supabase クライアントでは書かない**（AGENTS.md の「破ってはいけない 3 つ」の 1）。
- * 必ず Route Handler（`/api/matches/[matchId]/scores`）宛の fetch。
- */
-async function sendScore(input: ScoreSyncInput): Promise<SendResult> {
-  let response: Response;
-  try {
-    response = await fetch(`/api/matches/${input.matchId}/scores`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        gameNumber: input.gameNumber,
-        sideAScore: input.sideAScore,
-        sideBScore: input.sideBScore,
-      }),
-    });
-  } catch {
-    return { ok: false, kind: 'network' };
-  }
-
-  if (response.ok) return { ok: true };
-  const message = await readErrorMessage(response);
-  return { ok: false, kind: 'http', status: response.status, message };
 }
 
 type Listener = () => void;
@@ -149,6 +133,13 @@ function isUnsent(game: GameSyncState): boolean {
  */
 export type ScoreSyncStore = {
   sync: (input: ScoreSyncInput) => void;
+  finish: (matchId: string) => void;
+  /**
+   * 試合の終了が入口に受け付けられたとき、その試合の id を受け取る。画面が「終わった」を
+   * 表に反映するのに使う（Realtime が止まっていても、押した本人の画面はすぐ変わる）。
+   * 画面を離れていて受け取る人がいなくても、送り直しは続く。
+   */
+  subscribeFinished: (listener: (matchId: string) => void) => () => void;
   /** `useSyncExternalStore` に渡す。呼ぶたびに同じ中身なら同じ参照を返す。 */
   getSnapshot: () => Record<string, MatchSyncState>;
   subscribe: (listener: Listener) => () => void;
@@ -161,7 +152,9 @@ export type ScoreSyncStore = {
 
 export function createScoreSyncStore(): ScoreSyncStore {
   const games = new Map<string, GameSyncState>();
+  const finishes = new Map<string, FinishState>();
   const listeners = new Set<Listener>();
+  const finishedListeners = new Set<(matchId: string) => void>();
   let snapshot: Record<string, MatchSyncState> = {};
   let unloadGuardInstalled = false;
 
@@ -178,7 +171,9 @@ export function createScoreSyncStore(): ScoreSyncStore {
 
   function syncUnloadGuard() {
     if (typeof window === 'undefined') return;
-    const needed = [...games.values()].some(isUnsent);
+    const needed =
+      [...games.values()].some(isUnsent) ||
+      [...finishes.values()].some((finish) => finish.phase !== 'rejected');
     if (needed && !unloadGuardInstalled) {
       window.addEventListener('beforeunload', handleBeforeUnload);
       unloadGuardInstalled = true;
@@ -195,11 +190,29 @@ export function createScoreSyncStore(): ScoreSyncStore {
       next[game.matchId] = {
         retryingMessage: existing?.retryingMessage ?? game.retryingMessage,
         rejectedMessage: existing?.rejectedMessage ?? game.rejectedMessage,
+        finishing: false,
+        finishRetrying: false,
+        finishRejectedMessage: null,
         started: (existing?.started ?? false) || game.pointPressed,
         unsentScores: [
           ...(existing?.unsentScores ?? []),
           ...(isUnsent(game) ? [{ gameNumber: game.gameNumber, ...game.desired }] : []),
         ],
+      };
+    }
+    // 終了だけを送っている試合（点は押していない）もここで入る
+    for (const finish of finishes.values()) {
+      const existing = next[finish.matchId] ?? {
+        retryingMessage: null,
+        rejectedMessage: null,
+        started: false,
+        unsentScores: [],
+      };
+      next[finish.matchId] = {
+        ...existing,
+        finishing: finish.phase !== 'rejected',
+        finishRetrying: finish.phase === 'retrying',
+        finishRejectedMessage: finish.phase === 'rejected' ? finish.rejectedMessage : null,
       };
     }
     snapshot = next;
@@ -219,7 +232,15 @@ export function createScoreSyncStore(): ScoreSyncStore {
     game.retryTimer = null;
     const sending = game.desired;
 
-    sendScore({ matchId: game.matchId, gameNumber: game.gameNumber, ...sending }).then((result) => {
+    sendRequest({
+      url: `/api/matches/${game.matchId}/scores`,
+      method: 'POST',
+      body: {
+        gameNumber: game.gameNumber,
+        sideAScore: sending.sideAScore,
+        sideBScore: sending.sideBScore,
+      },
+    }).then((result) => {
       // 返事を待っている間に dispose された（テストの後片付け）ときは何もしない
       const current = games.get(key);
       if (current !== game) return;
@@ -235,6 +256,8 @@ export function createScoreSyncStore(): ScoreSyncStore {
         current.savedAsOf = sending;
         // 送っている間にさらに値が変わっていれば、最新の値をもう 1 回送る
         if (!sameScore(current.savedAsOf, current.desired)) attemptSend(key);
+        // この試合の点が全部届いたなら、待たせていた終了を送る
+        startFinishIfReady(current.matchId);
         notify();
         return;
       }
@@ -252,6 +275,63 @@ export function createScoreSyncStore(): ScoreSyncStore {
       if (result.kind === 'http') {
         current.retryingMessage = null;
         current.rejectedMessage = rejectionMessage(result);
+        // 点が断られたままでは、終了を待たせ続けても送れない。理由を出して待つのをやめる
+        startFinishIfReady(current.matchId);
+        notify();
+      }
+    });
+  }
+
+  /**
+   * 終了を待たせている試合の点が全部届いていれば、終了を送る。
+   * 点が入口に断られたままなら、送らずに理由を出す（終了を先に送ると、サーバーに無い点を
+   * 数えずに勝敗が決まってしまうため）。まだ送っている・送り直し待ちの点があれば、何もしない。
+   */
+  function startFinishIfReady(matchId: string) {
+    const finish = finishes.get(matchId);
+    if (!finish || finish.phase !== 'waiting') return;
+
+    const matchGames = [...games.values()].filter((game) => game.matchId === matchId);
+    if (matchGames.some((game) => game.rejectedMessage !== null)) {
+      finish.phase = 'rejected';
+      finish.rejectedMessage = FINISH_BLOCKED_MESSAGE;
+      return;
+    }
+    if (matchGames.some(isUnsent)) return;
+
+    attemptFinish(matchId);
+  }
+
+  function attemptFinish(matchId: string) {
+    const finish = finishes.get(matchId);
+    if (!finish) return;
+
+    finish.phase = 'sending';
+    finish.retryTimer = null;
+    notify();
+
+    sendRequest({ url: `/api/matches/${matchId}/result`, method: 'POST' }).then((result) => {
+      // 返事を待っている間に dispose された（テストの後片付け）ときは何もしない
+      if (finishes.get(matchId) !== finish) return;
+
+      if (result.ok) {
+        finishes.delete(matchId);
+        notify();
+        for (const listener of finishedListeners) listener(matchId);
+        return;
+      }
+
+      if (shouldRetry(result)) {
+        finish.attempt += 1;
+        finish.phase = 'retrying';
+        finish.retryTimer = setTimeout(() => attemptFinish(matchId), retryDelayMs(finish.attempt));
+        notify();
+        return;
+      }
+
+      if (result.kind === 'http') {
+        finish.phase = 'rejected';
+        finish.rejectedMessage = rejectionMessage(result);
         notify();
       }
     });
@@ -299,6 +379,32 @@ export function createScoreSyncStore(): ScoreSyncStore {
       notify();
     },
 
+    finish(matchId) {
+      // サーバー側の描画では何も預からない（sync と同じ理由）
+      if (typeof window === 'undefined') return;
+
+      // 送っている途中の二重押しは、1 本にまとめる（断られたあとの押し直しだけ最初からやり直す）
+      const existing = finishes.get(matchId);
+      if (existing && existing.phase !== 'rejected') return;
+
+      finishes.set(matchId, {
+        matchId,
+        phase: 'waiting',
+        attempt: 0,
+        retryTimer: null,
+        rejectedMessage: null,
+      });
+      startFinishIfReady(matchId);
+      notify();
+    },
+
+    subscribeFinished(listener) {
+      finishedListeners.add(listener);
+      return () => {
+        finishedListeners.delete(listener);
+      };
+    },
+
     getSnapshot() {
       return snapshot;
     },
@@ -312,7 +418,11 @@ export function createScoreSyncStore(): ScoreSyncStore {
       for (const game of games.values()) {
         if (game.retryTimer) clearTimeout(game.retryTimer);
       }
+      for (const finish of finishes.values()) {
+        if (finish.retryTimer) clearTimeout(finish.retryTimer);
+      }
       games.clear();
+      finishes.clear();
       notify();
     },
   };
@@ -338,5 +448,5 @@ export function useScoreSync(): UseScoreSyncResult {
     () => EMPTY_STATUS_BY_MATCH_ID
   );
 
-  return { sync: appScoreSyncStore.sync, statusByMatchId };
+  return { sync: appScoreSyncStore.sync, finish: appScoreSyncStore.finish, statusByMatchId };
 }

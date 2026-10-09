@@ -3,6 +3,7 @@ import { enterAsPlayer, enterAsViewer } from './helpers/enter';
 import {
   createMatchesScenario,
   deleteMatchesScenario,
+  findMatchResult,
   findSavedGameScore,
   writeGameScoreDirectly,
 } from './helpers/courts-scenario';
@@ -344,4 +345,180 @@ test('他の人の押した点が保存されている（2 台目の画面の表
 
   await first.context.close();
   await second.context.close();
+});
+
+/**
+ * 試合の終了（1-d の前半）。「試合を終了する」→「OK」で終了がデータベースに記録される。
+ * 送れていない点があれば、点が届いてから終了が送られる。
+ */
+test.describe('試合の終了', () => {
+  const RESULT_URL = '**/api/matches/*/result';
+  const SCORES_URL = '**/api/matches/*/scores';
+
+  async function finishLiveCourt(page: Page) {
+    const card = courtCard(page, LIVE_COURT);
+    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+    return card;
+  }
+
+  test('OK でデータベースの試合が終了になる。開き直しても終了のまま', async ({ browser }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+
+    await finishLiveCourt(mine.page);
+
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+    expect((await findMatchResult(matchIds.live))?.finishedAt).not.toBeNull();
+
+    await mine.page.reload();
+    const card = courtCard(mine.page, LIVE_COURT);
+    await expect(card.getByText('LIVE')).toHaveCount(0);
+    await expect(card.getByText(NEXT_A.join('・'))).toBeVisible();
+    expect((await findMatchResult(matchIds.live))?.status).toBe('done');
+
+    await mine.context.close();
+  });
+
+  test('片方で試合を終了すると、もう片方でもそのコートが次の試合に切り替わる', async ({
+    browser,
+  }) => {
+    const first = await openAnotherBrowser(browser, 'player');
+    const second = await openAnotherBrowser(browser, 'viewer');
+    await second.page.waitForTimeout(1500);
+    const refreshes = countRefreshes(second.page);
+    await expect(courtCard(second.page, LIVE_COURT).getByText('LIVE')).toBeVisible();
+
+    await finishLiveCourt(first.page);
+
+    const cardOnSecond = courtCard(second.page, LIVE_COURT);
+    await expect(cardOnSecond.getByText('LIVE')).toHaveCount(0, { timeout: 5000 });
+    await expect(cardOnSecond.getByText('呼出待ち')).toBeVisible();
+    await expect(cardOnSecond.getByText(NEXT_A.join('・'))).toBeVisible();
+    // 切り替わりは、届いた行を当てただけ（画面全体は読み直さない）
+    expect(refreshes.count).toBe(0);
+
+    await first.context.close();
+    await second.context.close();
+  });
+
+  test('終了を送っている間は「終了を送っています」が出て、記録されると消える', async ({
+    browser,
+  }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    // 返事を少し遅らせて、送っている間の表示を見られるようにする
+    await mine.page.route(RESULT_URL, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      await route.continue();
+    });
+
+    const card = await finishLiveCourt(mine.page);
+    await expect(card.getByRole('status')).toContainText('終了を送っています');
+
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+    await expect(card.getByText('終了を送っています')).toHaveCount(0);
+
+    await mine.context.close();
+  });
+
+  test('送れていない点があるまま終了を押すと「終了を送っています」と出て、点が届いたあとで終了が記録される', async ({
+    browser,
+  }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    await mine.page.waitForTimeout(1500);
+
+    // 点が送れない状態で ＋ を押し、そのまま終了を押す
+    await mine.page.route(SCORES_URL, (route) => route.abort());
+    await plusButton(mine.page, LIVE_COURT, LIVE_A).click();
+    const card = courtCard(mine.page, LIVE_COURT);
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+    await finishLiveCourt(mine.page);
+
+    await expect(card.getByRole('status')).toContainText('終了を送っています');
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+    // 点がまだ届いていないので、終了は記録されていない
+    await mine.page.waitForTimeout(1500);
+    expect((await findMatchResult(matchIds.live))?.status).toBe('live');
+
+    // 電波が戻ると、点が先に届き、そのあと終了が記録される（点は断られず、消えない）
+    await mine.page.unroute(SCORES_URL);
+    await expect
+      .poll(async () => (await findMatchResult(matchIds.live))?.status, { timeout: 20_000 })
+      .toBe('done');
+    expect(await findSavedGameScore(matchIds.live, 1)).toEqual({ sideAScore: 6, sideBScore: 3 });
+
+    await mine.context.close();
+  });
+
+  test('終了を送れない間は送り直し、つながったら記録される', async ({ browser }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    await mine.page.route(RESULT_URL, (route) => route.abort());
+
+    const card = await finishLiveCourt(mine.page);
+    await expect(card.getByRole('status')).toContainText('終了を送っています・送り直しています');
+    expect((await findMatchResult(matchIds.live))?.status).toBe('live');
+
+    await mine.page.unroute(RESULT_URL);
+    await expect
+      .poll(async () => (await findMatchResult(matchIds.live))?.status, { timeout: 20_000 })
+      .toBe('done');
+
+    await mine.context.close();
+  });
+
+  test('終了を入口に断られたら、日本語の理由が出て、もう一度押せる', async ({ browser }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    await mine.page.route(RESULT_URL, (route) =>
+      route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'テスト用の断りの理由です。' }),
+      })
+    );
+
+    const card = await finishLiveCourt(mine.page);
+
+    await expect(card.getByRole('status')).toContainText('テスト用の断りの理由です。');
+    await expect(card.getByRole('button', { name: '試合を終了する' })).toBeVisible();
+    expect((await findMatchResult(matchIds.live))?.status).toBe('live');
+
+    await mine.context.close();
+  });
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、「終了を送っています」が出た状態でも横にはみ出さない`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport: { width, height: 844 } });
+      const page = await context.newPage();
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+      await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+      await page.route(SCORES_URL, (route) => route.abort());
+      await plusButton(page, LIVE_COURT, LIVE_A).click();
+      await expect(courtCard(page, LIVE_COURT).getByRole('status')).toBeVisible();
+      const card = await finishLiveCourt(page);
+      await expect(card.getByRole('status')).toContainText('終了を送っています');
+
+      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(innerWidth).toBe(width);
+      expect(scrollWidth).toBe(innerWidth);
+      const stickingOut = await card.evaluate((element) => {
+        const cardRect = element.getBoundingClientRect();
+        return Array.from(element.querySelectorAll('*'))
+          .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+          .filter(
+            ({ rect }) =>
+              rect.width > 0 &&
+              (rect.right > cardRect.right + 0.5 || rect.left < cardRect.left - 0.5)
+          )
+          .map(({ text }) => text);
+      });
+      expect(stickingOut).toEqual([]);
+
+      await context.close();
+    });
+  }
 });

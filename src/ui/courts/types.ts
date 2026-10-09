@@ -96,13 +96,22 @@ export type NextMatch = {
 
 /**
  * 送る・送り直す仕組み（`use-score-sync.ts`）がコートに渡す、いまの保存状況。
- * どちらも無ければ何も出さない。
+ * 案内が無ければ何も出さない。
  */
 export type ScoreSyncStatus = {
   /** つながらない・5xx・429 で送り直している間の案内。無ければ null。 */
   retryingMessage: string | null;
   /** 4xx で断られ、送り直さないと決めたときの日本語の理由。無ければ null。 */
   rejectedMessage: string | null;
+  /**
+   * 試合の終了を送っている途中か。「終了を送っています」の印。
+   * 点が届くのを待っている間・送信中・送り直し待ちを全部含む（まだ記録されたと確かめられていない）。
+   */
+  finishing: boolean;
+  /** 終了を送り直している最中か（`finishing` のうち、一度失敗して待っている間）。 */
+  finishRetrying: boolean;
+  /** 終了を入口に断られた（または点が送れていないので送らなかった）ときの日本語の理由。無ければ null。 */
+  finishRejectedMessage: string | null;
 };
 
 /**

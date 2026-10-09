@@ -242,11 +242,14 @@ test('「予選リーグ」のラベルと、いまの段の試合消化数が�
   ).toBeVisible();
 });
 
-test('選手には「試合の終了はまだ記録されません」の帯が出る', async ({ page }) => {
+test('選手にも「試合の終了はまだ記録されません」の帯は出ない（終了が記録されるようになった）', async ({
+  page,
+}) => {
   await enterAsPlayer(page, '愛知南', 'たろう');
   await page.goto('/courts');
 
-  await expect(page.getByText('試合の終了はまだ記録されません（点は保存されます）')).toBeVisible();
+  await expect(page.getByTestId('court-card-1')).toBeVisible();
+  await expect(page.getByText(/試合の終了はまだ記録されません/)).toHaveCount(0);
 });
 
 test('観戦者には帯が出ない', async ({ page }) => {
@@ -355,12 +358,15 @@ test.describe('選手として入った人の操作', () => {
 
     await page.getByRole('button', { name: 'OK' }).click();
 
-    await expect(card.getByText('終了')).toBeVisible();
+    // データベースの試合が終了になり、開き直しても終了のまま
+    const matchId = await findMatchIdByCourtNumber(SCORE_COURT_NUMBER);
+    await expect.poll(() => findMatchStatus(matchId)).toBe('done');
     await expect(card.getByText('LIVE')).toHaveCount(0);
     await expect(card.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
-    await expect(card.getByText('第1ゲーム 2-0')).toBeVisible();
-    await expect(card.getByText(/勝ち/)).toBeVisible();
-    await expect(card.getByText(/1-0/)).toBeVisible();
+
+    await page.reload();
+    await expect(courtCard(page, SCORE_COURT_NUMBER).getByText('LIVE')).toHaveCount(0);
+    expect(await findMatchStatus(matchId)).toBe('done');
   });
 
   test('確認画面の「戻る」を押すと何も変わらずに閉じる', async ({ page }) => {
@@ -609,8 +615,13 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await expect(page.getByText(/2-1/)).toBeVisible();
 
     await page.getByRole('button', { name: 'OK' }).click();
-    await expect(card.getByText('終了')).toBeVisible();
-    await expect(card.getByText('第3ゲーム 1-0')).toBeVisible();
+
+    const matchId = await findMatchIdByCourtNumber(FINAL_COURT_NUMBER);
+    await expect.poll(() => findMatchStatus(matchId)).toBe('done');
+    await expect
+      .poll(() => findSavedGameScore(matchId, 3))
+      .toEqual({ sideAScore: 1, sideBScore: 0 });
+    await expect(card.getByText('LIVE')).toHaveCount(0);
   });
 
   for (const width of [375, 390]) {
@@ -678,6 +689,9 @@ test.describe('決勝トーナメントが始まったとき', () => {
       const card = courtCard(page, FINAL_COURT_NUMBER);
       const teamAName = FINAL_TEAM_A_NAMES.join('・');
       await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
+      // 終了が記録されると次の試合に切り替わってしまうので、終了を送れないようにして、
+      // 「終了を送っています」の終わった見た目のまま測る
+      await page.route('**/api/matches/*/result', (route) => route.abort());
       await card.getByRole('button', { name: '試合を終了する' }).click();
       await page.getByRole('button', { name: 'OK' }).click();
       await expect(card.getByText('終了', { exact: true })).toBeVisible();
@@ -994,14 +1008,17 @@ test.describe('保存（1-b）', () => {
 
       await expect(card.getByRole('status')).toContainText('保存できていません');
 
+      await expect(card.getByRole('status')).toContainText('終了を送っています');
+
+      // 点が届いたあとで終了が記録され、案内はすべて消える
       await page.unroute(SCORES_URL);
       await expect(card.getByRole('status')).toHaveCount(0, { timeout: 20_000 });
-      await expect(card.getByText('終了', { exact: true })).toBeVisible();
 
       const matchId = await findMatchIdByCourtNumber(REJECT_COURT_NUMBER);
       await expect
         .poll(() => findSavedGameScore(matchId, 1))
         .toEqual({ sideAScore: 3, sideBScore: 0 });
+      await expect.poll(() => findMatchStatus(matchId)).toBe('done');
     });
 
     for (const width of [375, 390]) {

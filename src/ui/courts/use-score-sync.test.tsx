@@ -353,6 +353,9 @@ describe('useScoreSync', () => {
       expect(returned.result.current.statusByMatchId['m']).toEqual({
         retryingMessage: '保存できていません・送り直しています',
         rejectedMessage: null,
+        finishing: false,
+        finishRetrying: false,
+        finishRejectedMessage: null,
         started: true,
         unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
@@ -453,6 +456,9 @@ describe('useScoreSync', () => {
       expect(returned.result.current.statusByMatchId['m']).toEqual({
         retryingMessage: null,
         rejectedMessage: '終了した試合です。',
+        finishing: false,
+        finishRetrying: false,
+        finishRejectedMessage: null,
         started: true,
         unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
@@ -633,6 +639,304 @@ describe('useScoreSync', () => {
     test('何も操作していなければ確認は出ない', () => {
       renderHook(() => useScoreSync());
       expect(dispatchBeforeUnload()).toBe(false);
+    });
+  });
+
+  /**
+   * 試合の終了（`POST /api/matches/[matchId]/result`）も、点と同じ預かり場所を通して送る。
+   * 仕様 2026-10-09: 送れていない点があるときに「試合を終了する」を押したら、予約して、
+   * 点を送り終えてから終了を送る。押したら「終了を送っています」と出る。
+   */
+  describe('試合の終了', () => {
+    type Handler = () => Promise<Response>;
+
+    /** URL の末尾で行き先（点の保存 / 終了）を見分けて、それぞれの返事を決める。 */
+    function routeFetch(handlers: { scores?: Handler; result?: Handler }) {
+      vi.mocked(fetch).mockImplementation((input) => {
+        const url = String(input);
+        if (url.endsWith('/scores'))
+          return (handlers.scores ?? (async () => jsonResponse(200, { ok: true })))();
+        if (url.endsWith('/result'))
+          return (handlers.result ?? (async () => jsonResponse(200, { ok: true })))();
+        throw new Error(`想定外の宛先: ${url}`);
+      });
+    }
+
+    function calledUrls() {
+      return vi.mocked(fetch).mock.calls.map(([url, init]) => `${init?.method} ${String(url)}`);
+    }
+
+    test('点がすべて届いていれば、すぐ POST /result を送る（本文なし）', async () => {
+      routeFetch({});
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+
+      await waitFor(() => expect(calledUrls()).toEqual(['POST /api/matches/m/result']));
+    });
+
+    test('押した直後から、成功するまで「終了を送っています」の印（finishing）が付く', async () => {
+      let resolveResult!: (response: Response) => void;
+      routeFetch({ result: () => new Promise((resolve) => (resolveResult = resolve)) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      expect(result.current.statusByMatchId['m']?.finishing).toBe(true);
+
+      await act(async () => resolveResult(jsonResponse(200, { ok: true })));
+
+      expect(result.current.statusByMatchId['m']?.finishing ?? false).toBe(false);
+    });
+
+    test('送れていない点があるときは、点が届くまで終了を送らない。届いたあとに送る', async () => {
+      vi.useFakeTimers();
+      let scoreAttempt = 0;
+      routeFetch({
+        scores: async () => {
+          scoreAttempt += 1;
+          if (scoreAttempt === 1) throw new Error('network down');
+          return jsonResponse(200, { ok: true });
+        },
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => result.current.finish('m'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      // 点がまだ届いていない。終了は送っていないが、「終了を送っています」は出ている
+      expect(calledUrls()).toEqual(['POST /api/matches/m/scores']);
+      expect(result.current.statusByMatchId['m']?.finishing).toBe(true);
+
+      // 点の送り直しが成功した直後に、終了を送る
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(calledUrls()).toEqual([
+        'POST /api/matches/m/scores',
+        'POST /api/matches/m/scores',
+        'POST /api/matches/m/result',
+      ]);
+    });
+
+    test('点を送っている最中に終了を押しても、その返事のあとで終了を送る', async () => {
+      let resolveScore!: (response: Response) => void;
+      routeFetch({ scores: () => new Promise((resolve) => (resolveScore = resolve)) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 0 });
+        result.current.finish('m');
+      });
+      expect(calledUrls()).toEqual(['POST /api/matches/m/scores']);
+
+      await act(async () => resolveScore(jsonResponse(200, { ok: true })));
+
+      await waitFor(() =>
+        expect(calledUrls()).toEqual(['POST /api/matches/m/scores', 'POST /api/matches/m/result'])
+      );
+    });
+
+    test('別の試合の送れていない点は、終了を待たせない', async () => {
+      routeFetch({ scores: () => new Promise(() => {}) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'other', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+        result.current.finish('m');
+      });
+
+      await waitFor(() => expect(calledUrls()).toContain('POST /api/matches/m/result'));
+    });
+
+    test('終了が成功したら、終了を待っていた画面に知らせる（印も消える）', async () => {
+      routeFetch({});
+      const finished: string[] = [];
+      const unsubscribe = appScoreSyncStore.subscribeFinished((matchId) => finished.push(matchId));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+
+      await waitFor(() => expect(finished).toEqual(['m']));
+      unsubscribe();
+    });
+
+    test('つながらない・5xx は、間隔を空けて終了を送り直す。その間も「終了を送っています」', async () => {
+      vi.useFakeTimers();
+      let attempt = 0;
+      routeFetch({
+        result: async () => {
+          attempt += 1;
+          if (attempt === 1) throw new Error('network down');
+          if (attempt === 2)
+            return jsonResponse(500, { error: 'サーバー側でエラーが起きました。' });
+          return jsonResponse(200, { ok: true });
+        },
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.statusByMatchId['m']).toMatchObject({
+        finishing: true,
+        finishRetrying: true,
+      });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+      expect(attempt).toBe(2);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+
+      expect(attempt).toBe(3);
+      expect(result.current.statusByMatchId['m']?.finishing ?? false).toBe(false);
+    });
+
+    test('4xx は送り直さず、入口が返した日本語の理由を出す。「終了を送っています」は消える', async () => {
+      vi.useFakeTimers();
+      routeFetch({
+        result: async () =>
+          jsonResponse(400, { error: '同点では終了できません。どちらかの点を入れてください。' }),
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.statusByMatchId['m']).toMatchObject({
+        finishing: false,
+        finishRejectedMessage: '同点では終了できません。どちらかの点を入れてください。',
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(calledUrls()).toEqual(['POST /api/matches/m/result']);
+    });
+
+    test('断られたあと、もう一度押せば、また送る', async () => {
+      let attempt = 0;
+      routeFetch({
+        result: async () => {
+          attempt += 1;
+          return attempt === 1
+            ? jsonResponse(400, { error: '断りました' })
+            : jsonResponse(200, { ok: true });
+        },
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      await waitFor(() =>
+        expect(result.current.statusByMatchId['m']?.finishRejectedMessage).toBe('断りました')
+      );
+
+      act(() => result.current.finish('m'));
+
+      await waitFor(() => expect(attempt).toBe(2));
+      await waitFor(() =>
+        expect(result.current.statusByMatchId['m']?.finishRejectedMessage ?? null).toBeNull()
+      );
+    });
+
+    test('点が入口に断られている（4xx）ときは、終了を送らず、その理由を出す', async () => {
+      vi.useFakeTimers();
+      routeFetch({
+        scores: async () => jsonResponse(409, { error: '終了した試合です。' }),
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 0 });
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => result.current.finish('m'));
+
+      expect(calledUrls()).toEqual(['POST /api/matches/m/scores']);
+      expect(result.current.statusByMatchId['m']).toMatchObject({
+        rejectedMessage: '終了した試合です。',
+        finishing: false,
+        finishRejectedMessage: '点が保存できていないため、試合の終了は送っていません。',
+      });
+    });
+
+    test('終了を待っている間に二重に押しても、送るのは 1 本だけ', async () => {
+      routeFetch({ result: () => new Promise(() => {}) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.finish('m');
+        result.current.finish('m');
+        result.current.finish('m');
+      });
+
+      expect(calledUrls()).toEqual(['POST /api/matches/m/result']);
+    });
+
+    test('終了を送っている間、ブラウザを閉じようとすると確認が出る', async () => {
+      routeFetch({ result: () => new Promise(() => {}) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    test('画面を離れても、終了の送り直しは続く', async () => {
+      vi.useFakeTimers();
+      let attempt = 0;
+      routeFetch({
+        result: async () => {
+          attempt += 1;
+          if (attempt === 1) throw new Error('network down');
+          return jsonResponse(200, { ok: true });
+        },
+      });
+      const { result, unmount } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      unmount();
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(attempt).toBe(2);
+    });
+
+    test('後片付け（dispose）で、待っている終了の送り直しは残らない', async () => {
+      vi.useFakeTimers();
+      routeFetch({
+        result: async () => {
+          throw new Error('network down');
+        },
+      });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m'));
+      await act(async () => {
+        await Promise.resolve();
+      });
+      appScoreSyncStore.dispose();
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(calledUrls()).toEqual(['POST /api/matches/m/result']);
     });
   });
 });

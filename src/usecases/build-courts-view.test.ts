@@ -291,6 +291,21 @@ describe('1 つ前の試合（コートごとに終了の時刻が一番新し�
     expect(view.emptyReason).toBe('all-finished');
   });
 
+  test('同時に読んだ 2 つの読み込みの両方に同じ試合が入ったら（読む間に終わった）、1 つにする', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'just-finished', orderInCourt: 5 })],
+        previousMatches: [
+          done({ matchId: 'just-finished', finishedAt: NEW }),
+          done({ matchId: 'older', finishedAt: OLD }),
+        ],
+      })
+    );
+
+    expect(view.board.map((m) => m.matchId).sort()).toEqual(['just-finished', 'older']);
+    expect(view.courts[0].previous?.matchId).toBe('older');
+  });
+
   test('1 つ前が無ければ null', () => {
     const view = buildCourtsView(baseInput());
 

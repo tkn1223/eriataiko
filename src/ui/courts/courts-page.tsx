@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
 import { CourtLiveCard, type FixActions, type ReopenState } from '@/ui/courts/court-live-card';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import { createLiveBoard } from '@/ui/courts/live-board';
-import { overlayUnsentScores } from '@/ui/courts/overlay-unsent-scores';
+import { overlayPendingScores } from '@/ui/courts/overlay-pending-scores';
 import { createRefreshScheduler } from '@/ui/courts/refresh-scheduler';
 import { shouldRetry } from '@/ui/courts/save-retry-policy';
 import { sendRequest } from '@/ui/courts/send-request';
@@ -123,8 +123,9 @@ function currentEmptyReason(
  * 送り直しは続き、戻ってきたらその数字のまま出る。
  *
  * 他の人の点や試合の変化は `use-live-updates.ts` が受け取り、届いた行だけを `applyLiveChange` で
- * 一覧に当てる（画面全体は読み直さない）。手元に無い試合の変化と、途切れたあとのつながり直しのときだけ、
- * 1 回にまとめて読み直す（docs/specs/2026-10-09-courts-live-and-finish.md）。
+ * 一覧に当てる（点が変わるたびに画面全体を読み直さない）。読み直すのは、購読がつながったとき
+ * （開いて最初と、途切れたあと）と、手元に無い試合の変化が届いたときだけで、
+ * 1 回にまとめる（docs/specs/2026-10-09-courts-live-and-finish.md）。
  */
 export function CourtsPage({
   board: serverBoard,
@@ -138,31 +139,16 @@ export function CourtsPage({
   const router = useRouter();
   const { sync, finish, statusByMatchId } = useScoreSync();
 
-  // 開いたときの様子は、サーバーから読んだ試合に、アプリの中で預かっている「まだ送れていない点」を
-  // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。overlay-unsent-scores.ts）。
+  // 開いたときの様子は、サーバーから読んだ試合に、アプリの中で預かっている「手元の点」を
+  // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。overlay-pending-scores.ts）。
   const [liveBoard] = useState(() =>
-    createLiveBoard(overlayUnsentScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()))
+    createLiveBoard(overlayPendingScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()))
   );
   const board = useSyncExternalStore(liveBoard.subscribe, liveBoard.get, liveBoard.get);
 
-  // 読み直されて新しい一覧が渡されたら置き換える。送れていない点は、重ね直して残す。
-  const renderedServerBoard = useRef(serverBoard);
-  useEffect(() => {
-    if (renderedServerBoard.current === serverBoard) return;
-    renderedServerBoard.current = serverBoard;
-    // 取り消して直している試合の印（表には痕が残らない）も引き継ぐ
-    liveBoard.set(
-      overlayUnsentScores(
-        carryOverReopened(serverBoard, liveBoard.get()),
-        canInput,
-        appScoreSyncStore.getSnapshot()
-      )
-    );
-  }, [serverBoard, canInput, liveBoard]);
-
-  // 読み直しは、依頼をまとめて連続しないようにする。
+  // 読み直しは、依頼をまとめて連続しないようにする。読み直しの間に届いた変化も覚えておく。
   const [refreshScheduler] = useState(() =>
-    createRefreshScheduler({
+    createRefreshScheduler<LiveChange>({
       refresh: () => router.refresh(),
       settleMs: REFRESH_SETTLE_MS,
       minIntervalMs: REFRESH_MIN_INTERVAL_MS,
@@ -170,38 +156,69 @@ export function CourtsPage({
   );
   useEffect(() => () => refreshScheduler.cancel(), [refreshScheduler]);
 
-  function handleLiveChange(change: LiveChange) {
+  // 読み直されて新しい一覧が渡されたら置き換える。
+  const renderedServerBoard = useRef(serverBoard);
+  useEffect(() => {
+    if (renderedServerBoard.current === serverBoard) return;
+    renderedServerBoard.current = serverBoard;
+    // 取り消して直している試合の印（表には痕が残らない）を引き継ぐ
+    let reloaded = carryOverReopened(serverBoard, liveBoard.get());
+    // 読み直しの間に届いて当てていた変化を、届いた順に当て直す（refresh-scheduler.ts の「当て直す」）。
+    // 当てる先の無い変化は、届いたときにもう読み直しを頼んであるので、ここでは頼まない。
+    for (const change of refreshScheduler.takeChangesSinceRefresh()) {
+      reloaded = applyLiveChange(reloaded, change, appScoreSyncStore.getSnapshot()).board;
+    }
+    // 手元の点は、重ね直して残す
+    liveBoard.set(overlayPendingScores(reloaded, canInput, appScoreSyncStore.getSnapshot()));
+  }, [serverBoard, canInput, liveBoard, refreshScheduler]);
+
+  /** 変化を一覧に当てる。読み直しの最中なら、読み直した一覧に当て直すために覚えておく。 */
+  function applyChange(change: LiveChange): boolean {
+    refreshScheduler.record(change);
     const result = applyLiveChange(liveBoard.get(), change, appScoreSyncStore.getSnapshot());
     liveBoard.set(result.board);
-    if (result.needsRefresh) refreshScheduler.request();
+    return result.needsRefresh;
+  }
+
+  function handleLiveChange(change: LiveChange) {
+    // 自分が送った点の戻りなら、戻り待ちを消す（そのあとの当てる判断に効く。use-score-sync.ts）
+    if (change.kind === 'score') appScoreSyncStore.noteRemoteScore(change);
+    else forgetReopenFailure(change.matchId);
+    if (applyChange(change)) refreshScheduler.request();
+  }
+
+  /**
+   * この画面で送った終了・取り消しが受け付けられたら、購読の知らせを待たずに当てる
+   * （Realtime が止まっていても、押した本人の画面は変わる）。届いた変化と同じ道を通すのは、
+   * 読み直しの最中に受け付けられたときに、読み直した一覧で消されないようにするため。
+   * 終了の時刻は画面の時計で仮に入れ、あとから本当の時刻が届けば置き換わる。
+   */
+  function applyOwnResult(matchId: string, status: 'done' | 'live') {
+    const target = liveBoard.get().find((match) => match.matchId === matchId);
+    if (!target) return;
+    applyChange({
+      kind: 'match',
+      matchId,
+      status,
+      courtNumber: target.courtNumber,
+      orderInCourt: target.orderInCourt,
+      finishedAt: status === 'done' ? new Date().toISOString() : null,
+      maxGameCount: target.maxGameCount,
+    });
   }
 
   const connection = useLiveUpdates({
     onChange: handleLiveChange,
-    // つながり直したら、途切れている間の変化を取り戻すために 1 回だけ読み直す
-    onRecovered: () => refreshScheduler.request(),
+    // つながった（開いて最初に・途切れてから）ら、つながる前の変化を取り戻すために 1 回だけ読み直す。
+    // つながる前に送った点の戻りはもう届かないので、待つのをやめる（use-score-sync.ts の「戻り待ち」）
+    onConnected: () => {
+      appScoreSyncStore.forgetAwaitingEchoes();
+      refreshScheduler.request();
+    },
   });
 
-  // 終了が受け付けられたら、すぐ表に反映する（Realtime が止まっていても、押した本人の画面は変わる）。
-  // あとから本当の終了の時刻が届けば、それに置き換わる。
-  useEffect(
-    () =>
-      appScoreSyncStore.subscribeFinished((matchId) => {
-        liveBoard.set(
-          liveBoard.get().map((match) =>
-            match.matchId === matchId
-              ? {
-                  ...match,
-                  status: 'done',
-                  finishedAt: new Date().toISOString(),
-                  reopened: false,
-                }
-              : match
-          )
-        );
-      }),
-    [liveBoard]
-  );
+  const handleOwnFinish = useEffectEvent((matchId: string) => applyOwnResult(matchId, 'done'));
+  useEffect(() => appScoreSyncStore.subscribeFinished((matchId) => handleOwnFinish(matchId)), []);
 
   const courts = useMemo(() => deriveCourts(board), [board]);
 
@@ -271,16 +288,8 @@ export function CourtsPage({
         delete rest[matchId];
         return rest;
       });
-      // 取り消されたら、その場で「直し中」にする（Realtime が止まっていても本人の画面は変わる）
-      liveBoard.set(
-        liveBoard
-          .get()
-          .map((match) =>
-            match.matchId === matchId
-              ? { ...match, status: 'live', finishedAt: null, reopened: true }
-              : match
-          )
-      );
+      // 取り消されたら、その場で「直し中」にする（終わった試合が live に戻るので、直し中の印が付く）
+      applyOwnResult(matchId, 'live');
       return;
     }
 
@@ -290,6 +299,19 @@ export function CourtsPage({
         ? (result.message ?? REOPEN_REJECTED_FALLBACK)
         : REOPEN_RETRY_MESSAGE;
     setReopenStates((previous) => ({ ...previous, [matchId]: { pending: false, error } }));
+  }
+
+  /**
+   * 試合の様子が変わったら、その試合の「取り消せませんでした」を消す。
+   * 別の人が取り消して直し、もう一度終了して 1 つ前に戻ってきたときに、古い失敗の案内が残らないように。
+   */
+  function forgetReopenFailure(matchId: string) {
+    setReopenStates((previous) => {
+      if (!previous[matchId]?.error) return previous;
+      const rest = { ...previous };
+      delete rest[matchId];
+      return rest;
+    });
   }
 
   /** 直し中の試合と 1 つ前に渡す操作。今の試合と違い、試合の id ごとに呼ぶ。 */

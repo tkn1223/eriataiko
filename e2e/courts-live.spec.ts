@@ -1,10 +1,11 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
 import {
   createMatchesScenario,
   deleteMatchesScenario,
   findMatchResult,
   findSavedGameScore,
+  finishMatchDirectly,
   writeGameScoreDirectly,
 } from './helpers/courts-scenario';
 
@@ -142,28 +143,55 @@ function plusButton(page: Page, courtNumber: number, names: string[]) {
   });
 }
 
-/** 読み直し（router.refresh）の回数を数える。画面全体を読み直すと、`/courts?_rsc=...` が飛ぶ。 */
+/** 画面全体の読み直し（router.refresh）か。読み直すと `/courts?_rsc=...` が飛ぶ。 */
+function isCourtsRefresh(url: string): boolean {
+  const parsed = new URL(url);
+  return parsed.pathname === '/courts' && parsed.searchParams.has('_rsc');
+}
+
+/** 読み直し（router.refresh）の回数を、呼んだ時点から数える。 */
 function countRefreshes(page: Page) {
   const state = { count: 0 };
   page.on('request', (request) => {
-    const url = new URL(request.url());
-    if (url.pathname === '/courts' && url.searchParams.has('_rsc')) state.count += 1;
+    if (isCourtsRefresh(request.url())) state.count += 1;
   });
   return state;
 }
 
-/** もう 1 台目のブラウザ（別の context）を開いて、結果LIVE を表示する。 */
-async function openAnotherBrowser(
-  browser: Browser,
-  as: 'player' | 'viewer'
-): Promise<{ context: BrowserContext; page: Page }> {
+/**
+ * 結果LIVE を開き、購読がつながるまで待つ。
+ * 購読は、つながる前の変化を届けないので、画面はつながったときに 1 回だけ読み直す。
+ * その読み直しの返事を「つながった」の合図にする（時間を決めて待たない）。
+ * 戻り値は、そのあとの読み直しの回数（最初の 1 回は数えない）。
+ */
+async function openCourtsAndWaitForLive(page: Page) {
+  const caughtUp = page.waitForResponse((response) => isCourtsRefresh(response.url()));
+  await page.goto('/courts');
+  await caughtUp;
+  return countRefreshes(page);
+}
+
+/** もう 1 台目のブラウザ（別の context）を開いて、結果LIVE を表示し、購読がつながるまで待つ。 */
+async function openAnotherBrowser(browser: Browser, as: 'player' | 'viewer') {
   const context = await browser.newContext();
   const page = await context.newPage();
   if (as === 'player') await enterAsPlayer(page, '愛知南', 'たろう');
   else await enterAsViewer(page);
-  await page.goto('/courts');
+  const refreshes = await openCourtsAndWaitForLive(page);
   await expect(courtCard(page, LIVE_COURT)).toBeVisible();
-  return { context, page };
+  return { context, page, refreshes };
+}
+
+/**
+ * 先に書いた変化の知らせが、その画面に届いて当て終わるのを待つ。
+ * 知らせは書いた順に届くので、あとから別のコートに書いた点が映れば、先の変化も届いている
+ * （「届いても映らない」ことを確かめるときに、時間を決めて待たずに済む）。
+ */
+async function waitUntilEarlierChangesArrive(page: Page, otherCourtScore: number) {
+  await writeGameScoreDirectly(matchIds.other, 1, otherCourtScore, 0);
+  await expect(
+    courtCard(page, OTHER_COURT).getByText(String(otherCourtScore), { exact: true })
+  ).toBeVisible({ timeout: 5000 });
 }
 
 test.describe('2 台のブラウザで、他の人の点がその場で映る', () => {
@@ -172,15 +200,12 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
   }) => {
     const first = await openAnotherBrowser(browser, 'player');
     const second = await openAnotherBrowser(browser, 'player');
-    const refreshes = countRefreshes(second.page);
-    // 接続がつながってから押す（つながる前の点は、読み込んだ時点の値に含まれる）
-    await second.page.waitForTimeout(1500);
 
     await plusButton(first.page, LIVE_COURT, LIVE_A).click();
 
     const cardOnSecond = courtCard(second.page, LIVE_COURT);
     await expect(cardOnSecond.getByText('6', { exact: true })).toBeVisible({ timeout: 5000 });
-    expect(refreshes.count).toBe(0);
+    expect(second.refreshes.count).toBe(0);
 
     await first.context.close();
     await second.context.close();
@@ -189,7 +214,6 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
   test('観戦者の画面にも他の人の点が映る', async ({ browser }) => {
     const player = await openAnotherBrowser(browser, 'player');
     const viewer = await openAnotherBrowser(browser, 'viewer');
-    await viewer.page.waitForTimeout(1500);
 
     await plusButton(player.page, LIVE_COURT, LIVE_B).click();
 
@@ -205,13 +229,11 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
     await viewer.context.close();
   });
 
-  test('点が変わるたびに画面全体を読み直していない（10 回押しても読み直しは 0 回）', async ({
+  test('点が変わるたびに画面全体を読み直していない（つながったときの 1 回のあと、10 回押しても 0 回）', async ({
     browser,
   }) => {
     const first = await openAnotherBrowser(browser, 'player');
     const second = await openAnotherBrowser(browser, 'viewer');
-    const refreshes = countRefreshes(second.page);
-    await second.page.waitForTimeout(1500);
 
     for (let press = 0; press < 10; press += 1) {
       await plusButton(first.page, LIVE_COURT, LIVE_A).click();
@@ -220,9 +242,9 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
     await expect(courtCard(second.page, LIVE_COURT).getByText('15', { exact: true })).toBeVisible({
       timeout: 8000,
     });
-    // 点が届いたあと、少し待っても読み直しは走らない
-    await second.page.waitForTimeout(1500);
-    expect(refreshes.count).toBe(0);
+    // 点が届いたあとに書いた別のコートの点まで届いても、読み直しは走っていない
+    await waitUntilEarlierChangesArrive(second.page, 30);
+    expect(second.refreshes.count).toBe(0);
 
     await first.context.close();
     await second.context.close();
@@ -230,7 +252,6 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
 
   test('送れていない手元の点は、届いた古い点で上書きされない', async ({ browser }) => {
     const mine = await openAnotherBrowser(browser, 'player');
-    await mine.page.waitForTimeout(1500);
 
     // 保存を失敗させ、押した点が「送れていない」ままになるようにする
     await mine.page.route('**/api/matches/*/scores', (route) => route.abort());
@@ -242,7 +263,7 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
 
     // そこへ、別の人の（古い）点が届く
     await writeGameScoreDirectly(matchIds.live, 1, 5, 3);
-    await mine.page.waitForTimeout(1500);
+    await waitUntilEarlierChangesArrive(mine.page, 30);
 
     await expect(courtCard(mine.page, LIVE_COURT).getByText('6', { exact: true })).toBeVisible();
 
@@ -253,19 +274,60 @@ test.describe('2 台のブラウザで、他の人の点がその場で映る', 
 test.describe('手元に無い試合の変化が届いたとき', () => {
   test('1 回だけ読み直す（続けて変わっても 1 回）', async ({ browser }) => {
     const watcher = await openAnotherBrowser(browser, 'viewer');
-    const refreshes = countRefreshes(watcher.page);
-    await watcher.page.waitForTimeout(1500);
 
     // 読み込まれていない（1 つ前でもない）古い試合の点を、続けて 3 回書き換える
     await writeGameScoreDirectly(matchIds['older-done'], 1, 21, 11);
     await writeGameScoreDirectly(matchIds['older-done'], 1, 21, 12);
     await writeGameScoreDirectly(matchIds['older-done'], 1, 21, 13);
 
-    await expect.poll(() => refreshes.count, { timeout: 5000 }).toBe(1);
+    await expect.poll(() => watcher.refreshes.count, { timeout: 5000 }).toBe(1);
+    // 2 回目が走らないことは、読み直しの最小の間隔（3 秒、courts-page.tsx）を過ぎるまで見る。
+    // 「起きない」ことは、待つ以外に確かめようがない
     await watcher.page.waitForTimeout(3500);
-    expect(refreshes.count).toBe(1);
+    expect(watcher.refreshes.count).toBe(1);
 
     await watcher.context.close();
+  });
+});
+
+test.describe('開いてから購読がつながるまでの間の変化', () => {
+  test('サーバーが読んだあと、購読がつながる前に終わった試合も、つながると映る', async ({
+    browser,
+  }) => {
+    // 終了の知らせが配られ終わったことを確かめるための、もう 1 台（先につながっている）
+    const witness = await openAnotherBrowser(browser, 'viewer');
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await enterAsViewer(page);
+    // 購読の接続（WebSocket）を、合図があるまでつなげない（電波の細い体育館で、つながるのが遅い状態）
+    let letConnect!: () => void;
+    const connectAllowed = new Promise<void>((resolve) => {
+      letConnect = resolve;
+    });
+    await page.routeWebSocket(/\/realtime\/v1\/websocket/, async (socket) => {
+      await connectAllowed;
+      socket.connectToServer();
+    });
+
+    await page.goto('/courts');
+    const card = courtCard(page, LIVE_COURT);
+    await expect(card.getByText('LIVE')).toBeVisible();
+
+    // 画面はもう読み込んだが、購読はまだつながっていない。その間に試合が終わる。
+    // 知らせが配られ終わってから（先につながっている 1 台に届いてから）つなぐので、この画面には届かない
+    await finishMatchDirectly(matchIds.live);
+    await expect(courtCard(witness.page, LIVE_COURT).getByText('LIVE')).toHaveCount(0, {
+      timeout: 5000,
+    });
+    letConnect();
+
+    await expect(card.getByText('LIVE')).toHaveCount(0, { timeout: 15_000 });
+    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(page.getByTestId(`previous-match-${LIVE_COURT}`)).toContainText(LIVE_A[0]);
+
+    await context.close();
+    await witness.context.close();
   });
 });
 
@@ -301,10 +363,8 @@ test.describe('自動更新が途切れたとき', () => {
     const page = await context.newPage();
     const realtime = await controlRealtimeSocket(page);
     await enterAsViewer(page);
-    await page.goto('/courts');
+    const refreshes = await openCourtsAndWaitForLive(page);
     await expect(courtCard(page, LIVE_COURT)).toBeVisible();
-    await page.waitForTimeout(1500);
-    const refreshes = countRefreshes(page);
 
     realtime.cut();
     await expect(page.getByTestId('live-down-notice')).toContainText('自動更新が止まっています', {
@@ -313,15 +373,14 @@ test.describe('自動更新が途切れたとき', () => {
 
     // 途切れている間に、点が入る（この画面には届かない）
     await writeGameScoreDirectly(matchIds.live, 1, 9, 3);
-    await page.waitForTimeout(500);
-    await expect(courtCard(page, LIVE_COURT).getByText('9', { exact: true })).toHaveCount(0);
 
     realtime.restore();
     await expect(page.getByTestId('live-down-notice')).toHaveCount(0, { timeout: 30_000 });
     await expect(courtCard(page, LIVE_COURT).getByText('9', { exact: true })).toBeVisible({
       timeout: 10_000,
     });
-    await page.waitForTimeout(1500);
+    // つながり直したあとに書いた点まで届いても、読み直しは 1 回のまま
+    await waitUntilEarlierChangesArrive(page, 30);
     expect(refreshes.count).toBe(1);
 
     await context.close();
@@ -333,9 +392,8 @@ test.describe('自動更新が途切れたとき', () => {
       const page = await context.newPage();
       const realtime = await controlRealtimeSocket(page);
       await enterAsPlayer(page, '愛知南', 'たろう');
-      await page.goto('/courts');
+      await openCourtsAndWaitForLive(page);
       await expect(courtCard(page, LIVE_COURT)).toBeVisible();
-      await page.waitForTimeout(1500);
 
       realtime.cut();
       const notice = page.getByTestId('live-down-notice');
@@ -361,7 +419,6 @@ test('他の人の押した点が保存されている（2 台目の画面の表
 }) => {
   const first = await openAnotherBrowser(browser, 'player');
   const second = await openAnotherBrowser(browser, 'viewer');
-  await second.page.waitForTimeout(1500);
 
   await plusButton(first.page, LIVE_COURT, LIVE_A).click();
 
@@ -413,8 +470,6 @@ test.describe('試合の終了', () => {
   }) => {
     const first = await openAnotherBrowser(browser, 'player');
     const second = await openAnotherBrowser(browser, 'viewer');
-    await second.page.waitForTimeout(1500);
-    const refreshes = countRefreshes(second.page);
     await expect(courtCard(second.page, LIVE_COURT).getByText('LIVE')).toBeVisible();
 
     await finishLiveCourt(first.page);
@@ -424,7 +479,7 @@ test.describe('試合の終了', () => {
     await expect(cardOnSecond.getByText('呼出待ち')).toBeVisible();
     await expect(cardOnSecond.getByText(NEXT_A.join('・'))).toBeVisible();
     // 切り替わりは、届いた行を当てただけ（画面全体は読み直さない）
-    expect(refreshes.count).toBe(0);
+    expect(second.refreshes.count).toBe(0);
 
     await first.context.close();
     await second.context.close();
@@ -453,7 +508,11 @@ test.describe('試合の終了', () => {
     browser,
   }) => {
     const mine = await openAnotherBrowser(browser, 'player');
-    await mine.page.waitForTimeout(1500);
+    const sent = { scores: 0, result: 0 };
+    mine.page.on('request', (request) => {
+      if (request.url().endsWith('/scores')) sent.scores += 1;
+      if (request.url().endsWith('/result')) sent.result += 1;
+    });
 
     // 点が送れない状態で ＋ を押し、そのまま終了を押す
     await mine.page.route(SCORES_URL, (route) => route.abort());
@@ -464,8 +523,9 @@ test.describe('試合の終了', () => {
 
     await expect(card.getByRole('status')).toContainText('終了を送っています');
     await expect(card.getByRole('status')).toContainText('保存できていません');
-    // 点がまだ届いていないので、終了は記録されていない
-    await mine.page.waitForTimeout(1500);
+    // 点を送り直しても届かない間は、終了を送らない（記録もされていない）
+    await expect.poll(() => sent.scores, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+    expect(sent.result).toBe(0);
     expect((await findMatchResult(matchIds.live))?.status).toBe('live');
 
     // 電波が戻ると、点が先に届き、そのあと終了が記録される（点は断られず、消えない）
@@ -573,9 +633,9 @@ test.describe('1つ前と直す', () => {
     const page = await context.newPage();
     if (as === 'player') await enterAsPlayer(page, '愛知南', 'たろう');
     else await enterAsViewer(page);
-    await page.goto('/courts');
+    const refreshes = await openCourtsAndWaitForLive(page);
     await expect(courtCard(page, OLD_DONE_COURT)).toBeVisible();
-    return { context, page };
+    return { context, page, refreshes };
   }
 
   async function reopenPrevious(page: Page) {
@@ -615,7 +675,6 @@ test.describe('1つ前と直す', () => {
     browser,
   }) => {
     const { context, page } = await openCourts(browser, 'player');
-    await page.waitForTimeout(1000);
 
     await reopenPrevious(page);
 
@@ -667,8 +726,6 @@ test.describe('1つ前と直す', () => {
   }) => {
     const player = await openCourts(browser, 'player');
     const viewer = await openCourts(browser, 'viewer');
-    await viewer.page.waitForTimeout(1500);
-    const refreshes = countRefreshes(viewer.page);
 
     await reopenPrevious(player.page);
 
@@ -682,7 +739,7 @@ test.describe('1つ前と直す', () => {
 
     await expect(previousRow(viewer.page).getByText('21-12')).toBeVisible({ timeout: 5000 });
     await expect(fixingPanel(viewer.page)).toHaveCount(0);
-    expect(refreshes.count).toBe(0);
+    expect(viewer.refreshes.count).toBe(0);
 
     await player.context.close();
     await viewer.context.close();

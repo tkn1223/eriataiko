@@ -53,7 +53,7 @@ export default async function Page() {
 
   return (
     <CourtsPage
-      courts={state.view.courts}
+      board={state.view.board}
       stageLabel={state.view.stageLabel}
       completedMatches={state.view.completedMatches}
       totalMatches={state.view.totalMatches}

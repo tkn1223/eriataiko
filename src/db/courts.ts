@@ -170,7 +170,7 @@ async function findCourtMatches(supabase: SupabaseReadClient, competitionId: str
   const { data, error } = await supabase
     .from('matches')
     .select(
-      `id, status, max_game_count, court_number, order_in_court, division_id,
+      `id, status, max_game_count, court_number, order_in_court, finished_at, division_id,
       divisions!inner(competition_id),
       matchups!inner(
         stage_id, round_name, side_a_slot_label, side_b_slot_label,
@@ -205,6 +205,7 @@ async function findCourtMatches(supabase: SupabaseReadClient, competitionId: str
       maxGameCount: match.max_game_count,
       courtNumber: match.court_number,
       orderInCourt: match.order_in_court,
+      finishedAt: match.finished_at,
       divisionId: match.division_id,
       stageId: match.matchups.stage_id,
       roundName: match.matchups.round_name,

@@ -21,8 +21,10 @@ import type {
  * 層の分け方は AGENTS.md の「db が読む → usecases が画面の形に組む → page.tsx は呼ぶだけ」に従う
  * （読み取りは `src/db/courts.ts`）。
  *
- * 入力は 2 種類の読み込みに分かれている（大会が進むほど重くならないように）。
+ * 入力は 3 種類の読み込みに分かれている（大会が進むほど重くならないように）。
  * - `matches` … **進行中（live）と未実施（waiting）の試合だけ**。名前・得点つき。コートのカード用。
+ * - `previousMatches` … 最近終わった試合（新しい順）。コートごとの「1 つ前」を選ぶ元。終わった試合を
+ *   全部は読まない（上限つき）。
  * - `stages[].totalMatches` / `doneMatches` … 段ごとの**件数だけ**。「◯/◯ 試合消化」用。
  */
 
@@ -76,6 +78,11 @@ export type CourtsViewInput = {
   stages: CourtsViewStageRow[];
   /** live と waiting の試合だけ。 */
   matches: CourtsViewMatchRow[];
+  /**
+   * 最近終わった試合（終了の時刻つき）。ここからコートごとに一番新しい 1 つを「1 つ前」に選ぶ。
+   * 並び順は問わない（この関数が時刻で選ぶ）。
+   */
+  previousMatches: CourtsViewMatchRow[];
   /** 読む上限を超えた（読み切れていない）。黙って欠けさせず、画面で知らせる。 */
   truncated: boolean;
 };
@@ -93,7 +100,10 @@ export type CourtsView = {
    */
   board: CourtMatch[];
   courts: Court[];
-  /** `courts` が空のときだけ入る。 */
+  /**
+   * 進行中・未実施の試合が入ったコートが 1 つも無いときだけ入る。
+   * 最後の試合が終わったコートは 1 つ前を出すためにカードが残るので、案内はカードと一緒に出ることがある。
+   */
   emptyReason: CourtsEmptyReason | null;
   truncated: boolean;
 };
@@ -184,21 +194,39 @@ function emptyReasonOf(
   return hasAnyMatch ? 'all-finished' : 'no-matches';
 }
 
+/** コートごとに、終了の時刻が一番新しい終わった試合を 1 つずつ選ぶ。 */
+function newestFinishedPerCourt(previousMatches: CourtsViewMatchRow[]): CourtsViewMatchRow[] {
+  const newestByCourt = new Map<number, CourtsViewMatchRow>();
+  for (const match of previousMatches) {
+    if (match.courtNumber === null || match.finishedAt === null) continue;
+    const current = newestByCourt.get(match.courtNumber);
+    if (!current || Date.parse(match.finishedAt) > Date.parse(current.finishedAt ?? '')) {
+      newestByCourt.set(match.courtNumber, match);
+    }
+  }
+  return [...newestByCourt.values()];
+}
+
 export function buildCourtsView(input: CourtsViewInput): CourtsView {
   const classLabelById = classLabelsByDivisionId(input.divisions);
   const progress = currentStageProgress(input.stages, input.matches);
 
-  // 出すのは進行中・未実施の試合だけ。念のため終わった試合が混ざっても使わない。
+  // 進行中・未実施の試合。念のため終わった試合が混ざっても使わない。
   const remainingMatches = input.matches.filter(
     (m) => m.status === 'live' || m.status === 'waiting'
   );
 
-  // コートの枚数は決め打ちせず、試合に入っているコート番号から出す
-  // （次の大会は 10 面。番号が飛んでいる日は飛んだまま出す。コート未定の試合はカードにしない）。
-  const board = remainingMatches.map((match) =>
-    toCourtMatch(match, input.myParticipantId, classLabelById)
-  );
+  // 画面に渡す元データ。コートごとの 1 つ前だけを足す（古い終わった試合は渡さない。
+  // 画面に渡るデータは、そのまま通信量になる）。
+  const board = [
+    ...remainingMatches,
+    ...newestFinishedPerCourt(input.previousMatches).filter((m) => m.status === 'done'),
+  ].map((match) => toCourtMatch(match, input.myParticipantId, classLabelById));
   const courts = deriveCourts(board);
+
+  const hasCardWithMatch = courts.some(
+    (court) => court.live !== null || court.next !== null || court.fixing.length > 0
+  );
 
   return {
     stageLabel: progress.label,
@@ -206,7 +234,7 @@ export function buildCourtsView(input: CourtsViewInput): CourtsView {
     totalMatches: progress.totalMatches,
     board,
     courts,
-    emptyReason: courts.length === 0 ? emptyReasonOf(remainingMatches, input.stages) : null,
+    emptyReason: hasCardWithMatch ? null : emptyReasonOf(remainingMatches, input.stages),
     truncated: input.truncated,
   };
 }

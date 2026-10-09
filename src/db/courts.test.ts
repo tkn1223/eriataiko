@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { getSupabaseAdminClient } from '@/db/admin';
-import { findCourtsData, MAX_COURT_MATCHES, MAX_MATCHUPS_PER_STAGE } from '@/db/courts';
+import {
+  findCourtsData,
+  MAX_COURT_MATCHES,
+  MAX_MATCHUPS_PER_STAGE,
+  MAX_PREVIOUS_CANDIDATES,
+} from '@/db/courts';
 
 /**
  * `findCourtsData` を本物のデータベースに当てて確かめる。
@@ -463,5 +468,152 @@ describe('findCourtsData（試合が多い大会）', () => {
       },
       MAX_MATCHUPS_PER_STAGE + 1
     );
+  });
+});
+
+/**
+ * コートごとの「1 つ前」（終了の時刻が一番新しい終わった試合）の元になる、最近終わった試合の読み込み。
+ * 終わった試合を全部は読まず、上限をつける。
+ */
+describe('findCourtsData の previousMatches（最近終わった試合）', () => {
+  const insertedMatchIds: string[] = [];
+
+  beforeAll(async () => {
+    const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+    const inserted = await admin
+      .from('matches')
+      .insert([
+        {
+          matchup_id: decidedMatchupId,
+          division_id: divisionId,
+          order_in_matchup: 11,
+          status: 'done',
+          max_game_count: 1,
+          court_number: 90,
+          order_in_court: 11,
+          finished_at: minutesAgo(60),
+        },
+        {
+          matchup_id: decidedMatchupId,
+          division_id: divisionId,
+          order_in_matchup: 12,
+          status: 'done',
+          max_game_count: 1,
+          court_number: 90,
+          order_in_court: 12,
+          finished_at: minutesAgo(1),
+        },
+        {
+          matchup_id: decidedMatchupId,
+          division_id: divisionId,
+          order_in_matchup: 13,
+          status: 'done',
+          max_game_count: 1,
+          court_number: 91,
+          order_in_court: 13,
+          finished_at: minutesAgo(30),
+        },
+        // コートが決まっていない終わった試合は、1 つ前に選べないので読まない
+        {
+          matchup_id: decidedMatchupId,
+          division_id: divisionId,
+          order_in_matchup: 14,
+          status: 'done',
+          max_game_count: 1,
+          court_number: null,
+          order_in_court: null,
+          finished_at: minutesAgo(5),
+        },
+      ])
+      .select('id, order_in_matchup');
+    expect(inserted.error, `終わった試合の作成に失敗: ${inserted.error?.message}`).toBeNull();
+    insertedMatchIds.push(...inserted.data!.map((m) => m.id));
+    for (const row of inserted.data!) {
+      if (row.order_in_matchup === 12) newestOn90 = row.id;
+      if (row.order_in_matchup === 11) oldestOn90 = row.id;
+      if (row.order_in_matchup === 13) onlyOn91 = row.id;
+      if (row.order_in_matchup === 14) noCourt = row.id;
+    }
+
+    const scores = await admin
+      .from('game_scores')
+      .insert([{ match_id: newestOn90, game_number: 1, side_a_score: 21, side_b_score: 17 }]);
+    expect(scores.error).toBeNull();
+    await admin
+      .from('match_players')
+      .insert([
+        { match_id: newestOn90, side: 'a', participant_id: myParticipantId, order_in_pair: 1 },
+      ]);
+  });
+
+  let newestOn90: string;
+  let oldestOn90: string;
+  let onlyOn91: string;
+  let noCourt: string;
+
+  afterAll(async () => {
+    const { error } = await admin.from('matches').delete().in('id', insertedMatchIds);
+    if (error) throw new Error(`後片付けに失敗（終わった試合）: ${error.message}`);
+  });
+
+  test('終わった試合だけが、終了の時刻が新しい順に読める', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.previousMatches.map((m) => m.matchId)).toEqual([newestOn90, onlyOn91, oldestOn90]);
+    expect(data.previousMatches.every((m) => m.status === 'done')).toBe(true);
+  });
+
+  test('終了の時刻が無い終わった試合と、コートが決まっていない試合は読まない', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.previousMatches.map((m) => m.matchId)).not.toContain(doneMatchId);
+    expect(data.previousMatches.map((m) => m.matchId)).not.toContain(noCourt);
+  });
+
+  test('終了の時刻・コート・両ペアの名前・得点が入っている', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+    const newest = data.previousMatches.find((m) => m.matchId === newestOn90)!;
+
+    expect(newest.courtNumber).toBe(90);
+    expect(newest.finishedAt).not.toBeNull();
+    expect(newest.sideA.players.map((p) => p.name)).toEqual([`${tag} 自分`]);
+    expect(newest.sideB.teamNumber).toBe(3);
+    expect(newest.gameScores).toEqual([{ gameNumber: 1, sideAScore: 21, sideBScore: 17 }]);
+  });
+
+  test('進行中・未実施の試合は混ざらず、コート用の試合の読み込みも変わらない', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.previousMatches.map((m) => m.matchId)).not.toContain(liveMatchId);
+    expect(data.previousMatches.map((m) => m.matchId)).not.toContain(waitingMatchId);
+    expect(data.matches.map((m) => m.matchId).sort()).toEqual(
+      [liveMatchId, waitingMatchId, undecidedMatchId].sort()
+    );
+  });
+
+  test('読む件数には上限がある。上限に届いても、読み切れていない印（truncated）は付けない', async () => {
+    const extra = await admin
+      .from('matches')
+      .insert(
+        Array.from({ length: MAX_PREVIOUS_CANDIDATES + 1 }, (_, index) => ({
+          matchup_id: decidedMatchupId,
+          division_id: divisionId,
+          order_in_matchup: 100 + index,
+          status: 'done',
+          max_game_count: 1,
+          court_number: 93,
+          order_in_court: 100 + index,
+          finished_at: new Date(Date.now() - (index + 100) * 60_000).toISOString(),
+        }))
+      )
+      .select('id');
+    expect(extra.error, `作成に失敗: ${extra.error?.message}`).toBeNull();
+    insertedMatchIds.push(...extra.data!.map((m) => m.id));
+
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.previousMatches).toHaveLength(MAX_PREVIOUS_CANDIDATES);
+    // 上限に届くのは普通のこと（コートごとに一番新しい 1 つが取れていればよい）。欠けた印は出さない
+    expect(data.truncated).toBe(false);
   });
 });

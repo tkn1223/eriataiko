@@ -126,3 +126,24 @@ export function applyLiveChange(
     ? applyScore(board, change, unsentByMatchId)
     : applyMatch(board, change);
 }
+
+/**
+ * 読み直した一覧に、読み直す前の「直している試合」の印を引き継ぐ。
+ * 終了の取り消しは表に痕を残さない（live に戻るだけ）ので、読み直した一覧からは印が消える。
+ * 引き継がないと、取り消して直している最中に読み直しが入ったとき、「直し中」の見た目が
+ * 黙って普通の進行中に変わる。まだ進行中の試合だけに引き継ぐ。
+ */
+export function carryOverReopened(reloaded: CourtMatch[], previous: CourtMatch[]): CourtMatch[] {
+  const reopenedIds = new Set(
+    previous.filter((match) => match.reopened).map((match) => match.matchId)
+  );
+  if (reopenedIds.size === 0) return reloaded;
+
+  let changed = false;
+  const carried = reloaded.map((match) => {
+    if (match.status !== 'live' || match.reopened || !reopenedIds.has(match.matchId)) return match;
+    changed = true;
+    return { ...match, reopened: true };
+  });
+  return changed ? carried : reloaded;
+}

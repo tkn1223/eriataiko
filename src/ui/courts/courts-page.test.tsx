@@ -59,7 +59,7 @@ function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
  * 8 面ぶんの見本の値を自前で組む（`/courts` は DB につながったので、固定の
  * sample-data.ts はもう無い。`/me` と同じ形。src/ui/me/my-page.test.tsx）。
  */
-function buildCourts(): Court[] {
+function buildCourts(): CourtFixture[] {
   return [
     {
       // 予選（上限1ゲーム）。20-19 から始まる。押せば数字が動く。
@@ -193,7 +193,9 @@ function buildCourts(): Court[] {
  * コートのカードの形で書いた見本を、画面が受け取る試合の一覧（`CourtMatch[]`）に直す。
  * 順番は並びの先頭から 1, 2, ... を振る（進行中が先、次の試合が後）。
  */
-function boardFromCourts(courts: Court[]): CourtMatch[] {
+type CourtFixture = Pick<Court, 'courtNumber' | 'live' | 'next'>;
+
+function boardFromCourts(courts: CourtFixture[]): CourtMatch[] {
   return courts.flatMap((court) => {
     const matches: CourtMatch[] = [];
     if (court.live) {
@@ -222,7 +224,7 @@ function boardFromCourts(courts: Court[]): CourtMatch[] {
 }
 
 type PageOverrides = Partial<Omit<React.ComponentProps<typeof CourtsPage>, 'board'>> & {
-  courts?: Court[];
+  courts?: CourtFixture[];
   board?: CourtMatch[];
 };
 
@@ -288,7 +290,7 @@ describe('CourtsPage', () => {
   });
 
   test('9・10 番のコートだけが渡されたら、その 2 枚だけが出る（番号の飛んだ並びのまま）', () => {
-    const courts: Court[] = [9, 10].map((courtNumber) => ({
+    const courts: CourtFixture[] = [9, 10].map((courtNumber) => ({
       courtNumber,
       live: null,
       next: {
@@ -822,20 +824,20 @@ describe('CourtsPage', () => {
       expect(calledUrls()).toEqual(['/api/matches/match-1/result']);
     });
 
-    test('終了が記録されると、そのコートは次の試合に切り替わる（読み直さない）', async () => {
+    test('終了が記録されると、そのコートは次の試合に切り替わり、終えた試合は1つ前に移る（読み直さない）', async () => {
       routeFetch({});
       renderPage();
 
       finishCourt1();
 
-      // 終わった試合（佐々木・井上）は外れて、次の試合の呼出待ちになる
-      await waitFor(() =>
-        expect(
-          within(screen.getByTestId('court-card-1')).queryByText('佐々木')
-        ).not.toBeInTheDocument()
-      );
+      // 終わった試合（佐々木・井上）は「1つ前」に移り、今の試合の枠は次の試合の呼出待ちになる
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
       const card = screen.getByTestId('court-card-1');
+      expect(
+        within(screen.getByTestId('previous-match-1')).getByText('佐々木')
+      ).toBeInTheDocument();
       expect(within(card).getByText('呼出待ち')).toBeInTheDocument();
+      expect(within(card).queryByText('LIVE')).not.toBeInTheDocument();
       expect(within(card).getByText('川口')).toBeInTheDocument();
       expect(refresh).not.toHaveBeenCalled();
     });
@@ -847,11 +849,10 @@ describe('CourtsPage', () => {
 
       finishCourt1();
 
-      await waitFor(() =>
-        expect(
-          within(screen.getByTestId('court-card-1')).queryByText('佐々木')
-        ).not.toBeInTheDocument()
-      );
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
+      expect(
+        within(screen.getByTestId('court-card-1')).queryByText('LIVE')
+      ).not.toBeInTheDocument();
     });
 
     test('送れていない点があるまま終了を押すと、点の案内と「終了を送っています」が出て、点が届くまで終了は送らない', async () => {
@@ -1031,12 +1032,14 @@ describe('CourtsPage', () => {
         maxGameCount: 1,
       });
 
-      // 進行中になった試合（元の「次」）の2部・川口・浜田が出て、終わった試合の名前は消える
+      // 進行中になった試合（元の「次」）の2部・川口・浜田が出る。終わった試合は「1つ前」に移る
       const card = screen.getByTestId('court-card-1');
       expect(within(card).getByText('LIVE')).toBeInTheDocument();
       expect(within(card).getByText('2部')).toBeInTheDocument();
       expect(within(card).getByText('川口')).toBeInTheDocument();
-      expect(within(card).queryByText('佐々木')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('previous-match-1')).getByText('佐々木')
+      ).toBeInTheDocument();
     });
 
     test('試合が終わると、そのコートは次の試合の呼出待ちに切り替わる', () => {
@@ -1130,6 +1133,320 @@ describe('CourtsPage', () => {
       await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
       await new Promise((resolve) => setTimeout(resolve, 600));
       expect(refresh).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  /**
+   * 1 つ前の試合と「直す」。次の試合が進行中でも直せる。
+   * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md の決めたこと 1・受け入れ基準 9〜13。
+   */
+  describe('1つ前と直す', () => {
+    const FINISHED_AT = '2026-10-09T01:00:00+00:00';
+
+    function previousMatch(overrides: Partial<CourtMatch> = {}): CourtMatch {
+      return {
+        matchId: 'match-prev',
+        status: 'done',
+        courtNumber: 1,
+        orderInCourt: 1,
+        finishedAt: FINISHED_AT,
+        reopened: false,
+        classLabel: { name: '3部', colorNumber: 3 },
+        roundLabel: '予選 0回戦',
+        teamA: team({ teamNumber: 3, players: ['山本', '清水'] }),
+        teamB: team({ teamNumber: 4, players: ['松田', '井上'] }),
+        isMine: false,
+        maxGameCount: 1,
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
+        ...overrides,
+      };
+    }
+
+    /** コート 1: 今の試合（match-1、20 対 19）と、1 つ前（match-prev、21 対 19）。 */
+    function boardWithPrevious(): CourtMatch[] {
+      return [...boardFromCourts(buildCourts()), previousMatch()];
+    }
+
+    function ok(): Promise<Response> {
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    }
+
+    function calls() {
+      return vi.mocked(fetch).mock.calls.map(([url, init]) => `${init?.method} ${String(url)}`);
+    }
+
+    function reopenOnCourt1() {
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '直す' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    }
+
+    test('終了したコートに「1つ前」の試合と「直す」が出る', () => {
+      renderPage({ board: boardWithPrevious() });
+
+      const row = screen.getByTestId('previous-match-1');
+      expect(within(row).getByText('1つ前')).toBeInTheDocument();
+      expect(within(row).getByText('21-19')).toBeInTheDocument();
+      expect(within(row).getByRole('button', { name: '直す' })).toBeInTheDocument();
+    });
+
+    test('観戦者には「直す」も「試合を終了する」も出ない。1つ前は見える', () => {
+      renderPage({ board: boardWithPrevious(), canInput: false });
+
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '直す' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    });
+
+    test('「直す」→ OK で終了の取り消しを送り、その試合が直し中の枠付きで出る。1つ前は無くなる', async () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      renderPage({ board: boardWithPrevious() });
+
+      reopenOnCourt1();
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByText('直し中')).toBeInTheDocument()
+      );
+      expect(calls()).toEqual(['DELETE /api/matches/match-prev/result']);
+      const panel = screen.getByTestId('fixing-match-1');
+      expect(within(panel).getByText('山本', { exact: false })).toBeInTheDocument();
+      expect(within(panel).getByText('第1ゲーム')).toBeInTheDocument();
+      expect(within(panel).getByText('21')).toBeInTheDocument();
+      expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
+      expect(refresh).not.toHaveBeenCalled();
+    });
+
+    test('確認で「戻る」なら、取り消しは送らない', () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      renderPage({ board: boardWithPrevious() });
+
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: '直す' })
+      );
+      fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+
+      expect(calls()).toEqual([]);
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+    });
+
+    test('取り消しを送っている間は「取り消しています」が出る', () => {
+      vi.mocked(fetch).mockImplementation(() => new Promise(() => {}));
+      renderPage({ board: boardWithPrevious() });
+
+      reopenOnCourt1();
+
+      expect(within(screen.getByTestId('previous-match-1')).getByRole('status')).toHaveTextContent(
+        '取り消しています'
+      );
+    });
+
+    test('つながらないときは、日本語の理由が出て、1つ前のまま。もう一度押せる', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      renderPage({ board: boardWithPrevious() });
+
+      reopenOnCourt1();
+
+      const row = screen.getByTestId('previous-match-1');
+      await waitFor(() =>
+        expect(within(row).getByRole('status')).toHaveTextContent('取り消せませんでした')
+      );
+      expect(within(row).getByRole('button', { name: '直す' })).toBeEnabled();
+      expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
+    });
+
+    test('入口に断られたときは、入口が返した理由が出る', async () => {
+      vi.mocked(fetch).mockResolvedValue(
+        new Response(JSON.stringify({ error: 'その試合は見つかりませんでした。' }), { status: 404 })
+      );
+      renderPage({ board: boardWithPrevious() });
+
+      reopenOnCourt1();
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('previous-match-1')).getByRole('status')
+        ).toHaveTextContent('その試合は見つかりませんでした。')
+      );
+    });
+
+    test('直して「もう一度終了する」→ OK で、終了を送り、また1つ前に戻る', async () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      renderPage({ board: boardWithPrevious() });
+      reopenOnCourt1();
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+
+      // 点を直す（A を 1 増やす）
+      fireEvent.click(
+        within(screen.getByTestId('fixing-match-1')).getByRole('button', {
+          name: '山本・清水の第1ゲームの得点を1増やす',
+        })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
+      expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
+      // 点（22 対 19）を送ってから終了が送られる
+      expect(calls()).toEqual([
+        'DELETE /api/matches/match-prev/result',
+        'POST /api/matches/match-prev/scores',
+        'POST /api/matches/match-prev/result',
+      ]);
+      expect(within(screen.getByTestId('previous-match-1')).getByText('22-19')).toBeInTheDocument();
+    });
+
+    test('次の試合が進行中でも直せて、その間も今の試合に点を入れられる', async () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      renderPage({ board: boardWithPrevious() });
+      reopenOnCourt1();
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+      const card = screen.getByTestId('court-card-1');
+
+      // 今の試合（佐々木・井上 20 対 19）は LIVE のまま、点を入れられる
+      expect(within(card).getByText('LIVE')).toBeInTheDocument();
+      fireEvent.click(
+        within(card).getByRole('button', { name: '佐々木・井上の第1ゲームの得点を1増やす' })
+      );
+      // 今の試合の A の点が 20 から 21 になった（直し中の試合の 21 と並んで 2 つ見える）
+      expect(within(card).getAllByText('21')).toHaveLength(2);
+      await waitFor(() => expect(calls()).toContain('POST /api/matches/match-1/scores'));
+      // 今の試合と直し中の試合に、別々の試合として保存される
+      expect(JSON.parse(String(vi.mocked(fetch).mock.calls.at(-1)?.[1]?.body))).toEqual({
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+      });
+    });
+
+    test('他の人が終了を取り消したのが届くと、観戦者の画面にも直し中が出る', () => {
+      renderPage({ board: boardWithPrevious(), canInput: false });
+
+      act(() =>
+        liveMock.handlers!.onChange({
+          kind: 'match',
+          matchId: 'match-prev',
+          status: 'live',
+          courtNumber: 1,
+          orderInCourt: 1,
+          finishedAt: null,
+          maxGameCount: 1,
+        })
+      );
+
+      expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('fixing-match-1')).queryByRole('button')
+      ).not.toBeInTheDocument();
+    });
+
+    test('他の人が終了したのが届くと、そのコートの1つ前が入れ替わる', () => {
+      renderPage({ board: boardWithPrevious(), canInput: false });
+
+      act(() =>
+        liveMock.handlers!.onChange({
+          kind: 'match',
+          matchId: 'match-1',
+          status: 'done',
+          courtNumber: 1,
+          orderInCourt: 2,
+          finishedAt: '2026-10-09T02:00:00+00:00',
+          maxGameCount: 1,
+        })
+      );
+
+      const row = screen.getByTestId('previous-match-1');
+      expect(within(row).getByText('20-19')).toBeInTheDocument();
+    });
+
+    test('直している最中に別の人が同じ試合を終了したら、送れていない点の理由を1つ前に残す', async () => {
+      vi.mocked(fetch).mockImplementation((input) =>
+        String(input).endsWith('/scores')
+          ? Promise.resolve(
+              new Response(JSON.stringify({ error: '終了した試合です。' }), { status: 409 })
+            )
+          : ok()
+      );
+      renderPage({ board: boardWithPrevious() });
+      reopenOnCourt1();
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+      fireEvent.click(
+        within(screen.getByTestId('fixing-match-1')).getByRole('button', {
+          name: '山本・清水の第1ゲームの得点を1増やす',
+        })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('fixing-match-1')).getByRole('status')).toHaveTextContent(
+          '終了した試合です。'
+        )
+      );
+
+      // 別の人が同じ試合を終了した
+      act(() =>
+        liveMock.handlers!.onChange({
+          kind: 'match',
+          matchId: 'match-prev',
+          status: 'done',
+          courtNumber: 1,
+          orderInCourt: 1,
+          finishedAt: '2026-10-09T03:00:00+00:00',
+          maxGameCount: 1,
+        })
+      );
+
+      const row = screen.getByTestId('previous-match-1');
+      expect(within(row).getByRole('status')).toHaveTextContent('終了した試合です。');
+    });
+
+    test('読み直しが入っても、直している試合は直し中のまま', async () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      const view = renderPage({ board: boardWithPrevious() });
+      reopenOnCourt1();
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+
+      // 読み直したサーバーの様子: 直している試合は、ただの進行中（印は残らない）
+      const reloaded = boardWithPrevious().map((match) =>
+        match.matchId === 'match-prev'
+          ? { ...match, status: 'live' as const, finishedAt: null }
+          : match
+      );
+      view.rerender(
+        <CourtsPage
+          board={reloaded}
+          stageLabel="予選リーグ"
+          completedMatches={2}
+          totalMatches={48}
+          canInput
+          emptyReason={null}
+          truncated={false}
+        />
+      );
+
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByText('直し中')).toBeInTheDocument()
+      );
+    });
+
+    test('全部終わったあとも、最後に終わったコートに1つ前が残り、「全部終わりました」も出る', () => {
+      renderPage({
+        board: [previousMatch()],
+        emptyReason: 'all-finished',
+      });
+
+      expect(screen.getByText('全部終わりました')).toBeInTheDocument();
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+      expect(screen.getByText('予定なし')).toBeInTheDocument();
+    });
+
+    test('1つ前を直し始めたら、「全部終わりました」は消える', async () => {
+      vi.mocked(fetch).mockImplementation(ok);
+      renderPage({ board: [previousMatch()], emptyReason: 'all-finished' });
+
+      fireEvent.click(screen.getByRole('button', { name: '直す' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+      expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
     });
   });
 });

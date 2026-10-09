@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { applyLiveChange, type LiveChange } from '@/ui/courts/apply-live-change';
+import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import type { CourtMatch, MatchSyncState } from '@/ui/courts/types';
 
@@ -212,5 +212,28 @@ describe('届いた試合の状態の変化を当てる', () => {
     );
 
     expect(result.board[0].scores).toEqual([{ gameNumber: 1, sideAScore: 12, sideBScore: 8 }]);
+  });
+});
+
+describe('読み直した一覧に、直している試合の印を引き継ぐ', () => {
+  test('読み直す前に直していた試合が、まだ進行中なら、直している印を残す', () => {
+    const before = [match({ reopened: true })];
+    const reloaded = [match({ reopened: false })];
+
+    expect(carryOverReopened(reloaded, before)[0].reopened).toBe(true);
+  });
+
+  test('読み直した結果が終了に戻っていれば、印は付けない', () => {
+    const before = [match({ reopened: true })];
+    const reloaded = [match({ status: 'done', finishedAt: '2026-10-09T01:00:00+00:00' })];
+
+    expect(carryOverReopened(reloaded, before)[0].reopened).toBe(false);
+  });
+
+  test('直していなかった試合に印は付かない。印を付ける必要が無ければ同じ一覧を返す', () => {
+    const before = [match()];
+    const reloaded = [match()];
+
+    expect(carryOverReopened(reloaded, before)).toBe(reloaded);
   });
 });

@@ -47,6 +47,7 @@ function match(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow 
     maxGameCount: 1,
     courtNumber: 1,
     orderInCourt: 1,
+    finishedAt: null,
     divisionId: 'div-1',
     stageId: 'stage-league',
     roundName: '予選 1回戦',
@@ -153,6 +154,51 @@ describe('コートのカード（試合に入っているコート番号から�
     const view = buildCourtsView(baseInput({ matches: [match({ courtNumber: 4 })] }));
 
     expect(view.courts.map((c) => c.courtNumber)).toEqual([4]);
+  });
+});
+
+describe('画面に渡す試合の一覧（board）', () => {
+  test('進行中・未実施の試合が、次の次のぶんまで全部入る（届いた変化で繰り上げるため）', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({ matchId: 'live', status: 'live', orderInCourt: 1 }),
+          match({ matchId: 'next', status: 'waiting', orderInCourt: 2 }),
+          match({ matchId: 'next-next', status: 'waiting', orderInCourt: 3 }),
+        ],
+      })
+    );
+
+    expect(view.board.map((m) => [m.matchId, m.status])).toEqual([
+      ['live', 'live'],
+      ['next', 'waiting'],
+      ['next-next', 'waiting'],
+    ]);
+  });
+
+  test('得点・コート・順番・終了の時刻・直している印が入る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ courtNumber: 4, orderInCourt: 2 })],
+      })
+    );
+
+    expect(view.board[0]).toMatchObject({
+      courtNumber: 4,
+      orderInCourt: 2,
+      finishedAt: null,
+      reopened: false,
+      scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
+    });
+  });
+
+  test('コートが決まっていない試合も入る（あとでコートが決まった変化を当てるため）', () => {
+    const view = buildCourtsView(
+      baseInput({ matches: [match({ status: 'waiting', courtNumber: null })] })
+    );
+
+    expect(view.board).toHaveLength(1);
+    expect(view.courts).toEqual([]);
   });
 });
 

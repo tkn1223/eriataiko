@@ -1,21 +1,31 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { UnsavedNotice } from '@/ui/components/unsaved-notice';
+import { applyLiveChange, type LiveChange } from '@/ui/courts/apply-live-change';
 import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import { initialLiveScores } from '@/ui/courts/initial-live-scores';
+import { deriveCourts } from '@/ui/courts/derive-courts';
+import { createLiveBoard } from '@/ui/courts/live-board';
+import { overlayUnsentScores } from '@/ui/courts/overlay-unsent-scores';
+import { createRefreshScheduler } from '@/ui/courts/refresh-scheduler';
 import {
   activeMatchId,
-  type Court,
+  type CourtMatch,
   type CourtsEmptyReason,
   type LiveScore,
 } from '@/ui/courts/types';
-import { useScoreSync } from '@/ui/courts/use-score-sync';
+import { useLiveUpdates } from '@/ui/courts/use-live-updates';
+import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
 
 type Props = {
-  courts: Court[];
+  /**
+   * 試合の一覧（読み込んだ時点の様子）。コートのカードはここから組み立てる。
+   * 読み直されて新しい一覧が渡されたら、画面が持っている様子を置き換える。
+   */
+  board: CourtMatch[];
   /** いまの段のラベル（例: '予選リーグ' → 決勝が始まると '決勝トーナメント'）。 */
   stageLabel: string;
   completedMatches: number;
@@ -75,6 +85,27 @@ function EmptyCourtsNotice({ reason }: { reason: CourtsEmptyReason }) {
 /** 試合の終了はまだ記録されない旨を、得点を入れる人（選手）にだけ出す。 */
 const PLAYER_UNSAVED_NOTICE = '試合の終了はまだ記録されません（点は保存されます）';
 
+/** 読み直しの依頼をまとめる間隔（src/ui/courts/refresh-scheduler.ts）。 */
+const REFRESH_SETTLE_MS = 300;
+const REFRESH_MIN_INTERVAL_MS = 3000;
+
+/**
+ * 案内を出すかと、その理由。サーバーが読んだときの理由（`serverReason`）を、
+ * いまの試合の様子に合わせて直す。
+ * 試合が終わった・取り消されたなどで、読み込んだときの理由が古くなっても、画面が食い違わないように。
+ */
+function currentEmptyReason(
+  board: CourtMatch[],
+  hasCardWithMatch: boolean,
+  serverReason: CourtsEmptyReason | null
+): CourtsEmptyReason | null {
+  if (hasCardWithMatch) return null;
+  const remaining = board.some((match) => match.status !== 'done');
+  if (remaining) return 'courts-undecided';
+  // 残っている試合が無い。試合が 1 つも無い大会はそのまま、それ以外は「全部終わった」
+  return serverReason === 'no-matches' ? 'no-matches' : 'all-finished';
+}
+
 /**
  * 結果LIVE画面（トップ）。
  *
@@ -82,15 +113,19 @@ const PLAYER_UNSAVED_NOTICE = '試合の終了はまだ記録されません（�
  * 渡す props は `page.tsx` が DB から組み立てる（`src/usecases/build-courts-view.ts`）。
  *
  * 得点は複数のコートで同時に動く。進行表（1 件だけ選んで開く作り）と違い、
- * コート番号をキーにした状態をここで持つ。
+ * 試合の id をキーにした一覧（`CourtMatch[]`）をここで持ち、コートのカードはそこから組み立てる。
  *
  * 押した点の保存は `use-score-sync.ts` に任せる（送る・送り直す・まとめる仕組みを
  * 画面の部品から切り離す。docs/specs/2026-09-19-save-score-from-courts.md の「つくりの方針」）。
  * 送れていない点はこの画面ではなくアプリ全体で預かるので、下のメニューで別の画面に移っても
  * 送り直しは続き、戻ってきたらその数字のまま出る。
+ *
+ * 他の人の点や試合の変化は `use-live-updates.ts` が受け取り、届いた行だけを `applyLiveChange` で
+ * 一覧に当てる（画面全体は読み直さない）。手元に無い試合の変化と、途切れたあとのつながり直しのときだけ、
+ * 1 回にまとめて読み直す（docs/specs/2026-10-09-courts-live-and-finish.md）。
  */
 export function CourtsPage({
-  courts,
+  board: serverBoard,
   stageLabel,
   completedMatches,
   totalMatches,
@@ -98,38 +133,61 @@ export function CourtsPage({
   emptyReason,
   truncated,
 }: Props) {
+  const router = useRouter();
   const { sync, statusByMatchId } = useScoreSync();
-  // 開いたときの数字は、サーバーから読んだ得点に、アプリの中で預かっている「まだ送れていない点」を
-  // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。initial-live-scores.ts）。
-  const [liveScores, setLiveScores] = useState<Record<number, LiveScore>>(() =>
-    initialLiveScores(courts, canInput, statusByMatchId)
+
+  // 開いたときの様子は、サーバーから読んだ試合に、アプリの中で預かっている「まだ送れていない点」を
+  // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。overlay-unsent-scores.ts）。
+  const [liveBoard] = useState(() =>
+    createLiveBoard(overlayUnsentScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()))
   );
+  const board = useSyncExternalStore(liveBoard.subscribe, liveBoard.get, liveBoard.get);
 
-  // 押した直後の得点を、描画を待たずに読める形でも持つ（画面に出すのは上の state）。
-  //
-  // 描画のたびに作り直される `liveScores` から次の値を計算すると、描き直される前に
-  // 2 回目のタップが届いたとき、2 回とも同じ古い値から計算して 1 点落ちる
-  // （e2e/courts.spec.ts の tapTenTimesAtOnce で 10 回押して 1 しか増えないのを確かめた）。
-  // `setLiveScores(prev => ...)` の中で計算すれば数えそこねないが、そこで計算した値を
-  // 外に持ち出して保存の入口に送ると、関数が呼ばれるのが「あとで」になることがあり送信が飛んだ。
-  // そこで、押した時点でここから計算し、同じ値を state と保存の両方に渡す。
-  // ここを書き換えるのは下の 2 つの関数（押したときに呼ばれる）だけ。
-  const latestScoresRef = useRef(liveScores);
+  // 読み直されて新しい一覧が渡されたら置き換える。送れていない点は、重ね直して残す。
+  const renderedServerBoard = useRef(serverBoard);
+  useEffect(() => {
+    if (renderedServerBoard.current === serverBoard) return;
+    renderedServerBoard.current = serverBoard;
+    liveBoard.set(overlayUnsentScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()));
+  }, [serverBoard, canInput, liveBoard]);
 
-  function commitLiveScores(next: Record<number, LiveScore>) {
-    latestScoresRef.current = next;
-    setLiveScores(next);
+  // 読み直しは、依頼をまとめて連続しないようにする。
+  const [refreshScheduler] = useState(() =>
+    createRefreshScheduler({
+      refresh: () => router.refresh(),
+      settleMs: REFRESH_SETTLE_MS,
+      minIntervalMs: REFRESH_MIN_INTERVAL_MS,
+    })
+  );
+  useEffect(() => () => refreshScheduler.cancel(), [refreshScheduler]);
+
+  function handleLiveChange(change: LiveChange) {
+    const result = applyLiveChange(liveBoard.get(), change, appScoreSyncStore.getSnapshot());
+    liveBoard.set(result.board);
+    if (result.needsRefresh) refreshScheduler.request();
   }
+
+  const connection = useLiveUpdates({
+    onChange: handleLiveChange,
+    // つながり直したら、途切れている間の変化を取り戻すために 1 回だけ読み直す
+    onRecovered: () => refreshScheduler.request(),
+  });
+
+  // 試合の終了は、今は画面の中だけで終わった見た目にする（データベースへの記録はまだ）。
+  const [finishedMatchIds, setFinishedMatchIds] = useState<ReadonlySet<string>>(new Set());
+
+  const courts = useMemo(() => deriveCourts(board), [board]);
 
   /** 1 コート・1 ゲームの枠の得点を 1 点だけ動かし、その点数を保存の入口に送る。 */
   function changeScore(courtNumber: number, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
-    const court = courts.find((c) => c.courtNumber === courtNumber);
+    const latestBoard = liveBoard.get();
+    const court = deriveCourts(latestBoard).find((c) => c.courtNumber === courtNumber);
     const matchId = court ? activeMatchId(court, canInput) : null;
+    const target = latestBoard.find((match) => match.matchId === matchId);
+    if (!matchId || !target) return;
 
-    const latest = latestScoresRef.current;
-    const current = latest[courtNumber] ?? { scores: [], finished: false, started: false };
-    const index = current.scores.findIndex((score) => score.gameNumber === gameNumber);
-    const existing = current.scores[index] ?? { gameNumber, sideAScore: 0, sideBScore: 0 };
+    const index = target.scores.findIndex((score) => score.gameNumber === gameNumber);
+    const existing = target.scores[index] ?? { gameNumber, sideAScore: 0, sideBScore: 0 };
     // 押し間違いでマイナスの点にならないよう 0 で止める
     const updated: GameScore =
       side === 'A'
@@ -137,32 +195,30 @@ export function CourtsPage({
         : { ...existing, sideBScore: Math.max(0, existing.sideBScore + delta) };
     const scores =
       index >= 0
-        ? current.scores.map((score, i) => (i === index ? updated : score))
-        : [...current.scores, updated];
-    // 入口は 1 点入った時点で試合を LIVE にし、0 対 0 に戻しても呼出待ちには戻さない
-    // （src/usecases/save-score.ts）。画面もそれに合わせ、一度入ったら LIVE のままにする。
-    const started = current.started || hasAnyPoint(scores);
+        ? target.scores.map((score, i) => (i === index ? updated : score))
+        : [...target.scores, updated];
 
-    commitLiveScores({ ...latest, [courtNumber]: { ...current, scores, started } });
+    // 押した点はその場で画面に出し（描画を待たず、最新の一覧から計算する）、同じ値を保存にも渡す。
+    liveBoard.set(latestBoard.map((match) => (match === target ? { ...match, scores } : match)));
 
-    if (matchId) {
-      sync({
-        matchId,
-        gameNumber,
-        sideAScore: updated.sideAScore,
-        sideBScore: updated.sideBScore,
-      });
-    }
+    sync({
+      matchId,
+      gameNumber,
+      sideAScore: updated.sideAScore,
+      sideBScore: updated.sideBScore,
+    });
   }
 
-  /** 確認画面の「OK」で呼ばれる。そのコートを終了状態にする（保存は 1-d の宿題）。 */
+  /** 確認画面の「OK」で呼ばれる。そのコートを終了した見た目にする（記録はまだしない）。 */
   function finishMatch(courtNumber: number) {
-    const latest = latestScoresRef.current;
-    const current = latest[courtNumber];
-    if (!current) return;
-
-    commitLiveScores({ ...latest, [courtNumber]: { ...current, finished: true } });
+    const court = deriveCourts(liveBoard.get()).find((c) => c.courtNumber === courtNumber);
+    const matchId = court ? activeMatchId(court, canInput) : null;
+    if (!matchId) return;
+    setFinishedMatchIds((previous) => new Set(previous).add(matchId));
   }
+
+  const hasCardWithMatch = courts.some((court) => court.live !== null || court.next !== null);
+  const shownEmptyReason = currentEmptyReason(board, hasCardWithMatch, emptyReason);
 
   return (
     <div className="mx-auto max-w-md px-4 py-4">
@@ -183,6 +239,16 @@ export function CourtsPage({
         </div>
       )}
 
+      {connection === 'down' && (
+        <p
+          role="status"
+          data-testid="live-down-notice"
+          className="text-live mb-[14px] rounded-[10px] bg-red-100 px-3 py-2 text-[12px] font-extrabold"
+        >
+          自動更新が止まっています。電波が戻ると自動でつながります。
+        </p>
+      )}
+
       {truncated && (
         <p
           role="alert"
@@ -194,18 +260,33 @@ export function CourtsPage({
 
       <h2 className="mb-[10px] text-[15px] font-black">コートの状況</h2>
 
-      {emptyReason && <EmptyCourtsNotice reason={emptyReason} />}
+      {shownEmptyReason && <EmptyCourtsNotice reason={shownEmptyReason} />}
 
       <div className="flex flex-col gap-[10px]">
         {courts.map((court) => {
           const matchId = activeMatchId(court, canInput);
+          const activeMatch = board.find((match) => match.matchId === matchId);
+          const syncStatus = matchId ? (statusByMatchId[matchId] ?? null) : null;
+          const liveScore: LiveScore | null =
+            matchId && activeMatch
+              ? {
+                  scores: activeMatch.scores,
+                  finished: finishedMatchIds.has(matchId),
+                  // 進行中の試合は最初から LIVE。呼出待ちの次の試合は、1 点でも入った（自分が押した・
+                  // 他の人が入れた）時点で LIVE の見た目になり、0 対 0 に戻しても LIVE のまま。
+                  started:
+                    court.live !== null ||
+                    (syncStatus?.started ?? false) ||
+                    hasAnyPoint(activeMatch.scores),
+                }
+              : null;
           return (
             <CourtLiveCard
               key={court.courtNumber}
               court={court}
-              liveScore={liveScores[court.courtNumber] ?? null}
+              liveScore={liveScore}
               canInput={canInput}
-              syncStatus={matchId ? (statusByMatchId[matchId] ?? null) : null}
+              syncStatus={syncStatus}
               onIncrement={(gameNumber, side) =>
                 changeScore(court.courtNumber, gameNumber, side, 1)
               }

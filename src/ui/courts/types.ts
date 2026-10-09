@@ -125,6 +125,39 @@ export type MatchSyncState = ScoreSyncStatus & {
   unsentScores: GameScore[];
 };
 
+/**
+ * 試合 1 つぶんの「いまの様子」。画面が持つ元データ（サーバーから読んだ行と、あとから届いた変化を
+ * 当てた結果）で、コートのカード（`Court`）はここから `derive-courts.ts` が組み立てる。
+ *
+ * カードの形（`LiveMatch` / `NextMatch`）ではなく平らな一覧で持つのは、届いた変化が
+ * 「どの試合の状態が変わったか」の形で来るため。カードの形のままだと、変化のたびに
+ * 木を辿って差し替えることになり、試合がコートを移るときや、次の試合が繰り上がるときに崩れる。
+ */
+export type CourtMatchStatus = 'waiting' | 'live' | 'done';
+
+export type CourtMatch = {
+  matchId: string;
+  status: CourtMatchStatus;
+  courtNumber: number | null;
+  orderInCourt: number | null;
+  /** 終了した時刻（ISO 8601）。終了していなければ null。「1 つ前」を決めるのに使う。 */
+  finishedAt: string | null;
+  /**
+   * 終了を取り消して直している試合か。この画面で取り消した、または取り消されたのを見た試合だけ true。
+   * 取り消しても表には痕が残らない（live に戻り、finished_at が空になるだけ）ので、
+   * 開き直した画面では分からない（ただの進行中として出る）。
+   */
+  reopened: boolean;
+  classLabel: ClassLabel;
+  roundLabel: string;
+  teamA: CourtTeam;
+  teamB: CourtTeam;
+  isMine: boolean;
+  maxGameCount: number;
+  /** サーバーから届いた得点（手元で押した分も含む）。無い枠は 0 対 0。 */
+  scores: GameScore[];
+};
+
 export type Court = {
   courtNumber: number;
   /** 進行中の試合。無いコートは「呼出待ち」または「予定なし」になる。 */

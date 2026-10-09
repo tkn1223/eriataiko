@@ -5,7 +5,14 @@ import {
   type DivisionRow,
 } from '@/domain/class-labels';
 import type { GameScore } from '@/domain/scoring';
-import type { Court, CourtsEmptyReason, CourtTeam, LiveMatch, NextMatch } from '@/ui/courts/types';
+import { deriveCourts } from '@/ui/courts/derive-courts';
+import type {
+  Court,
+  CourtMatch,
+  CourtMatchStatus,
+  CourtsEmptyReason,
+  CourtTeam,
+} from '@/ui/courts/types';
 
 /**
  * 結果LIVE（`/courts`）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -14,8 +21,10 @@ import type { Court, CourtsEmptyReason, CourtTeam, LiveMatch, NextMatch } from '
  * 層の分け方は AGENTS.md の「db が読む → usecases が画面の形に組む → page.tsx は呼ぶだけ」に従う
  * （読み取りは `src/db/courts.ts`）。
  *
- * 入力は 2 種類の読み込みに分かれている（大会が進むほど重くならないように）。
+ * 入力は 3 種類の読み込みに分かれている（大会が進むほど重くならないように）。
  * - `matches` … **進行中（live）と未実施（waiting）の試合だけ**。名前・得点つき。コートのカード用。
+ * - `previousMatches` … 最近終わった試合（新しい順）。コートごとの「1 つ前」を選ぶ元。終わった試合を
+ *   全部は読まない（上限つき）。
  * - `stages[].totalMatches` / `doneMatches` … 段ごとの**件数だけ**。「◯/◯ 試合消化」用。
  */
 
@@ -46,11 +55,13 @@ export type CourtsViewGameScoreRow = GameScore;
 
 export type CourtsViewMatchRow = {
   matchId: string;
-  /** `matches.status`。ここに来るのは 'waiting' | 'live'（終わった試合は読まない）。 */
+  /** `matches.status`。 */
   status: string;
   maxGameCount: number;
   courtNumber: number | null;
   orderInCourt: number | null;
+  /** `matches.finished_at`（ISO 8601）。終わっていない試合は null。 */
+  finishedAt: string | null;
   divisionId: string;
   stageId: string;
   /** `matchups.round_name`。例: '予選 1回戦'。 */
@@ -67,6 +78,11 @@ export type CourtsViewInput = {
   stages: CourtsViewStageRow[];
   /** live と waiting の試合だけ。 */
   matches: CourtsViewMatchRow[];
+  /**
+   * 最近終わった試合（終了の時刻つき）。ここからコートごとに一番新しい 1 つを「1 つ前」に選ぶ。
+   * 並び順は問わない（この関数が時刻で選ぶ）。
+   */
+  previousMatches: CourtsViewMatchRow[];
   /** 読む上限を超えた（読み切れていない）。黙って欠けさせず、画面で知らせる。 */
   truncated: boolean;
 };
@@ -78,8 +94,16 @@ export type CourtsView = {
   completedMatches: number;
   /** いまの段の全試合数。 */
   totalMatches: number;
+  /**
+   * 画面が持つ元データ。コートのカードはここから組み立てる（`deriveCourts`）。
+   * 届いた変化を当てたあとも同じ関数でカードにするため、画面にはカードではなくこちらを渡す。
+   */
+  board: CourtMatch[];
   courts: Court[];
-  /** `courts` が空のときだけ入る。 */
+  /**
+   * 進行中・未実施の試合が入ったコートが 1 つも無いときだけ入る。
+   * 最後の試合が終わったコートは 1 つ前を出すためにカードが残るので、案内はカードと一緒に出ることがある。
+   */
   emptyReason: CourtsEmptyReason | null;
   truncated: boolean;
 };
@@ -106,60 +130,26 @@ function classLabelOf(
   return classLabelById.get(match.divisionId) ?? UNKNOWN_CLASS_LABEL;
 }
 
-function toLiveMatch(
+function toCourtMatch(
   match: CourtsViewMatchRow,
   myParticipantId: string | null,
   classLabelById: Map<string, ClassLabel>
-): LiveMatch {
+): CourtMatch {
   return {
+    matchId: match.matchId,
+    // 画面に出す試合は live / waiting / done のどれか（表の check 制約で保証されている）
+    status: match.status as CourtMatchStatus,
+    courtNumber: match.courtNumber,
+    orderInCourt: match.orderInCourt,
+    finishedAt: match.finishedAt,
+    reopened: false,
     classLabel: classLabelOf(match, classLabelById),
     roundLabel: match.roundName,
     teamA: toCourtTeam(match.sideA),
     teamB: toCourtTeam(match.sideB),
     isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
-    scores: match.gameScores,
     maxGameCount: match.maxGameCount,
-  };
-}
-
-function toNextMatch(
-  match: CourtsViewMatchRow,
-  myParticipantId: string | null,
-  classLabelById: Map<string, ClassLabel>
-): NextMatch {
-  return {
-    classLabel: classLabelOf(match, classLabelById),
-    teamA: toCourtTeam(match.sideA),
-    teamB: toCourtTeam(match.sideB),
-    isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
-  };
-}
-
-/** `order_in_court` が最小の 1 件を選ぶ。順番が未定（null）は最後に回す。 */
-function pickByOrderInCourt(matches: CourtsViewMatchRow[]): CourtsViewMatchRow | null {
-  if (matches.length === 0) return null;
-  const sorted = [...matches].sort((a, b) => {
-    const orderA = a.orderInCourt ?? Number.MAX_SAFE_INTEGER;
-    const orderB = b.orderInCourt ?? Number.MAX_SAFE_INTEGER;
-    return orderA - orderB;
-  });
-  return sorted[0];
-}
-
-function buildCourt(
-  courtNumber: number,
-  matches: CourtsViewMatchRow[],
-  myParticipantId: string | null,
-  classLabelById: Map<string, ClassLabel>
-): Court {
-  const onThisCourt = matches.filter((m) => m.courtNumber === courtNumber);
-  const liveMatch = pickByOrderInCourt(onThisCourt.filter((m) => m.status === 'live'));
-  const nextMatch = pickByOrderInCourt(onThisCourt.filter((m) => m.status === 'waiting'));
-
-  return {
-    courtNumber,
-    live: liveMatch ? toLiveMatch(liveMatch, myParticipantId, classLabelById) : null,
-    next: nextMatch ? toNextMatch(nextMatch, myParticipantId, classLabelById) : null,
+    scores: match.gameScores,
   };
 }
 
@@ -204,31 +194,53 @@ function emptyReasonOf(
   return hasAnyMatch ? 'all-finished' : 'no-matches';
 }
 
+/** コートごとに、終了の時刻が一番新しい終わった試合を 1 つずつ選ぶ。 */
+function newestFinishedPerCourt(previousMatches: CourtsViewMatchRow[]): CourtsViewMatchRow[] {
+  const newestByCourt = new Map<number, CourtsViewMatchRow>();
+  for (const match of previousMatches) {
+    if (match.courtNumber === null || match.finishedAt === null) continue;
+    const current = newestByCourt.get(match.courtNumber);
+    if (!current || Date.parse(match.finishedAt) > Date.parse(current.finishedAt ?? '')) {
+      newestByCourt.set(match.courtNumber, match);
+    }
+  }
+  return [...newestByCourt.values()];
+}
+
 export function buildCourtsView(input: CourtsViewInput): CourtsView {
   const classLabelById = classLabelsByDivisionId(input.divisions);
   const progress = currentStageProgress(input.stages, input.matches);
 
-  // 出すのは進行中・未実施の試合だけ。念のため終わった試合が混ざっても使わない。
+  // 進行中・未実施の試合。念のため終わった試合が混ざっても使わない。
   const remainingMatches = input.matches.filter(
     (m) => m.status === 'live' || m.status === 'waiting'
   );
 
-  // コートの枚数は決め打ちせず、試合に入っているコート番号から出す
-  // （次の大会は 10 面。番号が飛んでいる日は飛んだまま出す。コート未定の試合はカードにしない）。
-  const courtNumbers = [
-    ...new Set(remainingMatches.flatMap((m) => (m.courtNumber === null ? [] : [m.courtNumber]))),
-  ].sort((a, b) => a - b);
+  // 画面に渡す元データ。コートごとの 1 つ前だけを足す（古い終わった試合は渡さない。
+  // 画面に渡るデータは、そのまま通信量になる）。
+  // コート用と 1 つ前の元は同時に別々に読むので、その間に終わった・取り消された試合は両方に入りうる。
+  // 同じ試合が 2 つあると、届いた変化が片方にしか当たらず、進行中と 1 つ前に二重に出るので、
+  // コート用のほうを残す（どちらが新しいかは分からないが、つながったときの読み直しで直る）。
+  const remainingIds = new Set(remainingMatches.map((m) => m.matchId));
+  const previousCandidates = input.previousMatches.filter(
+    (m) => m.status === 'done' && !remainingIds.has(m.matchId)
+  );
+  const board = [...remainingMatches, ...newestFinishedPerCourt(previousCandidates)].map((match) =>
+    toCourtMatch(match, input.myParticipantId, classLabelById)
+  );
+  const courts = deriveCourts(board);
 
-  const courts = courtNumbers.map((courtNumber) =>
-    buildCourt(courtNumber, remainingMatches, input.myParticipantId, classLabelById)
+  const hasCardWithMatch = courts.some(
+    (court) => court.live !== null || court.next !== null || court.fixing.length > 0
   );
 
   return {
     stageLabel: progress.label,
     completedMatches: progress.completedMatches,
     totalMatches: progress.totalMatches,
+    board,
     courts,
-    emptyReason: courts.length === 0 ? emptyReasonOf(remainingMatches, input.stages) : null,
+    emptyReason: hasCardWithMatch ? null : emptyReasonOf(remainingMatches, input.stages),
     truncated: input.truncated,
   };
 }

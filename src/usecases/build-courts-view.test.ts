@@ -47,6 +47,7 @@ function match(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow 
     maxGameCount: 1,
     courtNumber: 1,
     orderInCourt: 1,
+    finishedAt: null,
     divisionId: 'div-1',
     stageId: 'stage-league',
     roundName: '予選 1回戦',
@@ -75,6 +76,7 @@ function baseInput(overrides: Partial<CourtsViewInput> = {}): CourtsViewInput {
     divisions: DIVISIONS,
     stages: STAGES,
     matches: [match()],
+    previousMatches: [],
     truncated: false,
     ...overrides,
   };
@@ -156,6 +158,162 @@ describe('コートのカード（試合に入っているコート番号から�
   });
 });
 
+describe('画面に渡す試合の一覧（board）', () => {
+  test('進行中・未実施の試合が、次の次のぶんまで全部入る（届いた変化で繰り上げるため）', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({ matchId: 'live', status: 'live', orderInCourt: 1 }),
+          match({ matchId: 'next', status: 'waiting', orderInCourt: 2 }),
+          match({ matchId: 'next-next', status: 'waiting', orderInCourt: 3 }),
+        ],
+      })
+    );
+
+    expect(view.board.map((m) => [m.matchId, m.status])).toEqual([
+      ['live', 'live'],
+      ['next', 'waiting'],
+      ['next-next', 'waiting'],
+    ]);
+  });
+
+  test('得点・コート・順番・終了の時刻・直している印が入る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ courtNumber: 4, orderInCourt: 2 })],
+      })
+    );
+
+    expect(view.board[0]).toMatchObject({
+      courtNumber: 4,
+      orderInCourt: 2,
+      finishedAt: null,
+      reopened: false,
+      scores: [{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }],
+    });
+  });
+
+  test('コートが決まっていない試合も入る（あとでコートが決まった変化を当てるため）', () => {
+    const view = buildCourtsView(
+      baseInput({ matches: [match({ status: 'waiting', courtNumber: null })] })
+    );
+
+    expect(view.board).toHaveLength(1);
+    expect(view.courts).toEqual([]);
+  });
+});
+
+describe('1 つ前の試合（コートごとに終了の時刻が一番新しい終わった試合）', () => {
+  const OLD = '2026-10-09T01:00:00+00:00';
+  const NEW = '2026-10-09T02:00:00+00:00';
+
+  function done(overrides: Partial<CourtsViewMatchRow>): CourtsViewMatchRow {
+    return match({ status: 'done', finishedAt: NEW, ...overrides });
+  }
+
+  test('コートごとに、一番新しく終わった試合が 1 つ前になる', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'live', orderInCourt: 5 })],
+        previousMatches: [
+          done({ matchId: 'newest', finishedAt: NEW }),
+          done({ matchId: 'older', finishedAt: OLD }),
+        ],
+      })
+    );
+
+    expect(view.courts[0].previous?.matchId).toBe('newest');
+  });
+
+  test('1 つ前には、部・両ペアの名前・得点が入る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'live', orderInCourt: 5 })],
+        previousMatches: [
+          done({
+            matchId: 'prev',
+            roundName: '予選 3回戦',
+            gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 17 }],
+          }),
+        ],
+      })
+    );
+
+    expect(view.courts[0].previous).toMatchObject({
+      matchId: 'prev',
+      roundLabel: '予選 3回戦',
+      classLabel: { name: '1部', colorNumber: 1 },
+      teamA: { players: ['佐藤', '鈴木'] },
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 17 }],
+    });
+  });
+
+  test('画面に渡す一覧には、コートごとの 1 つ前だけが入る（古い終わった試合は渡さない）', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'live', orderInCourt: 5 })],
+        previousMatches: [
+          done({ matchId: 'newest', finishedAt: NEW }),
+          done({ matchId: 'older', finishedAt: OLD }),
+          done({ matchId: 'other-court', courtNumber: 2, finishedAt: OLD }),
+        ],
+      })
+    );
+
+    expect(view.board.map((m) => m.matchId).sort()).toEqual(['live', 'newest', 'other-court']);
+  });
+
+  test('終了の時刻が無い終わった試合は、1 つ前に選ばない', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'live', orderInCourt: 5 })],
+        previousMatches: [done({ matchId: 'no-time', finishedAt: null })],
+      })
+    );
+
+    expect(view.courts[0].previous).toBeNull();
+    expect(view.board.map((m) => m.matchId)).toEqual(['live']);
+  });
+
+  test('進行中も未実施も無くなったコートでも、1 つ前があればカードが残り、「全部終わった」の案内も出る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [],
+        previousMatches: [done({ matchId: 'last' })],
+        stages: [
+          stage({ id: 'stage-league', name: '予選リーグ', totalMatches: 1, doneMatches: 1 }),
+        ],
+      })
+    );
+
+    expect(view.courts.map((c) => [c.courtNumber, c.live, c.next])).toEqual([[1, null, null]]);
+    expect(view.courts[0].previous?.matchId).toBe('last');
+    expect(view.emptyReason).toBe('all-finished');
+  });
+
+  test('同時に読んだ 2 つの読み込みの両方に同じ試合が入ったら（読む間に終わった）、1 つにする', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [match({ matchId: 'just-finished', orderInCourt: 5 })],
+        previousMatches: [
+          done({ matchId: 'just-finished', finishedAt: NEW }),
+          done({ matchId: 'older', finishedAt: OLD }),
+        ],
+      })
+    );
+
+    expect(view.board.map((m) => m.matchId).sort()).toEqual(['just-finished', 'older']);
+    expect(view.courts[0].previous?.matchId).toBe('older');
+  });
+
+  test('1 つ前が無ければ null', () => {
+    const view = buildCourtsView(baseInput());
+
+    expect(view.courts[0].previous).toBeNull();
+    expect(view.courts[0].fixing).toEqual([]);
+  });
+});
+
 describe('カードが 0 枚のときの理由', () => {
   test('カードがあれば理由は無い', () => {
     expect(buildCourtsView(baseInput()).emptyReason).toBeNull();
@@ -226,6 +384,21 @@ describe('buildCourtsView', () => {
     expect(court1.live!.teamB.players).toEqual(['高橋', '伊藤']);
     expect(court1.live!.scores).toEqual([{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }]);
     expect(court1.live!.maxGameCount).toBe(1);
+    expect(court1.live!.matchId).toBe('match-1');
+  });
+
+  test('次の試合には、あとで保存に使う matchId・回戦・枠の数も出る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({ matchId: 'm-next', status: 'waiting', maxGameCount: 3, roundName: '準決勝' }),
+        ],
+      })
+    );
+
+    expect(view.courts[0].next!.matchId).toBe('m-next');
+    expect(view.courts[0].next!.roundLabel).toBe('準決勝');
+    expect(view.courts[0].next!.maxGameCount).toBe(3);
   });
 
   test('部の文字は divisions.name、色は並び順の番号', () => {
@@ -273,7 +446,7 @@ describe('buildCourtsView', () => {
     expect(view.courts[0].live!.teamA.teamNumber).toBe(3);
   });
 
-  test('進行中の試合が2つあれば order_in_court の若いほうを進行中として出す', () => {
+  test('進行中の試合が2つあれば order_in_court の後ろのほうを今の試合に、前のほうを直し中として出す', () => {
     const view = buildCourtsView(
       baseInput({
         matches: [
@@ -283,7 +456,8 @@ describe('buildCourtsView', () => {
       })
     );
 
-    expect(view.courts[0].live!.roundLabel).toBe('1番目');
+    expect(view.courts[0].live!.roundLabel).toBe('2番目');
+    expect(view.courts[0].fixing.map((m) => m.roundLabel)).toEqual(['1番目']);
   });
 
   test('waitingの試合はnextに、order_in_courtが最小のものが出る', () => {

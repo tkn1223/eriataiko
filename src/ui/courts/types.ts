@@ -43,6 +43,8 @@ export type CourtTeam = {
 };
 
 export type LiveMatch = {
+  /** `matches.id`。得点を保存する入口（`POST /api/matches/[matchId]/scores`）の宛先。 */
+  matchId: string;
   classLabel: ClassLabel;
   /** 例: '予選 1回戦' */
   roundLabel: string;
@@ -67,20 +69,148 @@ export type LiveScore = {
   scores: GameScore[];
   /** 試合が終わったか。終わったコートは得点を押せなくする。 */
   finished: boolean;
+  /**
+   * 1 点でも入ったことがあるか。呼出待ちから入力を始めたコートを、0 対 0 に戻しても
+   * LIVE の見た目のままにするのに使う（入口の側も一度 LIVE にした試合は呼出待ちに戻さない）。
+   * 進行中として読み込んだコートは最初から true。
+   */
+  started: boolean;
 };
 
 export type NextMatch = {
+  /**
+   * `matches.id`。呼出待ちのコートで先に枠を出すのに使う
+   * （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1）。
+   */
+  matchId: string;
   classLabel: ClassLabel;
+  /** 例: '予選 1回戦'。呼出待ちの枠を LIVE の見た目に切り替えたときにも使う。 */
+  roundLabel: string;
   teamA: CourtTeam;
   teamB: CourtTeam;
   /** 自分の次の試合には名前を強調する。 */
   isMine: boolean;
+  /** LIVE に切り替わったときに並べる枠の数。DB の `matches.max_game_count` と同じ。 */
+  maxGameCount: number;
+};
+
+/**
+ * 送る・送り直す仕組み（`use-score-sync.ts`）がコートに渡す、いまの保存状況。
+ * 案内が無ければ何も出さない。
+ */
+export type ScoreSyncStatus = {
+  /** つながらない・5xx・429 で送り直している間の案内。無ければ null。 */
+  retryingMessage: string | null;
+  /** 4xx で断られ、送り直さないと決めたときの日本語の理由。無ければ null。 */
+  rejectedMessage: string | null;
+  /**
+   * 試合の終了を送っている途中か。「終了を送っています」の印。
+   * 点が届くのを待っている間・送信中・送り直し待ちを全部含む（まだ記録されたと確かめられていない）。
+   */
+  finishing: boolean;
+  /** 終了を送り直している最中か（`finishing` のうち、一度失敗して待っている間）。 */
+  finishRetrying: boolean;
+  /** 終了を入口に断られた（または点が送れていないので送らなかった）ときの日本語の理由。無ければ null。 */
+  finishRejectedMessage: string | null;
+};
+
+/**
+ * 試合 1 つぶんの、預かり場所（`use-score-sync.ts`）の中身。
+ * 画面を作り直したとき（下のメニューで別の画面から戻ったとき）に、
+ * サーバーから読んだ数字より「手元の数字」を優先して出すために、数字ごと渡す
+ * （docs/specs/2026-09-19-save-score-from-courts.md の「2026-10-04 の書き直し」）。
+ */
+export type MatchSyncState = ScoreSyncStatus & {
+  /**
+   * この試合で一度でも 0 対 0 以外の点を押したか（あとで 0 対 0 に戻しても true）。
+   * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
+   * （`LiveScore.started` と同じ決まり）。
+   */
+  started: boolean;
+  /**
+   * 届いた点より優先して出す、手元のゲームの点数（いま押している値）。無ければ空。
+   * - まだサーバーに届いたと確かめられていない（送信中・送り直し待ち・入口に断られたまま）
+   * - 届いたが、購読（Realtime）でまだ戻ってきていない（戻るのを待ちきるまで）
+   * 後者を含めるのは、送れた直後に自分の 1 つ前の値の知らせが遅れて届くと、数字が戻って見え、
+   * そこで押すと 1 点ぶん数えそこねるため（`use-score-sync.ts` の「戻り待ち」）。
+   */
+  pendingScores: GameScore[];
+};
+
+/**
+ * 試合 1 つぶんの「いまの様子」。画面が持つ元データ（サーバーから読んだ行と、あとから届いた変化を
+ * 当てた結果）で、コートのカード（`Court`）はここから `derive-courts.ts` が組み立てる。
+ *
+ * カードの形（`LiveMatch` / `NextMatch`）ではなく平らな一覧で持つのは、届いた変化が
+ * 「どの試合の状態が変わったか」の形で来るため。カードの形のままだと、変化のたびに
+ * 木を辿って差し替えることになり、試合がコートを移るときや、次の試合が繰り上がるときに崩れる。
+ */
+export type CourtMatchStatus = 'waiting' | 'live' | 'done';
+
+export type CourtMatch = {
+  matchId: string;
+  status: CourtMatchStatus;
+  courtNumber: number | null;
+  orderInCourt: number | null;
+  /** 終了した時刻（ISO 8601）。終了していなければ null。「1 つ前」を決めるのに使う。 */
+  finishedAt: string | null;
+  /**
+   * 終了を取り消して直している試合か。この画面で取り消した、または取り消されたのを見た試合だけ true。
+   * 取り消しても表には痕が残らない（live に戻り、finished_at が空になるだけ）ので、
+   * 開き直した画面では分からない（ただの進行中として出る）。
+   */
+  reopened: boolean;
+  classLabel: ClassLabel;
+  roundLabel: string;
+  teamA: CourtTeam;
+  teamB: CourtTeam;
+  isMine: boolean;
+  maxGameCount: number;
+  /** サーバーから届いた得点（手元で押した分も含む）。無い枠は 0 対 0。 */
+  scores: GameScore[];
+};
+
+/**
+ * 「1 つ前」の試合（そのコートで、終了の時刻が一番新しい終わった試合）。
+ * 「直す」を押すと終了が取り消され、その試合が「直し中」として戻ってくる。
+ */
+export type PreviousMatch = {
+  matchId: string;
+  classLabel: ClassLabel;
+  roundLabel: string;
+  teamA: CourtTeam;
+  teamB: CourtTeam;
+  isMine: boolean;
+  /** 終わった試合の得点。実際にプレーされたゲームだけを出すのは画面の側。 */
+  scores: GameScore[];
+  maxGameCount: number;
 };
 
 export type Court = {
   courtNumber: number;
-  /** 進行中の試合。無いコートは「呼出待ち」または「予定なし」になる。 */
+  /**
+   * 今の試合。進行中が 2 つ以上あるときは、順番（`order_in_court`）が後のほう。
+   * 無いコートは「呼出待ち」または「予定なし」になる。
+   */
   live: LiveMatch | null;
   /** 次の試合。無ければコートに「次」は出さない。 */
   next: NextMatch | null;
+  /**
+   * 直し中の試合（終了を取り消して、点を直している試合）。得点の枠付きで出す。
+   * 進行中が 2 つ以上あるときの、順番が前のほう。または、取り消されたのを見た試合。
+   */
+  fixing: LiveMatch[];
+  /** 1 つ前の試合。直し中の試合があるときは出さない（2 つ以上前の試合を直せないようにするため）。 */
+  previous: PreviousMatch | null;
 };
+
+/**
+ * このコートにいま入力できる試合の id。進行中があればその試合、無くて
+ * 呼出待ち（選手だけ）なら次の試合。どちらも無ければ null（入力できない）。
+ * `use-score-sync.ts` の `sync` に渡す宛先や、`statusByMatchId` を引く鍵に使う。
+ */
+export function activeMatchId(court: Court, canInput: boolean): string | null {
+  if (court.live) return court.live.matchId;
+  if (canInput && court.next) return court.next.matchId;
+  return null;
+}

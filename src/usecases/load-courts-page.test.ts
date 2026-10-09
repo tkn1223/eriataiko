@@ -19,6 +19,7 @@ const EMPTY_DATA: CourtsViewInput = {
     { id: 'stage-league', name: '予選リーグ', sortOrder: 10, totalMatches: 6, doneMatches: 2 },
   ],
   matches: [],
+  previousMatches: [],
   truncated: false,
 };
 

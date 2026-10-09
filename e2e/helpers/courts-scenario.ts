@@ -534,3 +534,476 @@ export async function deleteFinalScenario(): Promise<void> {
   const players = await admin.from('players').delete().in('player_number', FINAL_PLAYER_NUMBERS);
   if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
 }
+
+// ---------------------------------------------------------------------
+// 1-b（結果LIVE の保存）確認用の追加シナリオ
+// ---------------------------------------------------------------------
+
+/** 呼出待ちのみ（進行中が無い）のコートで、選手が枠を押して保存できることを確かめる。 */
+export const WAITING_ONLY_COURT_NUMBER = 8;
+export const WAITING_ONLY_TEAM_A_NAMES = ['西田', '岡村'];
+export const WAITING_ONLY_TEAM_B_NAMES = ['原田', '藤原'];
+
+/**
+ * 入口に断られたとき（終了済み）の理由表示を確かめる、専用のコート。
+ * はじめは進行中（live）で作っておき、テストの中で service_role から
+ * `matches.status` を `done` に書き換えて「他の人が先に終了させた」状態を再現する。
+ *
+ * 基本シナリオでは 6 に試合を作らない（`SKIPPED_COURT_NUMBERS`）ので空いている番号を使う。
+ * このシナリオが生きている間だけ試合が乗る（`FINAL_COURT_NUMBER` が 4 を間借りするのと同じやり方）。
+ * 「番号が飛んだまま出る」ことを確かめるテストより後で beforeAll するので、
+ * 順番が入れ替わらない限りぶつからない。
+ */
+export const REJECT_COURT_NUMBER = 6;
+export const REJECT_TEAM_A_NAMES = ['三浦', '安藤'];
+export const REJECT_TEAM_B_NAMES = ['杉山', '菅原'];
+
+const SAVE_PLAYER_NUMBERS = [
+  899971, 899972, 899973, 899974, 899975, 899976, 899977, 899978,
+] as const;
+const [WAITING_A1, WAITING_A2, WAITING_B1, WAITING_B2, REJECT_A1, REJECT_A2, REJECT_B1, REJECT_B2] =
+  SAVE_PLAYER_NUMBERS;
+const SAVE_SORT_ORDERS = [990, 991] as const;
+const [WAITING_ONLY_MATCHUP_SORT_ORDER, REJECT_MATCHUP_SORT_ORDER] = SAVE_SORT_ORDERS;
+
+/** createSaveScenario が作った、REJECT_COURT_NUMBER の試合の id。markRejectMatchDone が使う。 */
+let rejectMatchId: string | null = null;
+
+export async function createSaveScenario(): Promise<void> {
+  await deleteSaveScenario();
+
+  const players = await admin
+    .from('players')
+    .insert([
+      { player_number: WAITING_A1, name: WAITING_ONLY_TEAM_A_NAMES[0] },
+      { player_number: WAITING_A2, name: WAITING_ONLY_TEAM_A_NAMES[1] },
+      { player_number: WAITING_B1, name: WAITING_ONLY_TEAM_B_NAMES[0] },
+      { player_number: WAITING_B2, name: WAITING_ONLY_TEAM_B_NAMES[1] },
+      { player_number: REJECT_A1, name: REJECT_TEAM_A_NAMES[0] },
+      { player_number: REJECT_A2, name: REJECT_TEAM_A_NAMES[1] },
+      { player_number: REJECT_B1, name: REJECT_TEAM_B_NAMES[0] },
+      { player_number: REJECT_B2, name: REJECT_TEAM_B_NAMES[1] },
+    ])
+    .select('id, player_number');
+  if (players.error) throw new Error(`選手を作れませんでした: ${players.error.message}`);
+  const playerIdByNumber = new Map(players.data.map((row) => [row.player_number, row.id]));
+
+  const participants = await admin
+    .from('participants')
+    .insert(
+      SAVE_PLAYER_NUMBERS.map((playerNumber) => ({
+        competition_id: COMPETITION_ID,
+        player_id: playerIdByNumber.get(playerNumber)!,
+        team_id: ([WAITING_A1, WAITING_A2, REJECT_A1, REJECT_A2] as number[]).includes(playerNumber)
+          ? TEAM_AIHOKU_ID
+          : TEAM_AISEI_ID,
+      }))
+    )
+    .select('id, player_id');
+  if (participants.error)
+    throw new Error(`参加者を作れませんでした: ${participants.error.message}`);
+  const participantIdByPlayerId = new Map(participants.data.map((row) => [row.player_id, row.id]));
+  const participantOf = (playerNumber: number) =>
+    participantIdByPlayerId.get(playerIdByNumber.get(playerNumber)!)!;
+
+  const matchups = await admin
+    .from('matchups')
+    .insert([
+      {
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: '予選 7回戦',
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: WAITING_ONLY_MATCHUP_SORT_ORDER,
+      },
+      {
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: '予選 8回戦',
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: REJECT_MATCHUP_SORT_ORDER,
+      },
+    ])
+    .select('id, sort_order');
+  if (matchups.error) throw new Error(`対戦を作れませんでした: ${matchups.error.message}`);
+  const matchupIdBySortOrder = new Map(matchups.data.map((row) => [row.sort_order, row.id]));
+
+  const matches = await admin
+    .from('matches')
+    .insert([
+      {
+        matchup_id: matchupIdBySortOrder.get(WAITING_ONLY_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_1_ID,
+        order_in_matchup: 1,
+        status: 'waiting',
+        max_game_count: 1,
+        court_number: WAITING_ONLY_COURT_NUMBER,
+        order_in_court: 1,
+      },
+      {
+        matchup_id: matchupIdBySortOrder.get(REJECT_MATCHUP_SORT_ORDER)!,
+        division_id: DIVISION_1_ID,
+        order_in_matchup: 1,
+        status: 'live',
+        max_game_count: 1,
+        court_number: REJECT_COURT_NUMBER,
+        order_in_court: 1,
+      },
+    ])
+    .select('id, matchup_id');
+  if (matches.error) throw new Error(`試合を作れませんでした: ${matches.error.message}`);
+  const waitingOnlyMatchId = matches.data.find(
+    (m) => m.matchup_id === matchupIdBySortOrder.get(WAITING_ONLY_MATCHUP_SORT_ORDER)
+  )!.id;
+  rejectMatchId = matches.data.find(
+    (m) => m.matchup_id === matchupIdBySortOrder.get(REJECT_MATCHUP_SORT_ORDER)
+  )!.id;
+
+  const matchPlayers = await admin.from('match_players').insert([
+    {
+      match_id: waitingOnlyMatchId,
+      side: 'a',
+      participant_id: participantOf(WAITING_A1),
+      order_in_pair: 1,
+    },
+    {
+      match_id: waitingOnlyMatchId,
+      side: 'a',
+      participant_id: participantOf(WAITING_A2),
+      order_in_pair: 2,
+    },
+    {
+      match_id: waitingOnlyMatchId,
+      side: 'b',
+      participant_id: participantOf(WAITING_B1),
+      order_in_pair: 1,
+    },
+    {
+      match_id: waitingOnlyMatchId,
+      side: 'b',
+      participant_id: participantOf(WAITING_B2),
+      order_in_pair: 2,
+    },
+    {
+      match_id: rejectMatchId,
+      side: 'a',
+      participant_id: participantOf(REJECT_A1),
+      order_in_pair: 1,
+    },
+    {
+      match_id: rejectMatchId,
+      side: 'a',
+      participant_id: participantOf(REJECT_A2),
+      order_in_pair: 2,
+    },
+    {
+      match_id: rejectMatchId,
+      side: 'b',
+      participant_id: participantOf(REJECT_B1),
+      order_in_pair: 1,
+    },
+    {
+      match_id: rejectMatchId,
+      side: 'b',
+      participant_id: participantOf(REJECT_B2),
+      order_in_pair: 2,
+    },
+  ]);
+  if (matchPlayers.error)
+    throw new Error(`出場者を作れませんでした: ${matchPlayers.error.message}`);
+
+  const gameScores = await admin
+    .from('game_scores')
+    .insert([{ match_id: rejectMatchId, game_number: 1, side_a_score: 2, side_b_score: 0 }]);
+  if (gameScores.error) throw new Error(`得点を作れませんでした: ${gameScores.error.message}`);
+}
+
+export async function deleteSaveScenario(): Promise<void> {
+  rejectMatchId = null;
+  const matchups = await admin
+    .from('matchups')
+    .delete()
+    .eq('stage_id', LEAGUE_STAGE_ID)
+    .in('sort_order', SAVE_SORT_ORDERS);
+  if (matchups.error) throw new Error(`後片付けに失敗（対戦）: ${matchups.error.message}`);
+
+  const players = await admin.from('players').delete().in('player_number', SAVE_PLAYER_NUMBERS);
+  if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
+}
+
+/**
+ * REJECT_COURT_NUMBER の試合を終了済みにする。「他の人が先に試合を終了させた」を再現し、
+ * 入口が 409 を返す（`docs/specs/2026-08-29-score-input-backend.md`）ことを確かめるのに使う。
+ * 元に戻す関数は無い。createSaveScenario がテストごとに作り直すため。
+ */
+export async function markRejectMatchDone(): Promise<void> {
+  if (!rejectMatchId) throw new Error('createSaveScenario を先に呼んでください');
+  const { error } = await admin
+    .from('matches')
+    .update({ status: 'done', finished_at: new Date().toISOString() })
+    .eq('id', rejectMatchId);
+  if (error) throw new Error(`試合の状態を書き換えられませんでした: ${error.message}`);
+}
+
+/** DB に保存された得点を読む（e2e のテストが「本当に保存されたか」を確かめるのに使う）。 */
+export async function findSavedGameScore(
+  matchId: string,
+  gameNumber: number
+): Promise<{ sideAScore: number; sideBScore: number } | null> {
+  const { data, error } = await admin
+    .from('game_scores')
+    .select('side_a_score, side_b_score')
+    .eq('match_id', matchId)
+    .eq('game_number', gameNumber)
+    .maybeSingle();
+  if (error) throw new Error(`得点を読めませんでした: ${error.message}`);
+  return data ? { sideAScore: data.side_a_score, sideBScore: data.side_b_score } : null;
+}
+
+/** DB に保存された試合の状態（waiting/live/done）を読む。 */
+export async function findMatchStatus(matchId: string): Promise<string | null> {
+  const { data, error } = await admin
+    .from('matches')
+    .select('status')
+    .eq('id', matchId)
+    .maybeSingle();
+  if (error) throw new Error(`試合の状態を読めませんでした: ${error.message}`);
+  return data?.status ?? null;
+}
+
+/**
+ * court_number からその試合の id を引く（呼出待ちの試合が LIVE に昇格したあとの id を取るのに使う）。
+ * 同じコートに試合が 2 つ以上あると、どちらを見ているか分からないまま通ってしまうので、
+ * 1 つに決まらなければ止める。
+ */
+export async function findMatchIdByCourtNumber(courtNumber: number): Promise<string> {
+  const { data, error } = await admin
+    .from('matches')
+    .select('id')
+    .eq('court_number', courtNumber)
+    .limit(2);
+  if (error) throw new Error(`コート${courtNumber}の試合を読めませんでした: ${error.message}`);
+  if (data.length !== 1) {
+    throw new Error(`コート${courtNumber}の試合が 1 つに決まりません（${data.length} 件）`);
+  }
+  return data[0].id;
+}
+
+// ---------------------------------------------------------------------
+// 1-c / 1-d（他の人の変化がその場で映る・試合の終了・直す）確認用の追加シナリオ
+// ---------------------------------------------------------------------
+
+/**
+ * 試合を自由な形で並べて作る、1-c / 1-d 用の汎用の作り方。
+ *
+ * 2 台のブラウザで同じ試合を見る・終了する・直す、という確認は、試合ごとに「いまの状態」を
+ * そろえて始めたい。上の基本・保存シナリオは試合の形が決まっているので、ここでは試合ごとの
+ * 状態・得点・終了の時刻・コート・順番を呼び出し側が書ける形にしてある。
+ *
+ * seed の試合（コート 1）には触らない。`is_current` も触らない。試合の名前は呼び出し側が
+ * 決める（画面の文字で探すため、他のシナリオの名前とぶつからないようにする）。
+ */
+export type ScenarioMatchSpec = {
+  /** 戻り値で試合の id を引く名前。 */
+  key: string;
+  courtNumber: number;
+  orderInCourt: number;
+  status: 'waiting' | 'live' | 'done';
+  maxGameCount: number;
+  roundName: string;
+  /** 1 ゲームめから順の [A の点, B の点]。 */
+  scores: Array<[number, number]>;
+  /** done のとき、何分前に終わったか（「1 つ前」は終了の時刻が一番新しい試合）。 */
+  finishedMinutesAgo?: number;
+  teamA: [string, string];
+  teamB: [string, string];
+};
+
+/** 後片付けで見分けるための番号。seed・他のシナリオ・db テストとぶつからない帯。 */
+const LIVE_PLAYER_NUMBER_BASE = 897000;
+const LIVE_SORT_ORDER_BASE = 1000;
+const LIVE_RANGE = 100;
+
+/**
+ * 試合を作る。**1-c / 1-d の確認は一度に 1 つのシナリオだけ作る**（番号の帯を共有するため）。
+ * 作る前に必ず消すので、前回の後片付けが済んでいなくても動く。
+ */
+export async function createMatchesScenario(
+  specs: ScenarioMatchSpec[]
+): Promise<Record<string, string>> {
+  await deleteMatchesScenario();
+
+  const playerNames = specs.flatMap((spec) => [...spec.teamA, ...spec.teamB]);
+  const players = await admin
+    .from('players')
+    .insert(
+      playerNames.map((name, index) => ({
+        player_number: LIVE_PLAYER_NUMBER_BASE + index,
+        name,
+      }))
+    )
+    .select('id, player_number');
+  if (players.error) throw new Error(`選手を作れませんでした: ${players.error.message}`);
+  const playerIdByNumber = new Map(players.data.map((row) => [row.player_number, row.id]));
+
+  const participants = await admin
+    .from('participants')
+    .insert(
+      playerNames.map((_, index) => ({
+        competition_id: COMPETITION_ID,
+        player_id: playerIdByNumber.get(LIVE_PLAYER_NUMBER_BASE + index)!,
+        team_id: index % 4 < 2 ? TEAM_AIHOKU_ID : TEAM_AISEI_ID,
+      }))
+    )
+    .select('id, player_id');
+  if (participants.error)
+    throw new Error(`参加者を作れませんでした: ${participants.error.message}`);
+  const participantIdByPlayerId = new Map(participants.data.map((row) => [row.player_id, row.id]));
+  const participantAt = (index: number) =>
+    participantIdByPlayerId.get(playerIdByNumber.get(LIVE_PLAYER_NUMBER_BASE + index)!)!;
+
+  const matchups = await admin
+    .from('matchups')
+    .insert(
+      specs.map((spec, index) => ({
+        stage_id: LEAGUE_STAGE_ID,
+        round_name: spec.roundName,
+        side_a_team_id: TEAM_AIHOKU_ID,
+        side_b_team_id: TEAM_AISEI_ID,
+        sort_order: LIVE_SORT_ORDER_BASE + index,
+      }))
+    )
+    .select('id, sort_order');
+  if (matchups.error) throw new Error(`対戦を作れませんでした: ${matchups.error.message}`);
+  const matchupIdBySortOrder = new Map(matchups.data.map((row) => [row.sort_order, row.id]));
+
+  const now = Date.now();
+  const matches = await admin
+    .from('matches')
+    .insert(
+      specs.map((spec, index) => ({
+        matchup_id: matchupIdBySortOrder.get(LIVE_SORT_ORDER_BASE + index)!,
+        division_id: DIVISION_1_ID,
+        order_in_matchup: 1,
+        status: spec.status,
+        max_game_count: spec.maxGameCount,
+        court_number: spec.courtNumber,
+        order_in_court: spec.orderInCourt,
+        finished_at:
+          spec.status === 'done'
+            ? new Date(now - (spec.finishedMinutesAgo ?? 10) * 60_000).toISOString()
+            : null,
+      }))
+    )
+    .select('id, matchup_id');
+  if (matches.error) throw new Error(`試合を作れませんでした: ${matches.error.message}`);
+  const matchIdByKey: Record<string, string> = {};
+  specs.forEach((spec, index) => {
+    matchIdByKey[spec.key] = matches.data.find(
+      (row) => row.matchup_id === matchupIdBySortOrder.get(LIVE_SORT_ORDER_BASE + index)
+    )!.id;
+  });
+
+  const matchPlayers = await admin.from('match_players').insert(
+    specs.flatMap((spec, index) => {
+      const matchId = matchIdByKey[spec.key];
+      const first = index * 4;
+      return [
+        { match_id: matchId, side: 'a', participant_id: participantAt(first), order_in_pair: 1 },
+        {
+          match_id: matchId,
+          side: 'a',
+          participant_id: participantAt(first + 1),
+          order_in_pair: 2,
+        },
+        {
+          match_id: matchId,
+          side: 'b',
+          participant_id: participantAt(first + 2),
+          order_in_pair: 1,
+        },
+        {
+          match_id: matchId,
+          side: 'b',
+          participant_id: participantAt(first + 3),
+          order_in_pair: 2,
+        },
+      ];
+    })
+  );
+  if (matchPlayers.error)
+    throw new Error(`出場者を作れませんでした: ${matchPlayers.error.message}`);
+
+  const scoreRows = specs.flatMap((spec) =>
+    spec.scores.map(([sideAScore, sideBScore], scoreIndex) => ({
+      match_id: matchIdByKey[spec.key],
+      game_number: scoreIndex + 1,
+      side_a_score: sideAScore,
+      side_b_score: sideBScore,
+    }))
+  );
+  if (scoreRows.length > 0) {
+    const gameScores = await admin.from('game_scores').insert(scoreRows);
+    if (gameScores.error) throw new Error(`得点を作れませんでした: ${gameScores.error.message}`);
+  }
+
+  return matchIdByKey;
+}
+
+export async function deleteMatchesScenario(): Promise<void> {
+  const sortOrders = Array.from({ length: LIVE_RANGE }, (_, index) => LIVE_SORT_ORDER_BASE + index);
+  const matchups = await admin
+    .from('matchups')
+    .delete()
+    .eq('stage_id', LEAGUE_STAGE_ID)
+    .in('sort_order', sortOrders);
+  if (matchups.error) throw new Error(`後片付けに失敗（対戦）: ${matchups.error.message}`);
+
+  const playerNumbers = Array.from(
+    { length: LIVE_RANGE },
+    (_, index) => LIVE_PLAYER_NUMBER_BASE + index
+  );
+  const players = await admin.from('players').delete().in('player_number', playerNumbers);
+  if (players.error) throw new Error(`後片付けに失敗（選手）: ${players.error.message}`);
+}
+
+/** 画面を使わずに、データベースへ直接点を書く（「もう 1 台の人が押した」「電波が無い間に入った」を再現する）。 */
+export async function writeGameScoreDirectly(
+  matchId: string,
+  gameNumber: number,
+  sideAScore: number,
+  sideBScore: number
+): Promise<void> {
+  const { error } = await admin.from('game_scores').upsert(
+    {
+      match_id: matchId,
+      game_number: gameNumber,
+      side_a_score: sideAScore,
+      side_b_score: sideBScore,
+    },
+    { onConflict: 'match_id,game_number' }
+  );
+  if (error) throw new Error(`点を書けませんでした: ${error.message}`);
+}
+
+/** 試合の状態と終了の時刻を読む。 */
+export async function findMatchResult(
+  matchId: string
+): Promise<{ status: string; finishedAt: string | null } | null> {
+  const { data, error } = await admin
+    .from('matches')
+    .select('status, finished_at')
+    .eq('id', matchId)
+    .maybeSingle();
+  if (error) throw new Error(`試合の状態を読めませんでした: ${error.message}`);
+  return data ? { status: data.status, finishedAt: data.finished_at } : null;
+}
+
+/** 画面を使わずに、データベースで試合を終了にする（「他の人が終了した」を再現する）。 */
+export async function finishMatchDirectly(matchId: string): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ status: 'done', finished_at: new Date().toISOString() })
+    .eq('id', matchId);
+  if (error) throw new Error(`試合を終了にできませんでした: ${error.message}`);
+}

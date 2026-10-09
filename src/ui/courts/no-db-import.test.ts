@@ -15,6 +15,17 @@ const UI_COMPONENT_FILES = [
   'src/ui/courts/courts-page.tsx',
   'src/ui/courts/court-live-card.tsx',
   'src/ui/courts/finish-confirm-sheet.tsx',
+  'src/ui/courts/reopen-confirm-sheet.tsx',
+  'src/ui/courts/send-request.ts',
+  // 送る・送り直す仕組み（use-score-sync.ts）は Route Handler 宛の fetch だけを使う。
+  // Supabase の画面側の鍵でも書かない（AGENTS.md の「破ってはいけない 3 つ」の 1 番目）。
+  'src/ui/courts/use-score-sync.ts',
+  'src/ui/courts/save-retry-policy.ts',
+  'src/ui/courts/overlay-pending-scores.ts',
+  'src/ui/courts/apply-live-change.ts',
+  'src/ui/courts/derive-courts.ts',
+  'src/ui/courts/live-board.ts',
+  'src/ui/courts/refresh-scheduler.ts',
 ];
 
 const PAGE_FILE = 'src/app/(app)/courts/page.tsx';
@@ -28,6 +39,26 @@ describe('/courts の画面', () => {
     const source = readSource(path);
     expect(source).not.toMatch(/from\s+['"](@\/db|.*src\/db|\.{1,2}\/.*\/db)\//);
   });
+
+  // 他の人の変化を受け取る部品（use-live-updates.ts）だけは、ブラウザの Supabase クライアント
+  // （`@/db/client`。読み取りと購読の専用）を使ってよい。それ以外の @/db は使わない。
+  test('use-live-updates.ts が使う @/db は、ブラウザ用クライアント（@/db/client）だけ', () => {
+    const imports = [
+      ...readSource('src/ui/courts/use-live-updates.ts').matchAll(/from\s+['"](@\/db[^'"]*)['"]/g),
+    ].map((found) => found[1]);
+
+    expect(imports).toEqual(['@/db/client']);
+  });
+
+  // 書き込みは Route Handler 経由だけ（AGENTS.md の「破ってはいけない 3 つ」の 1 番目）。
+  // 画面の部品のどこでも、Supabase の表を直接触らない（書き込みには必ず .from('表の名前') が要る）。
+  // Set の delete などと区別するため、insert / update / delete の名前ではなく .from と .rpc を見る。
+  test.each([...UI_COMPONENT_FILES, 'src/ui/courts/use-live-updates.ts'])(
+    '%s は Supabase の表を直接触っていない（.from / .rpc を呼ばない）',
+    (path) => {
+      expect(readSource(path)).not.toMatch(/\.from\(\s*['"`]|\.rpc\(/);
+    }
+  );
 
   test('page.tsx は @/db/admin を import していない', () => {
     const source = readSource(PAGE_FILE);

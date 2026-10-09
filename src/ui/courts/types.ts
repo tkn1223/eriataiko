@@ -167,12 +167,38 @@ export type CourtMatch = {
   scores: GameScore[];
 };
 
+/**
+ * 「1 つ前」の試合（そのコートで、終了の時刻が一番新しい終わった試合）。
+ * 「直す」を押すと終了が取り消され、その試合が「直し中」として戻ってくる。
+ */
+export type PreviousMatch = {
+  matchId: string;
+  classLabel: ClassLabel;
+  roundLabel: string;
+  teamA: CourtTeam;
+  teamB: CourtTeam;
+  isMine: boolean;
+  /** 終わった試合の得点。実際にプレーされたゲームだけを出すのは画面の側。 */
+  scores: GameScore[];
+  maxGameCount: number;
+};
+
 export type Court = {
   courtNumber: number;
-  /** 進行中の試合。無いコートは「呼出待ち」または「予定なし」になる。 */
+  /**
+   * 今の試合。進行中が 2 つ以上あるときは、順番（`order_in_court`）が後のほう。
+   * 無いコートは「呼出待ち」または「予定なし」になる。
+   */
   live: LiveMatch | null;
   /** 次の試合。無ければコートに「次」は出さない。 */
   next: NextMatch | null;
+  /**
+   * 直し中の試合（終了を取り消して、点を直している試合）。得点の枠付きで出す。
+   * 進行中が 2 つ以上あるときの、順番が前のほう。または、取り消されたのを見た試合。
+   */
+  fixing: LiveMatch[];
+  /** 1 つ前の試合。直し中の試合があるときは出さない（2 つ以上前の試合を直せないようにするため）。 */
+  previous: PreviousMatch | null;
 };
 
 /**

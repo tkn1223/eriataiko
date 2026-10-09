@@ -19,6 +19,7 @@ import {
 const LIVE_COURT = 11;
 const OTHER_COURT = 12;
 const OLD_DONE_COURT = 13;
+const LONG_COURT = 14;
 
 const LIVE_A = ['青山', '赤坂'];
 const LIVE_B = ['緑川', '紫野'];
@@ -86,6 +87,34 @@ test.beforeEach(async () => {
       scores: [[21, 12]],
       teamA: ['杉本', '柳田'],
       teamB: ['桃井', '栗原'],
+    },
+    {
+      // 空白入りの長い名前（375px でいちばん詰まる形）。1 つ前と直し中の見た目を測るのに使う
+      key: 'long-done',
+      courtNumber: LONG_COURT,
+      orderInCourt: 1,
+      status: 'done',
+      finishedMinutesAgo: 3,
+      maxGameCount: 3,
+      roundName: '決勝トーナメント 準決勝',
+      scores: [
+        [21, 19],
+        [18, 21],
+        [21, 20],
+      ],
+      teamA: ['五十嵐　十四郎', '長谷川 一二三'],
+      teamB: ['佐々木 太郎', '小早川　日下部'],
+    },
+    {
+      key: 'long-live',
+      courtNumber: LONG_COURT,
+      orderInCourt: 2,
+      status: 'live',
+      maxGameCount: 3,
+      roundName: '決勝トーナメント 決勝',
+      scores: [[10, 8]],
+      teamA: ['五十嵐　十四郎', '長谷川 一二三'],
+      teamB: ['佐々木 太郎', '小早川　日下部'],
     },
     {
       key: 'older-next',
@@ -517,6 +546,267 @@ test.describe('試合の終了', () => {
           .map(({ text }) => text);
       });
       expect(stickingOut).toEqual([]);
+
+      await context.close();
+    });
+  }
+});
+
+/**
+ * 1 つ前と直す（1-d の後半）。コート 13 は、1 つ前（杉本・柳田 対 桃井・栗原、21-12）と、
+ * 進行中の次の試合（楠田・榊原 対 椎名・樫村、1-0）がある。
+ */
+test.describe('1つ前と直す', () => {
+  const PREVIOUS_A = ['杉本', '柳田'];
+  const NEXT_LIVE_A = ['楠田', '榊原'];
+
+  function previousRow(page: Page) {
+    return page.getByTestId(`previous-match-${OLD_DONE_COURT}`);
+  }
+
+  function fixingPanel(page: Page) {
+    return page.getByTestId(`fixing-match-${OLD_DONE_COURT}`);
+  }
+
+  async function openCourts(browser: Browser, as: 'player' | 'viewer') {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    if (as === 'player') await enterAsPlayer(page, '愛知南', 'たろう');
+    else await enterAsViewer(page);
+    await page.goto('/courts');
+    await expect(courtCard(page, OLD_DONE_COURT)).toBeVisible();
+    return { context, page };
+  }
+
+  async function reopenPrevious(page: Page) {
+    await previousRow(page).getByRole('button', { name: '直す' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+  }
+
+  test('終了したコートに「1つ前」の試合（部・両ペア・スコア）と「直す」が出る。もっと前の試合は出ない', async ({
+    browser,
+  }) => {
+    const { context, page } = await openCourts(browser, 'player');
+
+    const row = previousRow(page);
+    await expect(row.getByText('1つ前')).toBeVisible();
+    await expect(row.getByText('1部')).toBeVisible();
+    await expect(row.getByText(PREVIOUS_A.join('・'))).toBeVisible();
+    await expect(row.getByText('桃井')).toBeVisible();
+    await expect(row.getByText('21-12')).toBeVisible();
+    await expect(row.getByRole('button', { name: '直す' })).toBeVisible();
+    // 2 つ前の試合（桜井・梅田）は出さない
+    await expect(courtCard(page, OLD_DONE_COURT).getByText('桜井')).toHaveCount(0);
+
+    await context.close();
+  });
+
+  test('観戦者には「直す」「試合を終了する」が出ない。1つ前は見える', async ({ browser }) => {
+    const { context, page } = await openCourts(browser, 'viewer');
+
+    await expect(previousRow(page).getByText('21-12')).toBeVisible();
+    await expect(page.getByRole('button', { name: '直す' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+
+    await context.close();
+  });
+
+  test('次の試合が進行中でも「直す」で直し中に戻り、直した点が保存され、「もう一度終了する」で終了になる', async ({
+    browser,
+  }) => {
+    const { context, page } = await openCourts(browser, 'player');
+    await page.waitForTimeout(1000);
+
+    await reopenPrevious(page);
+
+    // データベースで、その試合が進行中に戻る
+    await expect
+      .poll(async () => (await findMatchResult(matchIds['newer-done']))?.status)
+      .toBe('live');
+    expect((await findMatchResult(matchIds['newer-done']))?.finishedAt).toBeNull();
+    await expect(fixingPanel(page).getByText('直し中')).toBeVisible();
+    await expect(previousRow(page)).toHaveCount(0);
+
+    // 今の試合（楠田・榊原）はそのまま LIVE で、点も入れられる
+    await expect(courtCard(page, OLD_DONE_COURT).getByText('LIVE')).toBeVisible();
+    await plusButton(page, OLD_DONE_COURT, NEXT_LIVE_A).click();
+    await expect
+      .poll(() => findSavedGameScore(matchIds['older-next'], 1))
+      .toEqual({ sideAScore: 2, sideBScore: 0 });
+
+    // 直し中の試合の点を直す（杉本・柳田 21 → 22）
+    await fixingPanel(page)
+      .getByRole('button', { name: `${PREVIOUS_A.join('・')}の第1ゲームの得点を1増やす` })
+      .click();
+    await expect
+      .poll(() => findSavedGameScore(matchIds['newer-done'], 1))
+      .toEqual({ sideAScore: 22, sideBScore: 12 });
+
+    // もう一度終了する
+    await fixingPanel(page).getByRole('button', { name: 'もう一度終了する' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect
+      .poll(async () => (await findMatchResult(matchIds['newer-done']))?.status)
+      .toBe('done');
+    expect((await findMatchResult(matchIds['newer-done']))?.finishedAt).not.toBeNull();
+
+    await expect(fixingPanel(page)).toHaveCount(0);
+    await expect(previousRow(page).getByText('22-12')).toBeVisible();
+    // 今の試合は進行中のまま
+    await expect(courtCard(page, OLD_DONE_COURT).getByText('LIVE')).toBeVisible();
+
+    // 開き直しても同じ
+    await page.reload();
+    await expect(previousRow(page).getByText('22-12')).toBeVisible();
+
+    await context.close();
+  });
+
+  test('片方で直すと、もう片方（観戦者）にも直し中が映り、もう一度終了すると1つ前に戻る', async ({
+    browser,
+  }) => {
+    const player = await openCourts(browser, 'player');
+    const viewer = await openCourts(browser, 'viewer');
+    await viewer.page.waitForTimeout(1500);
+    const refreshes = countRefreshes(viewer.page);
+
+    await reopenPrevious(player.page);
+
+    await expect(fixingPanel(viewer.page).getByText('直し中')).toBeVisible({ timeout: 5000 });
+    await expect(previousRow(viewer.page)).toHaveCount(0);
+    // 観戦者には押すボタンが出ない
+    await expect(fixingPanel(viewer.page).getByRole('button')).toHaveCount(0);
+
+    await fixingPanel(player.page).getByRole('button', { name: 'もう一度終了する' }).click();
+    await player.page.getByRole('button', { name: 'OK' }).click();
+
+    await expect(previousRow(viewer.page).getByText('21-12')).toBeVisible({ timeout: 5000 });
+    await expect(fixingPanel(viewer.page)).toHaveCount(0);
+    expect(refreshes.count).toBe(0);
+
+    await player.context.close();
+    await viewer.context.close();
+  });
+
+  test('試合を終了すると、そのコートの1つ前に移り、「直す」で戻せる（次の試合は呼出待ちに残る）', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+    await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+
+    await finishLiveCourtOn(page);
+
+    const card = courtCard(page, LIVE_COURT);
+    const row = page.getByTestId(`previous-match-${LIVE_COURT}`);
+    await expect(row.getByText(LIVE_A.join('・'))).toBeVisible();
+    await expect(row.getByText('5-3')).toBeVisible();
+    await expect(card.getByText('呼出待ち')).toBeVisible();
+
+    await row.getByRole('button', { name: '直す' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('live');
+    await expect(page.getByTestId(`fixing-match-${LIVE_COURT}`).getByText('直し中')).toBeVisible();
+    // 次の試合は呼出待ちのまま
+    await expect(card.getByText('呼出待ち')).toBeVisible();
+
+    await context.close();
+  });
+
+  test('取り消せなかったときは日本語の理由が出て、1つ前のまま', async ({ browser }) => {
+    const { context, page } = await openCourts(browser, 'player');
+    await page.route('**/api/matches/*/result', (route) => route.abort());
+
+    await reopenPrevious(page);
+
+    await expect(previousRow(page).getByRole('status')).toContainText('取り消せませんでした');
+    await expect(fixingPanel(page)).toHaveCount(0);
+    expect((await findMatchResult(matchIds['newer-done']))?.status).toBe('done');
+
+    await context.close();
+  });
+
+  async function finishLiveCourtOn(page: Page) {
+    await courtCard(page, LIVE_COURT).getByRole('button', { name: '試合を終了する' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+  }
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、1つ前・直し中・案内が出た状態でも横にはみ出さない（長い名前・3 ゲーム）`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport: { width, height: 844 } });
+      const page = await context.newPage();
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+      const card = courtCard(page, LONG_COURT);
+      const previous = page.getByTestId(`previous-match-${LONG_COURT}`);
+      await expect(previous).toBeVisible();
+
+      async function expectNothingSticksOut(label: string) {
+        const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        }));
+        expect(innerWidth, label).toBe(width);
+        expect(scrollWidth, label).toBe(innerWidth);
+        const stickingOut = await card.evaluate((element) => {
+          const cardRect = element.getBoundingClientRect();
+          return Array.from(element.querySelectorAll('*'))
+            .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+            .filter(
+              ({ rect }) =>
+                rect.width > 0 &&
+                (rect.right > cardRect.right + 0.5 || rect.left < cardRect.left - 0.5)
+            )
+            .map(({ text }) => text);
+        });
+        expect(stickingOut, label).toEqual([]);
+      }
+
+      // 1 つ前（3 ゲーム分の得点・長いペア名）
+      await expect(previous.getByText('21-19')).toBeVisible();
+      await expectNothingSticksOut('1つ前');
+
+      // 直し中（得点の枠 3 つ）+ 取り消しの案内 + 今の試合
+      await previous.getByRole('button', { name: '直す' }).click();
+      // 確認画面は画面の下に固定で重なる（カードの外）ので、ダイアログの中ではみ出しを測る
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      const dialogStickingOut = await dialog.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return Array.from(element.querySelectorAll('*'))
+          .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+          .filter(
+            ({ rect }) =>
+              rect.width > 0 && (rect.right > box.right + 0.5 || rect.left < box.left - 0.5)
+          )
+          .map(({ text }) => text);
+      });
+      expect(dialogStickingOut).toEqual([]);
+      const { scrollWidth: pageScrollWidth, innerWidth: pageInnerWidth } = await page.evaluate(
+        () => ({
+          scrollWidth: document.documentElement.scrollWidth,
+          innerWidth: window.innerWidth,
+        })
+      );
+      expect(pageScrollWidth).toBe(pageInnerWidth);
+      await page.getByRole('button', { name: 'OK' }).click();
+      const fixing = page.getByTestId(`fixing-match-${LONG_COURT}`);
+      await expect(fixing.getByText('直し中')).toBeVisible();
+      await expectNothingSticksOut('直し中');
+
+      // 点が送れないときの案内も加えて測る
+      await page.route('**/api/matches/*/scores', (route) => route.abort());
+      await fixing
+        .getByRole('button', { name: '五十嵐　十四郎・長谷川 一二三の第1ゲームの得点を1増やす' })
+        .click();
+      await expect(fixing.getByRole('status')).toContainText('保存できていません');
+      await expectNothingSticksOut('直し中 + 案内');
 
       await context.close();
     });

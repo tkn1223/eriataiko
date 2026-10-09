@@ -32,6 +32,9 @@ function syncState(overrides: Partial<MatchSyncState>): MatchSyncState {
   return {
     retryingMessage: null,
     rejectedMessage: null,
+    finishing: false,
+    finishRetrying: false,
+    finishRejectedMessage: null,
     started: false,
     unsentScores: [],
     ...overrides,

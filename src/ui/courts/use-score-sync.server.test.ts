@@ -29,3 +29,10 @@ test('サーバー側で sync を呼んでも、何も預からず、送りも�
   expect(appScoreSyncStore.getSnapshot()).toEqual({});
   expect(fetch).not.toHaveBeenCalled();
 });
+
+test('サーバー側で finish を呼んでも、何も預からず、送りもしない', () => {
+  appScoreSyncStore.finish('m');
+
+  expect(appScoreSyncStore.getSnapshot()).toEqual({});
+  expect(fetch).not.toHaveBeenCalled();
+});

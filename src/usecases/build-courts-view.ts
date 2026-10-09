@@ -5,7 +5,14 @@ import {
   type DivisionRow,
 } from '@/domain/class-labels';
 import type { GameScore } from '@/domain/scoring';
-import type { Court, CourtsEmptyReason, CourtTeam, LiveMatch, NextMatch } from '@/ui/courts/types';
+import { deriveCourts } from '@/ui/courts/derive-courts';
+import type {
+  Court,
+  CourtMatch,
+  CourtMatchStatus,
+  CourtsEmptyReason,
+  CourtTeam,
+} from '@/ui/courts/types';
 
 /**
  * 結果LIVE（`/courts`）を DB の行から組み立てる。DB も HTTP も触らない純粋な計算。
@@ -46,11 +53,13 @@ export type CourtsViewGameScoreRow = GameScore;
 
 export type CourtsViewMatchRow = {
   matchId: string;
-  /** `matches.status`。ここに来るのは 'waiting' | 'live'（終わった試合は読まない）。 */
+  /** `matches.status`。 */
   status: string;
   maxGameCount: number;
   courtNumber: number | null;
   orderInCourt: number | null;
+  /** `matches.finished_at`（ISO 8601）。終わっていない試合は null。 */
+  finishedAt: string | null;
   divisionId: string;
   stageId: string;
   /** `matchups.round_name`。例: '予選 1回戦'。 */
@@ -78,6 +87,11 @@ export type CourtsView = {
   completedMatches: number;
   /** いまの段の全試合数。 */
   totalMatches: number;
+  /**
+   * 画面が持つ元データ。コートのカードはここから組み立てる（`deriveCourts`）。
+   * 届いた変化を当てたあとも同じ関数でカードにするため、画面にはカードではなくこちらを渡す。
+   */
+  board: CourtMatch[];
   courts: Court[];
   /** `courts` が空のときだけ入る。 */
   emptyReason: CourtsEmptyReason | null;
@@ -106,64 +120,26 @@ function classLabelOf(
   return classLabelById.get(match.divisionId) ?? UNKNOWN_CLASS_LABEL;
 }
 
-function toLiveMatch(
+function toCourtMatch(
   match: CourtsViewMatchRow,
   myParticipantId: string | null,
   classLabelById: Map<string, ClassLabel>
-): LiveMatch {
+): CourtMatch {
   return {
     matchId: match.matchId,
+    // 画面に出す試合は live / waiting / done のどれか（表の check 制約で保証されている）
+    status: match.status as CourtMatchStatus,
+    courtNumber: match.courtNumber,
+    orderInCourt: match.orderInCourt,
+    finishedAt: match.finishedAt,
+    reopened: false,
     classLabel: classLabelOf(match, classLabelById),
     roundLabel: match.roundName,
     teamA: toCourtTeam(match.sideA),
     teamB: toCourtTeam(match.sideB),
     isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
+    maxGameCount: match.maxGameCount,
     scores: match.gameScores,
-    maxGameCount: match.maxGameCount,
-  };
-}
-
-function toNextMatch(
-  match: CourtsViewMatchRow,
-  myParticipantId: string | null,
-  classLabelById: Map<string, ClassLabel>
-): NextMatch {
-  return {
-    matchId: match.matchId,
-    classLabel: classLabelOf(match, classLabelById),
-    roundLabel: match.roundName,
-    teamA: toCourtTeam(match.sideA),
-    teamB: toCourtTeam(match.sideB),
-    isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
-    maxGameCount: match.maxGameCount,
-  };
-}
-
-/** `order_in_court` が最小の 1 件を選ぶ。順番が未定（null）は最後に回す。 */
-function pickByOrderInCourt(matches: CourtsViewMatchRow[]): CourtsViewMatchRow | null {
-  if (matches.length === 0) return null;
-  const sorted = [...matches].sort((a, b) => {
-    const orderA = a.orderInCourt ?? Number.MAX_SAFE_INTEGER;
-    const orderB = b.orderInCourt ?? Number.MAX_SAFE_INTEGER;
-    return orderA - orderB;
-  });
-  return sorted[0];
-}
-
-function buildCourt(
-  courtNumber: number,
-  matches: CourtsViewMatchRow[],
-  myParticipantId: string | null,
-  classLabelById: Map<string, ClassLabel>
-): Court {
-  const onThisCourt = matches.filter((m) => m.courtNumber === courtNumber);
-  const liveMatch = pickByOrderInCourt(onThisCourt.filter((m) => m.status === 'live'));
-  const nextMatch = pickByOrderInCourt(onThisCourt.filter((m) => m.status === 'waiting'));
-
-  return {
-    courtNumber,
-    live: liveMatch ? toLiveMatch(liveMatch, myParticipantId, classLabelById) : null,
-    next: nextMatch ? toNextMatch(nextMatch, myParticipantId, classLabelById) : null,
   };
 }
 
@@ -219,18 +195,16 @@ export function buildCourtsView(input: CourtsViewInput): CourtsView {
 
   // コートの枚数は決め打ちせず、試合に入っているコート番号から出す
   // （次の大会は 10 面。番号が飛んでいる日は飛んだまま出す。コート未定の試合はカードにしない）。
-  const courtNumbers = [
-    ...new Set(remainingMatches.flatMap((m) => (m.courtNumber === null ? [] : [m.courtNumber]))),
-  ].sort((a, b) => a - b);
-
-  const courts = courtNumbers.map((courtNumber) =>
-    buildCourt(courtNumber, remainingMatches, input.myParticipantId, classLabelById)
+  const board = remainingMatches.map((match) =>
+    toCourtMatch(match, input.myParticipantId, classLabelById)
   );
+  const courts = deriveCourts(board);
 
   return {
     stageLabel: progress.label,
     completedMatches: progress.completedMatches,
     totalMatches: progress.totalMatches,
+    board,
     courts,
     emptyReason: courts.length === 0 ? emptyReasonOf(remainingMatches, input.stages) : null,
     truncated: input.truncated,

@@ -435,7 +435,9 @@ describe('useScoreSync', () => {
       expect(returned.result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
     });
 
-    test('入口に断られた点も、離れて戻ると未送信の数字と理由つきで受け取る', async () => {
+    // 断られた点はもう送らないので「未送信」に数えない。数えると、戻ったときにサーバーの正しい点より
+    // 断られた古い点が優先して出て、閉じるたびの確認も一日中出続ける。理由だけは残してコートに出す。
+    test('入口に断られた点は、離れて戻ると理由だけ受け取り、未送信の数字には入らない', async () => {
       vi.mocked(fetch).mockResolvedValue(jsonResponse(409, { error: '終了した試合です。' }));
       const first = renderHook(() => useScoreSync());
 
@@ -454,7 +456,7 @@ describe('useScoreSync', () => {
         retryingMessage: null,
         rejectedMessage: '終了した試合です。',
         started: true,
-        unsentScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
+        unsentScores: [],
       });
     });
 
@@ -547,7 +549,7 @@ describe('useScoreSync', () => {
       return event.defaultPrevented;
     }
 
-    test('保存できていない間は確認が出る（4xx で断られたまま）', async () => {
+    test('入口に断られた点だけが残っているときは、確認は出ない（もう送らないため）', async () => {
       const fetchMock = vi.mocked(fetch);
       fetchMock.mockResolvedValue(jsonResponse(404, { error: '見つかりません。' }));
       const { result } = renderHook(() => useScoreSync());
@@ -559,7 +561,7 @@ describe('useScoreSync', () => {
         expect(result.current.statusByMatchId['m']?.rejectedMessage).toBeTruthy()
       );
 
-      expect(dispatchBeforeUnload()).toBe(true);
+      expect(dispatchBeforeUnload()).toBe(false);
     });
 
     test('保存できていれば確認は出ない', async () => {

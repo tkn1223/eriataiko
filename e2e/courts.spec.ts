@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
 import {
   BASE_COURT_NUMBERS,
@@ -705,6 +705,15 @@ test.describe('決勝トーナメントが始まったとき', () => {
  * 送信そのものを失敗させる確認（`page.route`）や、DB の値を直接読む確認は、
  * この describe の中だけで行う。
  */
+/** 閉じる・更新しようとしたときの確認が出るか（beforeunload が止められたか）。 */
+function dispatchBeforeUnload(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
 test.describe('保存（1-b）', () => {
   test.beforeEach(createSaveScenario);
   test.afterAll(deleteSaveScenario);
@@ -814,31 +823,38 @@ test.describe('保存（1-b）', () => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
+    const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
+    const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+
+    await page.route('**/api/matches/*/scores', (route) => route.abort());
+    await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+
+    expect(await dispatchBeforeUnload(page)).toBe(true);
+  });
+
+  // 断られた点はもう送らないので、閉じるたびに確認を出し続けない（タブを閉じるまで出続けていた）。
+  test('入口に断られた点だけが残っているときは、画面を閉じようとしても確認は出ない', async ({
+    page,
+  }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
     const card = courtCard(page, REJECT_COURT_NUMBER);
     const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
     await markRejectMatchDone();
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
-    await expect(card.getByRole('status')).toBeVisible();
+    await expect(card.getByRole('status')).toContainText('終了した試合です');
 
-    const defaultPrevented = await page.evaluate(() => {
-      const event = new Event('beforeunload', { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    });
-    expect(defaultPrevented).toBe(true);
+    expect(await dispatchBeforeUnload(page)).toBe(false);
   });
 
   test('送れていない点が無ければ、画面を閉じようとしても確認は出ない', async ({ page }) => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
-    const defaultPrevented = await page.evaluate(() => {
-      const event = new Event('beforeunload', { cancelable: true });
-      window.dispatchEvent(event);
-      return event.defaultPrevented;
-    });
-    expect(defaultPrevented).toBe(false);
+    expect(await dispatchBeforeUnload(page)).toBe(false);
   });
 
   /**
@@ -943,12 +959,7 @@ test.describe('保存（1-b）', () => {
       await goToTab(page, 'myページ');
       await expect(page).toHaveURL(/\/me$/);
 
-      const defaultPrevented = await page.evaluate(() => {
-        const event = new Event('beforeunload', { cancelable: true });
-        window.dispatchEvent(event);
-        return event.defaultPrevented;
-      });
-      expect(defaultPrevented).toBe(true);
+      expect(await dispatchBeforeUnload(page)).toBe(true);
     });
 
     test('観戦者には、移って戻っても「保存できていません」は出ない', async ({ page }) => {

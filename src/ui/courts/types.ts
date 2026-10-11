@@ -120,7 +120,7 @@ export type MatchSyncState = ScoreSyncStatus & {
   started: boolean;
   /**
    * まだサーバーに届いたと確かめられていないゲームの、いま押している点数
-   * （送信中・送り直し待ち・入口に断られたまま、のどれも含む）。無ければ空。
+   * （送信中・送り直し待ち）。入口に断られたまま、は含めない（もう送らないため）。無ければ空。
    */
   unsentScores: GameScore[];
 };

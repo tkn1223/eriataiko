@@ -1069,4 +1069,48 @@ describe('useScoreSync', () => {
       expect(calledUrls()).toEqual(['POST /api/matches/m/result']);
     });
   });
+
+  describe('入口に断られた点の後始末', () => {
+    test('点が断られたら、その試合の id で知らせる（画面が読み直してサーバーの点に戻すため）', async () => {
+      vi.mocked(fetch).mockResolvedValue(jsonResponse(409, { error: '終了した試合です。' }));
+      const rejected: string[] = [];
+      const unsubscribe = appScoreSyncStore.subscribeScoreRejected((matchId) =>
+        rejected.push(matchId)
+      );
+
+      act(() =>
+        appScoreSyncStore.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 })
+      );
+
+      await waitFor(() => expect(rejected).toEqual(['m']));
+      unsubscribe();
+    });
+
+    test('forgetRejected で断られた印が消え、そのあとの終了は止められずに送られる', async () => {
+      let scoresRejected = true;
+      vi.mocked(fetch).mockImplementation(async (input) =>
+        String(input).endsWith('/scores') && scoresRejected
+          ? jsonResponse(409, { error: '終了した試合です。' })
+          : jsonResponse(200, { ok: true })
+      );
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 1 }));
+      await waitFor(() =>
+        expect(result.current.statusByMatchId['m']?.rejectedMessage).toBe('終了した試合です。')
+      );
+
+      // 試合が取り消されて進行中に戻った
+      scoresRejected = false;
+      act(() => appScoreSyncStore.forgetRejected('m'));
+      expect(result.current.statusByMatchId['m']).toBeUndefined();
+
+      act(() => result.current.finish('m'));
+      await waitFor(() =>
+        expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+          '/api/matches/m/result'
+        )
+      );
+    });
+  });
 });

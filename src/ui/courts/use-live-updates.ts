@@ -58,6 +58,8 @@ function nullableNumber(value: unknown): number | null | undefined {
 function toMatchChange(row: unknown): LiveChange | null {
   if (!isRecord(row)) return null;
   const { id, status, finished_at: finishedAt, max_game_count: maxGameCount } = row;
+  // 古い形の通知（ending の無い行）は普通の終わり方として扱う
+  const ending = typeof row.ending === 'string' ? row.ending : 'normal';
   const courtNumber = nullableNumber(row.court_number);
   const orderInCourt = nullableNumber(row.order_in_court);
   if (
@@ -79,6 +81,7 @@ function toMatchChange(row: unknown): LiveChange | null {
     orderInCourt,
     finishedAt,
     maxGameCount,
+    ending,
   };
 }
 

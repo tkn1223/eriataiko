@@ -53,6 +53,7 @@ function toPreviousMatch(match: CourtMatch): PreviousMatch {
     isMine: match.isMine,
     scores: match.scores,
     maxGameCount: match.maxGameCount,
+    ending: match.ending,
   };
 }
 

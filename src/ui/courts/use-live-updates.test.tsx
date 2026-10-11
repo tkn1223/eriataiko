@@ -78,6 +78,7 @@ const MATCH_ROW = {
   order_in_court: 3,
   finished_at: '2026-10-09T01:00:00+00:00',
   max_game_count: 3,
+  ending: 'normal',
 };
 
 function collect(hub: ReturnType<typeof createLiveHub>) {
@@ -113,8 +114,24 @@ describe('createLiveHub', () => {
         orderInCourt: 3,
         finishedAt: '2026-10-09T01:00:00+00:00',
         maxGameCount: 3,
+        ending: 'normal',
       },
     });
+  });
+
+  test('棄権の印（ending）も状態の変化として渡される。ending の無い古い形は普通として扱う', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.deliver('matches', 'UPDATE', { ...MATCH_ROW, ending: 'retired_side_b' });
+    const withoutEnding: Record<string, unknown> = { ...MATCH_ROW };
+    delete withoutEnding.ending;
+    fake.deliver('matches', 'UPDATE', withoutEnding);
+
+    const endings = events.flatMap((event) =>
+      event.type === 'change' && event.change.kind === 'match' ? [event.change.ending] : []
+    );
+    expect(endings).toEqual(['retired_side_b', 'normal']);
   });
 
   test('届いた得点の行は、点の変化として渡される', () => {

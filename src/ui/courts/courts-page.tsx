@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { endingOfRetiredSide } from '@/domain/match-rules';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
 import { CourtLiveCard, type FixActions, type ReopenState } from '@/ui/courts/court-live-card';
@@ -218,10 +219,19 @@ export function CourtsPage({
    * （Realtime が止まっていても、押した本人の画面は変わる）。届いた変化と同じ道を通すのは、
    * 読み直しの最中に受け付けられたときに、読み直した一覧で消されないようにするため。
    * 終了の時刻は画面の時計で仮に入れ、あとから本当の時刻が届けば置き換わる。
+   * 棄権の印（ending）は、終了なら選んだ側、取り消しなら普通に戻す（サーバー側と同じ）。
    */
-  function applyOwnResult(matchId: string, status: 'done' | 'live') {
+  function applyOwnResult(
+    matchId: string,
+    status: 'done' | 'live',
+    retiredSide: 'A' | 'B' | null = null
+  ) {
     const target = liveBoard.get().find((match) => match.matchId === matchId);
     if (!target) return;
+    // 先に他の人の終了が届いて done になっていたら当てない。入口は「もう終わっている」試合には
+    // 何も書かずに成功を返すので、こちらで選んだ棄権の印は記録されていない。当てると
+    // 記録と違う勝ちが自分の画面にだけ出て、知らせはもう来ないので直らない
+    if (status === 'done' && target.status === 'done') return;
     applyChange({
       kind: 'match',
       matchId,
@@ -230,6 +240,7 @@ export function CourtsPage({
       orderInCourt: target.orderInCourt,
       finishedAt: status === 'done' ? new Date().toISOString() : null,
       maxGameCount: target.maxGameCount,
+      ending: endingOfRetiredSide(status === 'done' ? retiredSide : null),
     });
   }
 
@@ -243,8 +254,16 @@ export function CourtsPage({
     },
   });
 
-  const handleOwnFinish = useEffectEvent((matchId: string) => applyOwnResult(matchId, 'done'));
-  useEffect(() => appScoreSyncStore.subscribeFinished((matchId) => handleOwnFinish(matchId)), []);
+  const handleOwnFinish = useEffectEvent((matchId: string, retiredSide: 'A' | 'B' | null) =>
+    applyOwnResult(matchId, 'done', retiredSide)
+  );
+  useEffect(
+    () =>
+      appScoreSyncStore.subscribeFinished((matchId, retiredSide) =>
+        handleOwnFinish(matchId, retiredSide)
+      ),
+    []
+  );
 
   const courts = useMemo(() => deriveCourts(board), [board]);
 
@@ -292,9 +311,9 @@ export function CourtsPage({
    * 確認画面の「OK」で呼ばれる。終了を預かり場所に載せる（点が届いてから送られる）。
    * 画面は「終了を送っています」を出し、記録されたら次の試合に切り替わる。
    */
-  function finishMatch(courtNumber: number) {
+  function finishMatch(courtNumber: number, retiredSide: 'A' | 'B' | null) {
     const matchId = activeMatchIdOfCourt(courtNumber);
-    if (matchId) finish(matchId);
+    if (matchId) finish(matchId, retiredSide);
   }
 
   // 終了の取り消し（「直す」）。点や終了と違って、自動では送り直さない（取り消しは押した人が
@@ -346,7 +365,7 @@ export function CourtsPage({
     reopenStateOf: (matchId) => reopenStates[matchId] ?? null,
     onIncrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, 1),
     onDecrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, -1),
-    onFinishMatch: (matchId) => finish(matchId),
+    onFinishMatch: (matchId, retiredSide) => finish(matchId, retiredSide),
     onReopen: (matchId) => void reopenMatch(matchId),
   };
 
@@ -423,7 +442,7 @@ export function CourtsPage({
               onDecrement={(gameNumber, side) =>
                 changeScore(court.courtNumber, gameNumber, side, -1)
               }
-              onFinishMatch={() => finishMatch(court.courtNumber)}
+              onFinishMatch={(retiredSide) => finishMatch(court.courtNumber, retiredSide)}
               fix={fixActions}
             />
           );

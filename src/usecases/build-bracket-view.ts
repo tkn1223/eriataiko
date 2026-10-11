@@ -4,7 +4,7 @@ import {
   type ClassLabel,
   type DivisionRow,
 } from '@/domain/class-labels';
-import { matchOutcome } from '@/domain/match-rules';
+import { matchOutcome, matchWinner, retiredSideOf } from '@/domain/match-rules';
 import type { GameScore } from '@/domain/scoring';
 import {
   buildStandings,
@@ -54,6 +54,8 @@ export type BracketViewMatchRow = {
   id: string;
   /** `matches.status`。'waiting' | 'live' | 'done'。 */
   status: string;
+  /** `matches.ending`。'normal' | 'retired_side_a' | 'retired_side_b'。 */
+  ending: string;
   maxGameCount: number;
   divisionId: string;
   orderInMatchup: number;
@@ -108,6 +110,7 @@ function toMatchInput(match: BracketViewMatchRow): MatchInput {
     maxGameCount: match.maxGameCount,
     gameScores: match.gameScores,
     status: match.status,
+    ending: match.ending,
   };
 }
 
@@ -155,7 +158,12 @@ function toCardMatch(
   if (status === 'waiting') return base;
 
   const [gamesWonA, gamesWonB] = matchOutcome(match.gameScores, match.maxGameCount).wonGames;
-  return { ...base, gamesWonA, gamesWonB };
+  if (status !== 'done') return { ...base, gamesWonA, gamesWonB };
+
+  // 終わった試合だけ、勝ちを出す（棄権なら相手の勝ち。決め方は matchWinner 1 か所）
+  const winner = matchWinner(match.gameScores, match.maxGameCount, match.ending) ?? undefined;
+  const retiredSide = retiredSideOf(match.ending) ?? undefined;
+  return { ...base, gamesWonA, gamesWonB, winner, retiredSide };
 }
 
 function toLeagueCard(

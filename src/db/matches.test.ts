@@ -168,7 +168,11 @@ describe('試合の進み具合を書き換える', () => {
   });
 
   test('finish で done になり、reopen で live に戻って finished_at が空になる', async () => {
-    await matchesDb.finish({ matchId, finishedAt: new Date('2027-03-14T04:00:00.000Z') });
+    await matchesDb.finish({
+      matchId,
+      finishedAt: new Date('2027-03-14T04:00:00.000Z'),
+      ending: 'normal',
+    });
     const finished = await admin
       .from('matches')
       .select('status, finished_at')
@@ -185,6 +189,20 @@ describe('試合の進み具合を書き換える', () => {
       .single();
     expect(reopened.data!.status).toBe('live');
     expect(reopened.data!.finished_at).toBeNull();
+  });
+
+  test('棄権つきで finish すると ending が書かれ、reopen で普通に戻る', async () => {
+    await matchesDb.finish({
+      matchId,
+      finishedAt: new Date('2027-03-14T05:00:00.000Z'),
+      ending: 'retired_side_a',
+    });
+    const finished = await admin.from('matches').select('ending').eq('id', matchId).single();
+    expect(finished.data!.ending).toBe('retired_side_a');
+
+    await matchesDb.reopen({ matchId });
+    const reopened = await admin.from('matches').select('ending').eq('id', matchId).single();
+    expect(reopened.data!.ending).toBe('normal');
   });
 });
 

@@ -3,6 +3,7 @@
 import { classColorClasses } from '@/domain/class-labels';
 import type { CardMatch, LeagueCard, Team } from '@/ui/bracket/types';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
+import { RetiredNote } from '@/ui/components/retired-note';
 
 type Props = {
   card: LeagueCard | null;
@@ -55,12 +56,17 @@ export function CardDetailSheet({ card, teams, onClose }: Props) {
 
 function CardMatchRow({ match }: { match: CardMatch }) {
   const classColors = classColorClasses(match.classLabel.colorNumber);
-  // 勝ちゲーム数の多いほうを太字にするのは、終わった試合だけ（進行中はまだ決まっていない）
   const hasGames = match.gamesWonA !== undefined && match.gamesWonB !== undefined;
-  const aWins =
-    match.status === 'done' && hasGames ? (match.gamesWonA ?? 0) > (match.gamesWonB ?? 0) : false;
-  const bWins =
-    match.status === 'done' && hasGames ? (match.gamesWonB ?? 0) > (match.gamesWonA ?? 0) : false;
+  // 勝ったほうを太字にするのは、終わった試合だけ（進行中はまだ決まっていない）。
+  // 勝ちは usecase が matchWinner で決めて渡す（棄権は点数と逆になるので、ここでゲーム数から決めない）
+  const aWins = match.status === 'done' && match.winner === 'A';
+  const bWins = match.status === 'done' && match.winner === 'B';
+  const retiredNames =
+    match.retiredSide === 'A'
+      ? match.teamAPlayers
+      : match.retiredSide === 'B'
+        ? match.teamBPlayers
+        : [];
 
   return (
     <li
@@ -85,6 +91,7 @@ function CardMatchRow({ match }: { match: CardMatch }) {
         >
           {match.teamBPlayers.join('・')}
         </p>
+        <RetiredNote names={retiredNames} />
       </div>
       <div className="shrink-0 text-right">
         {match.status !== 'waiting' && hasGames ? (

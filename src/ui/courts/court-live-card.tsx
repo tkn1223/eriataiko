@@ -1,9 +1,17 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { canFinishMatch, leadingSide, matchOutcome, winnerOfGame } from '@/domain/match-rules';
+import {
+  canFinishMatch,
+  endingOfRetiredSide,
+  matchOutcome,
+  matchWinner,
+  retiredSideOf,
+  winnerOfGame,
+} from '@/domain/match-rules';
 import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
+import { RetiredNote } from '@/ui/components/retired-note';
 import { YouTag } from '@/ui/components/you-tag';
 import { teamBgClass } from '@/domain/class-labels';
 import type {
@@ -32,7 +40,7 @@ type Props = {
   onIncrement: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (gameNumber: number, side: 'A' | 'B') => void;
   /** 確認画面で「OK」が押されたときに呼ばれる。実際に試合を終了する処理はページ側が持つ。 */
-  onFinishMatch: () => void;
+  onFinishMatch: (retiredSide: 'A' | 'B' | null) => void;
   /**
    * 直し中の試合と、1 つ前の「直す」を動かすのに要るもの。今の試合ではなく、試合の id ごとに呼ぶ。
    * 渡さなければ、直し中と1つ前は見るだけ（押せるボタンは出ない）。
@@ -49,7 +57,7 @@ export type FixActions = {
   reopenStateOf: (matchId: string) => ReopenState | null;
   onIncrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
-  onFinishMatch: (matchId: string) => void;
+  onFinishMatch: (matchId: string, retiredSide: 'A' | 'B' | null) => void;
   /** 確認画面の「OK」で呼ばれる。終了を取り消す入口に送るのはページ側。 */
   onReopen: (matchId: string) => void;
 };
@@ -121,17 +129,20 @@ function PairName({ team }: { team: CourtTeam }) {
 /** 終了の確認画面・終了後の表示に出す、勝ちペアとゲームごとの内訳。 */
 function finishSummary(
   match: { teamA: CourtTeam; teamB: CourtTeam; maxGameCount: number },
-  scores: GameScore[]
+  scores: GameScore[],
+  ending: string
 ) {
   const teamAName = teamDisplayName(match.teamA);
   const teamBName = teamDisplayName(match.teamB);
 
   // 確認画面・終了後の「勝ち: ◯◯（2-0）」は、どちらもプレーされたゲームから同じ関数で求める。
-  // 勝ちペアは outcome.winner ではなく leadingSide で決める。終了は人が押したときだけなので、
-  // 決勝（上限3ゲーム）を 1-0 のまま終了することがあり、そのとき outcome.winner はまだ null。
-  // ここで null のまま出すと、確認画面にも終了後のカードにも勝ちペアが出ない。
+  // 勝ちペアは matchWinner 1 か所で決める（順位表・マイページと食い違わないため）。
+  // 棄権なら点数に関係なく相手の勝ち。ゲーム数の表記は点数のまま。
   const outcome = matchOutcome(scores, match.maxGameCount);
-  const winnerSide = leadingSide(outcome.wonGames);
+  const winnerSide = matchWinner(scores, match.maxGameCount, ending);
+  const retiredSide = retiredSideOf(ending);
+  const retiredNames =
+    retiredSide === 'A' ? match.teamA.players : retiredSide === 'B' ? match.teamB.players : [];
   const matchWinnerName = winnerSide === 'A' ? teamAName : winnerSide === 'B' ? teamBName : null;
   const matchWinnerScoreText = winnerSide
     ? winnerFirstScoreText(outcome.wonGames, winnerSide)
@@ -150,7 +161,15 @@ function finishSummary(
     };
   });
 
-  return { teamAName, teamBName, matchWinnerName, matchWinnerScoreText, playedGames, confirmGames };
+  return {
+    teamAName,
+    teamBName,
+    matchWinnerName,
+    matchWinnerScoreText,
+    playedGames,
+    confirmGames,
+    retiredNames,
+  };
 }
 
 /**
@@ -235,6 +254,8 @@ export function CourtLiveCard({
   // 「試合を終了する」を押したときの確認画面。誤タップの歯止めがこれ 1 つしか無いので、
   // ここで開く・閉じるを持つ。
   const [sheetOpen, setSheetOpen] = useState(false);
+  // 確認画面で選んだ棄権の側。開くたびに選び直す（前の試合の選択を持ち越さない）。
+  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -267,10 +288,17 @@ export function CourtLiveCard({
     frameScore(scores, index + 1)
   );
 
-  const { matchWinnerName, matchWinnerScoreText, playedGames, confirmGames } = finishSummary(
-    live,
-    scores
-  );
+  // 終了を送っている間は、預かり場所が持っている棄権の側で出す（確認画面の選択は閉じたあと使わない）
+  const shownRetiredSide = finished ? (syncStatus?.finishRetiredSide ?? null) : retiredSide;
+  const {
+    teamAName,
+    teamBName,
+    matchWinnerName,
+    matchWinnerScoreText,
+    playedGames,
+    confirmGames,
+    retiredNames,
+  } = finishSummary(live, scores, endingOfRetiredSide(shownRetiredSide));
 
   // 選手にだけ出す案内。点の保存の案内（断られた理由 > 送り直し中）と、終了の案内を並べる。
   const statusLines = syncLines(syncStatus, canInput);
@@ -286,12 +314,13 @@ export function CourtLiveCard({
       return;
     }
     setNotice(null);
+    setRetiredSide(null);
     setSheetOpen(true);
   }
 
   function handleOk() {
     setSheetOpen(false);
-    onFinishMatch();
+    onFinishMatch(retiredSide);
   }
 
   function handleIncrement(gameNumber: number, side: 'A' | 'B') {
@@ -365,6 +394,7 @@ export function CourtLiveCard({
           <span className="tabular whitespace-nowrap">{`（${matchWinnerScoreText}）`}</span>
         </p>
       )}
+      {finished && <RetiredNote names={retiredNames} />}
 
       {/* 送れていない点の案内は、試合を終了したあとも残す（仕様 2026-10-04 の決めたこと 4）。
           「終了を送っています」は終了の記録がサーバーに受け付けられるまで出す。
@@ -392,6 +422,10 @@ export function CourtLiveCard({
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
+            teamAName={teamAName}
+            teamBName={teamBName}
+            retiredSide={retiredSide}
+            onRetiredSideChange={setRetiredSide}
             onOk={handleOk}
             onClose={() => setSheetOpen(false)}
           />
@@ -615,6 +649,7 @@ function FixingPanel({
   fix: FixActions | undefined;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const syncStatus = fix?.syncStatusOf(match.matchId) ?? null;
@@ -624,10 +659,16 @@ function FixingPanel({
   const frames = Array.from({ length: match.maxGameCount }, (_, index) =>
     frameScore(match.scores, index + 1)
   );
-  const { matchWinnerName, matchWinnerScoreText, playedGames, confirmGames } = finishSummary(
-    match,
-    match.scores
-  );
+  const shownRetiredSide = finishing ? (syncStatus?.finishRetiredSide ?? null) : retiredSide;
+  const {
+    teamAName,
+    teamBName,
+    matchWinnerName,
+    matchWinnerScoreText,
+    playedGames,
+    confirmGames,
+    retiredNames,
+  } = finishSummary(match, match.scores, endingOfRetiredSide(shownRetiredSide));
 
   function handleFinishClick() {
     if (!hasAnyPoint(match.scores)) {
@@ -640,6 +681,7 @@ function FixingPanel({
       return;
     }
     setNotice(null);
+    setRetiredSide(null);
     setSheetOpen(true);
   }
 
@@ -687,6 +729,8 @@ function FixingPanel({
         </div>
       )}
 
+      {finishing && <RetiredNote names={retiredNames} />}
+
       <StatusLines lines={syncLines(syncStatus, canInput)} />
 
       {canInput && fix && !finishing && (
@@ -710,9 +754,13 @@ function FixingPanel({
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
+            teamAName={teamAName}
+            teamBName={teamBName}
+            retiredSide={retiredSide}
+            onRetiredSideChange={setRetiredSide}
             onOk={() => {
               setSheetOpen(false);
-              fix.onFinishMatch(match.matchId);
+              fix.onFinishMatch(match.matchId, retiredSide);
             }}
             onClose={() => setSheetOpen(false)}
           />
@@ -742,7 +790,7 @@ function PreviousRow({
 
   const reopenState = fix?.reopenStateOf(previous.matchId) ?? null;
   const syncStatus = fix?.syncStatusOf(previous.matchId) ?? null;
-  const summary = finishSummary(previous, previous.scores);
+  const summary = finishSummary(previous, previous.scores, previous.ending);
 
   // 「取り消しています」「取り消せませんでした」と、この試合に送れていない点の案内。
   // 他の人が先に終了させた試合に点を入れていたときは、点が断られたことがここに残る
@@ -770,6 +818,14 @@ function PreviousRow({
 
       {/* 1 つ前は「1つ前」の行に収めたいので、ゲームの番号は省いて点だけ並べる */}
       <PlayedGameChips games={summary.playedGames} showGameNumber={false} />
+
+      {/* 棄権は点数と勝ちが逆になりうるので、勝ちと理由を添える（普通の試合には出さない） */}
+      {summary.retiredNames.length > 0 && summary.matchWinnerName && (
+        <p className="text-[12px] font-black break-words">
+          勝ち: <span className="whitespace-nowrap">{summary.matchWinnerName}</span>{' '}
+          <RetiredNote names={summary.retiredNames} />
+        </p>
+      )}
 
       <StatusLines lines={lines} />
 

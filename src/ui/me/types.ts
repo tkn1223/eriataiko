@@ -36,6 +36,8 @@ export type MyMatch = {
   status: MatchStatus;
   /** status が 'done' のときだけ意味を持つ（勝敗）。 */
   won?: boolean;
+  /** 棄権で終わった試合の、棄権した側の名前。「（◯◯ 棄権）」を添える。棄権でなければ無い。 */
+  retiredNames?: string[];
   /** 例: '予選 1回戦' */
   roundLabel: string;
   /** ペアの相手の名前。省略＝シングルス。 */

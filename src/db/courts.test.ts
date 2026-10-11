@@ -581,6 +581,17 @@ describe('findCourtsData の previousMatches（最近終わった試合）', () 
     expect(newest.gameScores).toEqual([{ gameNumber: 1, sideAScore: 21, sideBScore: 17 }]);
   });
 
+  test('棄権の印（ending）が、普通の試合は normal・棄権の試合はその値で読める', async () => {
+    await admin.from('matches').update({ ending: 'retired_side_b' }).eq('id', newestOn90);
+    const data = await findCourtsData(competitionId, myPlayerId);
+
+    expect(data.previousMatches.find((m) => m.matchId === newestOn90)!.ending).toBe(
+      'retired_side_b'
+    );
+    expect(data.previousMatches.find((m) => m.matchId === onlyOn91)!.ending).toBe('normal');
+    expect(data.matches.find((m) => m.matchId === liveMatchId)!.ending).toBe('normal');
+  });
+
   test('進行中・未実施の試合は混ざらず、コート用の試合の読み込みも変わらない', async () => {
     const data = await findCourtsData(competitionId, myPlayerId);
 

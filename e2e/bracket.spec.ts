@@ -5,6 +5,7 @@ import {
   createFinishedFinalScenario,
   deleteBracketScenario,
   deleteFinishedFinalScenario,
+  setHokuSeiDivision1Ending,
   EMPTY_SLOT_LABELS,
   FINAL_WINNER_TEAM_NAME,
   HOKU_SEI_PAIR_NAMES,
@@ -182,6 +183,30 @@ test.describe('順位表', () => {
     for (const teamNumber of Object.values(STANDING_ROW)) {
       await expect(page.getByTestId(`standing-row-${teamNumber}`)).not.toHaveClass(/bg-self-row/);
     }
+  });
+});
+
+test.describe('棄権で終わった試合', () => {
+  // 愛知北 - 愛知西 の 1 部は愛知北が 21-10 で点数では勝っているが、愛知北側が棄権した
+  test.beforeEach(async () => {
+    await setHokuSeiDivision1Ending('retired_side_a');
+  });
+  test.afterEach(async () => {
+    await setHokuSeiDivision1Ending('normal');
+  });
+
+  test('相手（愛知西）の勝ちに数え、詳細に「（◯◯ 棄権）」が出る。ゲーム数は点数のまま', async ({
+    page,
+  }) => {
+    await page.goto('/bracket');
+
+    // 2 試合のうち 1 試合が愛知西の勝ちになるので、2-0 ではなく 1-1（引き分け）
+    await cell(page, hoku, sei).click();
+    const sheet = page.getByRole('dialog');
+    await expect(sheet.getByText(`予選リーグ：${hoku} 1-1 ${sei}`)).toBeVisible();
+    await expect(sheet.getByText(`（${HOKU_SEI_PAIR_NAMES.hoku.join('・')} 棄権）`)).toBeVisible();
+    // 試合ごとのゲーム数は点数のまま（棄権でも変えない）
+    await expect(sheet.getByText('1-0')).toHaveCount(2);
   });
 });
 

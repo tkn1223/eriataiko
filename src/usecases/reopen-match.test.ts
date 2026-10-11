@@ -19,6 +19,16 @@ describe('終了の取り消しを送ると status が live に戻る', () => {
   });
 });
 
+describe('棄権の印は reopen の中で消える', () => {
+  test('reopen の約束は「live に戻し、finished_at と ending を元に戻す」（db 側は src/db/matches.test.ts で実測）', async () => {
+    const deps = fakeRepository();
+    await reopenMatch(deps, { matchId: 'match-1' });
+
+    // 印を消す書き込みは reopen 1 回に含まれる。別の呼び出しを増やさない
+    expect(deps.reopen).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('done でない試合に送ったとき', () => {
   test('waiting の試合には何もせず成功する', async () => {
     const deps = fakeRepository({

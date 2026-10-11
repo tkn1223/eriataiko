@@ -805,6 +805,55 @@ describe('useScoreSync', () => {
       await waitFor(() => expect(calledUrls()).toEqual(['POST /api/matches/m/result']));
     });
 
+    test('棄権の側を付けて finish すると、本文 { retiredSide } つきで POST する。付けなければ本文なし', async () => {
+      routeFetch({});
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m', 'B'));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+      const [, init] = vi.mocked(fetch).mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual({ retiredSide: 'B' });
+
+      act(() => result.current.finish('n'));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2));
+      expect(vi.mocked(fetch).mock.calls[1][1]?.body).toBeUndefined();
+    });
+
+    test('棄権つきの終了は、送れていない点が届いてから送る（棄権の側も忘れない）', async () => {
+      let resolveScore!: (response: Response) => void;
+      routeFetch({ scores: () => new Promise((resolve) => (resolveScore = resolve)) });
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => {
+        result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 3, sideBScore: 0 });
+        result.current.finish('m', 'A');
+      });
+      expect(calledUrls()).toEqual(['POST /api/matches/m/scores']);
+      expect(result.current.statusByMatchId['m']?.finishRetiredSide).toBe('A');
+
+      await act(async () => resolveScore(jsonResponse(200, { ok: true })));
+
+      await waitFor(() =>
+        expect(calledUrls()).toEqual(['POST /api/matches/m/scores', 'POST /api/matches/m/result'])
+      );
+      const [, init] = vi.mocked(fetch).mock.calls[1];
+      expect(JSON.parse(init?.body as string)).toEqual({ retiredSide: 'A' });
+    });
+
+    test('終了が成功したときの知らせに、棄権の側も付く', async () => {
+      routeFetch({});
+      const finished: Array<[string, 'A' | 'B' | null]> = [];
+      const unsubscribe = appScoreSyncStore.subscribeFinished((matchId, retiredSide) =>
+        finished.push([matchId, retiredSide])
+      );
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m', 'A'));
+
+      await waitFor(() => expect(finished).toEqual([['m', 'A']]));
+      unsubscribe();
+    });
+
     test('押した直後から、成功するまで「終了を送っています」の印（finishing）が付く', async () => {
       let resolveResult!: (response: Response) => void;
       routeFetch({ result: () => new Promise((resolve) => (resolveResult = resolve)) });

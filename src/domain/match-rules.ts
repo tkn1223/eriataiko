@@ -113,3 +113,46 @@ export function canFinishMatch(scores: GameScore[], maxGameCount: number): CanFi
   }
   return { ok: true };
 }
+
+/**
+ * 試合の終わり方（matches.ending）。普通・A 側が棄権・B 側が棄権の 3 つだけ。
+ * 不戦勝は無い（棄権が出ても必ず代わりの試合をして点数を入れるため）。
+ * 経緯: docs/specs/2026-10-11-retire-match.md
+ */
+export type MatchEnding = 'normal' | 'retired_side_a' | 'retired_side_b';
+
+/** ending から、棄権した側を返す。棄権でなければ null。知らない値も null（普通の扱い）。 */
+export function retiredSideOf(ending: string): 'A' | 'B' | null {
+  if (ending === 'retired_side_a') return 'A';
+  if (ending === 'retired_side_b') return 'B';
+  return null;
+}
+
+/** 棄権した側から ending を作る。棄権が無ければ（undefined / null）普通。 */
+export function endingOfRetiredSide(retiredSide: 'A' | 'B' | null | undefined): MatchEnding {
+  if (retiredSide === 'A') return 'retired_side_a';
+  if (retiredSide === 'B') return 'retired_side_b';
+  return 'normal';
+}
+
+/**
+ * 終わった試合の勝者。**試合の勝ち負けはここ 1 か所で決める**
+ * （順位表・星取表・個人成績・画面の「勝ち」がすべてこれを通る。食い違いを防ぐため）。
+ *
+ * - 同点（ゲーム数が同数）は、棄権があっても null。同点では終了できないのは今のまま
+ * - 棄権なら、点数に関係なく相手の勝ち。ゲーム数・得失点は点数のまま数える（ここでは触らない）
+ * - それ以外は、ゲーム数の多いほう。matchOutcome.winner ではなく leadingSide を通すのは、
+ *   上限ゲーム数を消化せずに終了した試合（決勝を 1-0 で終える等）でも勝者を拾うため
+ */
+export function matchWinner(
+  scores: GameScore[],
+  maxGameCount: number,
+  ending: string
+): 'A' | 'B' | null {
+  const byScore = leadingSide(matchOutcome(scores, maxGameCount).wonGames);
+  if (byScore === null) return null;
+
+  const retiredSide = retiredSideOf(ending);
+  if (retiredSide === null) return byScore;
+  return retiredSide === 'A' ? 'B' : 'A';
+}

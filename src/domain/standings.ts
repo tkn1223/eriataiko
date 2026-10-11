@@ -7,7 +7,7 @@
  * game_scores / matches.status）。3-b で DB の行から組み立てやすくするため。
  */
 
-import { leadingSide, matchOutcome } from '@/domain/match-rules';
+import { leadingSide, matchOutcome, matchWinner } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 
 /** matches の 1 行。順位計算に要るぶんだけ持つ。 */
@@ -20,6 +20,11 @@ export type MatchInput = {
    * （usecases/save-score.ts の MatchForScoring と同じ扱い）。
    */
   status: string;
+  /**
+   * matches.ending（'normal' | 'retired_side_a' | 'retired_side_b'）。棄権なら点数に関係なく相手の勝ち。
+   * 必須にしてあるのは、渡し忘れると棄権の試合が点数どおりの勝ち負けになる（エラーは出ない）ため。
+   */
+  ending: string;
 };
 
 /** 対戦（matchups の 1 行）の結果。wonMatches は [A の勝ち試合数, B の勝ち試合数]。 */
@@ -34,16 +39,9 @@ function isDone(match: MatchInput): boolean {
   return match.status === 'done';
 }
 
-/**
- * 終わった 1 試合の勝者を返す。同数（＝どちらも勝っていない）は null。
- *
- * matchOutcome の wonGames を leadingSide に通して決める（outcome.winner ではない）。
- * 上限ゲーム数ぶんの枠を消化せずに終了した試合（決勝を 1-0 で終える等）では
- * matchOutcome.winner はまだ null のまま。leadingSide ならゲーム数の多いほうを拾える
- * （player-record.ts と同じ理由。終了は人が押したときだけなので枠が余ることがある）。
- */
+/** 終わった 1 試合の勝者を返す。決め方は match-rules.ts の matchWinner 1 か所。 */
 function winnerOfMatch(match: MatchInput): 'A' | 'B' | null {
-  return leadingSide(matchOutcome(match.gameScores, match.maxGameCount).wonGames);
+  return matchWinner(match.gameScores, match.maxGameCount, match.ending);
 }
 
 /**

@@ -35,6 +35,7 @@ function match(
   return {
     id,
     status,
+    ending: 'normal',
     maxGameCount: 1,
     divisionId: 'div-1',
     orderInMatchup: 1,
@@ -512,6 +513,20 @@ describe('決勝トーナメント（勝ち上がり表）', () => {
       expect(ko.champion).toEqual({ decided: true, teamName: '愛知中央' });
     });
 
+    test('決勝が棄権で終わっても、優勝は相手側のチームになる', () => {
+      const ko = readyKo(
+        fourKnockoutMatchups({
+          final: {
+            sideATeamId: 'team-1',
+            sideBTeamId: 'team-2',
+            matches: [match('f1', 'done', [21, 10], { maxGameCount: 3, ending: 'retired_side_a' })],
+          },
+        })
+      );
+
+      expect(ko.champion).toEqual({ decided: true, teamName: '愛知中央' });
+    });
+
     test('決勝の対戦が終わっていなければ、優勝は決まっていない', () => {
       const ko = readyKo(
         fourKnockoutMatchups({
@@ -642,5 +657,37 @@ describe('決勝トーナメント（勝ち上がり表）', () => {
 
       expect(view.koBracket.kind).toBe('ready');
     });
+  });
+});
+
+describe('棄権で終わった試合（点数に関係なく相手の勝ち）', () => {
+  // team-1（A）が点数では 21-10 で勝っているが、A 側が棄権した試合
+  const retiredByA = () => match('a', 'done', [21, 10], { ending: 'retired_side_a' });
+
+  test('試合ごとの勝ちは相手側になり、棄権した側が分かる。ゲーム数は点数のまま', () => {
+    const view = buildBracketView(
+      input([
+        leagueMatchup('m1', 'team-1', 'team-2', [
+          retiredByA(),
+          match('b', 'done', [21, 10], { orderInMatchup: 2 }),
+        ]),
+      ])
+    );
+
+    const [retired, normal] = view.leagueCards[0].matches;
+    expect(retired).toMatchObject({ winner: 'B', retiredSide: 'A', gamesWonA: 1, gamesWonB: 0 });
+    expect(normal).toMatchObject({ winner: 'A' });
+    expect(normal.retiredSide).toBeUndefined();
+  });
+
+  test('対戦の勝ち試合数・順位表の勝ち負けも、相手の勝ちでそろう', () => {
+    const view = buildBracketView(input([leagueMatchup('m1', 'team-1', 'team-2', [retiredByA()])]));
+
+    expect(view.leagueCards[0]).toMatchObject({ gamesWonA: 0, gamesWonB: 1 });
+    const rowOf = (teamNumber: number) => view.standings.find((r) => r.teamNumber === teamNumber)!;
+    expect([rowOf(1).wins, rowOf(1).losses]).toEqual([0, 1]);
+    expect([rowOf(2).wins, rowOf(2).losses]).toEqual([1, 0]);
+    // ゲーム数と得失点は点数のまま（team-1 は 1 ゲーム取り、+11）
+    expect([rowOf(1).gamesWon, rowOf(1).pointDiff]).toEqual([1, 11]);
   });
 });

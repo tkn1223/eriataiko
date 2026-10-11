@@ -1,6 +1,7 @@
+import { z } from 'zod';
 import { ApiError } from '@/server/route-helpers';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
-import { canFinishMatch } from '@/domain/match-rules';
+import { canFinishMatch, endingOfRetiredSide, type MatchEnding } from '@/domain/match-rules';
 
 export type MatchForFinishing = {
   id: string;
@@ -14,12 +15,24 @@ export type MatchForFinishing = {
 export type FinishMatchRepository = {
   findMatch(matchId: string): Promise<MatchForFinishing | null>;
   findGameScores(matchId: string): Promise<GameScore[]>;
-  /** `matches` を done にし、finished_at を入れる。 */
-  finish(input: { matchId: string; finishedAt: Date }): Promise<void>;
+  /** `matches` を done にし、finished_at と ending（普通か棄権か）を入れる。 */
+  finish(input: { matchId: string; finishedAt: Date; ending: MatchEnding }): Promise<void>;
 };
+
+/**
+ * 終了の本文。棄権した側（無ければ普通の終了）。
+ * 本文ごと無くてもよい（棄権の無い終了は今までどおり本文なしで送れる）。
+ */
+export const finishMatchBodySchema = z.object({
+  retiredSide: z
+    .enum(['A', 'B'], { message: '棄権した側は A か B で指定してください。' })
+    .optional(),
+});
 
 export type FinishMatchInput = {
   matchId: string;
+  /** 棄権した側。無ければ普通の終了。棄権でも点数は必ず入っている（代わりの試合をするため）。 */
+  retiredSide?: 'A' | 'B';
   /** テストで時刻を固定できるよう、呼び出し側から渡す。 */
   now: Date;
 };
@@ -52,5 +65,9 @@ export async function finishMatch(deps: FinishMatchRepository, input: FinishMatc
     throw new ApiError(400, canFinish.reason);
   }
 
-  await deps.finish({ matchId: input.matchId, finishedAt: input.now });
+  await deps.finish({
+    matchId: input.matchId,
+    finishedAt: input.now,
+    ending: endingOfRetiredSide(input.retiredSide),
+  });
 }

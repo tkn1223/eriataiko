@@ -112,6 +112,8 @@ export type ScoreSyncStatus = {
   finishRetrying: boolean;
   /** 終了を入口に断られた（または点が送れていないので送らなかった）ときの日本語の理由。無ければ null。 */
   finishRejectedMessage: string | null;
+  /** 終了を送っている試合の、棄権した側（確認画面で選んだもの）。棄権が無ければ null / 省略。 */
+  finishRetiredSide?: 'A' | 'B' | null;
 };
 
 /**
@@ -150,6 +152,8 @@ export type CourtMatchStatus = 'waiting' | 'live' | 'done';
 export type CourtMatch = {
   matchId: string;
   status: CourtMatchStatus;
+  /** `matches.ending`。棄権の印（'retired_side_a' / 'retired_side_b'）。普通は 'normal'。 */
+  ending: string;
   courtNumber: number | null;
   orderInCourt: number | null;
   /** 終了した時刻（ISO 8601）。終了していなければ null。「1 つ前」を決めるのに使う。 */
@@ -184,6 +188,8 @@ export type PreviousMatch = {
   /** 終わった試合の得点。実際にプレーされたゲームだけを出すのは画面の側。 */
   scores: GameScore[];
   maxGameCount: number;
+  /** `matches.ending`。棄権で終わった試合には「（◯◯ 棄権）」を添え、勝ちを相手側にする。 */
+  ending: string;
 };
 
 export type Court = {

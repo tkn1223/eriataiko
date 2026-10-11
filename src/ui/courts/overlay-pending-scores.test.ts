@@ -14,6 +14,7 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
   return {
     matchId: 'match-live',
     status: 'live',
+    ending: 'normal',
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,

@@ -33,6 +33,13 @@ export type CardMatch = {
   /** その試合のゲーム数（勝ったゲームの数）。status が 'waiting' のときは無い。 */
   gamesWonA?: number;
   gamesWonB?: number;
+  /**
+   * 終わった試合の勝ち。棄権があれば点数に関係なく相手の勝ち（domain の matchWinner）。
+   * 終わっていない試合・同点では無い。
+   */
+  winner?: 'A' | 'B';
+  /** 棄権した側。棄権で終わった試合だけ。「（◯◯ 棄権）」を添える。 */
+  retiredSide?: 'A' | 'B';
 };
 
 /** 予選リーグの「対戦（カード）」1 つ。チーム同士の総当たり戦。 */

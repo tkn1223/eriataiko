@@ -9,7 +9,7 @@ export type MatchForReopening = {
 /** `reopenMatch` が DB に求める操作の約束。実装は `src/db/matches.ts`。 */
 export type ReopenMatchRepository = {
   findMatch(matchId: string): Promise<MatchForReopening | null>;
-  /** `matches` を live に戻し、finished_at を空にする。 */
+  /** `matches` を live に戻し、finished_at を空にして、ending（棄権の印）も普通に戻す。 */
   reopen(input: { matchId: string }): Promise<void>;
 };
 

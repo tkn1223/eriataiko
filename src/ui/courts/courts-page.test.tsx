@@ -206,6 +206,7 @@ function boardFromCourts(courts: CourtFixture[]): CourtMatch[] {
         orderInCourt: 1,
         finishedAt: null,
         reopened: false,
+        ending: 'normal',
       });
     }
     if (court.next) {
@@ -216,6 +217,7 @@ function boardFromCourts(courts: CourtFixture[]): CourtMatch[] {
         orderInCourt: 2,
         finishedAt: null,
         reopened: false,
+        ending: 'normal',
         scores: [],
       });
     }
@@ -842,6 +844,52 @@ describe('CourtsPage', () => {
       expect(refresh).not.toHaveBeenCalled();
     });
 
+    test('棄権を選んで OK すると、その側つきで終了を送り、記録されると1つ前に相手の勝ちと棄権が出る', async () => {
+      routeFetch({});
+      renderPage();
+
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: '佐々木・井上が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      const [, init] = vi.mocked(fetch).mock.calls[0];
+      expect(JSON.parse(init?.body as string)).toEqual({ retiredSide: 'A' });
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
+      const previous = screen.getByTestId('previous-match-1');
+      expect(within(previous).getByText('（佐々木・井上 棄権）')).toBeInTheDocument();
+    });
+
+    test('他の人が先に棄権なしで終了していたら、こちらで選んだ棄権で上書きしない（記録どおりに出す）', async () => {
+      let resolveResult!: (response: Response) => void;
+      routeFetch({ result: () => new Promise((resolve) => (resolveResult = resolve)) });
+      renderPage();
+
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: '佐々木・井上が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      await waitFor(() => expect(calledUrls()).toEqual(['/api/matches/match-1/result']));
+
+      // 先に別の端末が棄権なしで終了していた。入口は「もう終わっている」ので何も変えずに成功を返す
+      act(() =>
+        liveMock.handlers!.onChange({
+          kind: 'match',
+          matchId: 'match-1',
+          status: 'done',
+          courtNumber: 1,
+          orderInCourt: 1,
+          finishedAt: '2026-10-09T01:00:00+00:00',
+          maxGameCount: 1,
+          ending: 'normal',
+        })
+      );
+      await act(async () => resolveResult(new Response(JSON.stringify({ ok: true }))));
+
+      const previous = screen.getByTestId('previous-match-1');
+      expect(within(previous).queryByText(/棄権/)).not.toBeInTheDocument();
+    });
+
     test('自動更新が止まっていても、終了が記録された本人の画面はその場で切り替わる', async () => {
       routeFetch({});
       renderPage();
@@ -1001,6 +1049,7 @@ describe('CourtsPage', () => {
         orderInCourt: 1,
         finishedAt: null,
         maxGameCount: 1,
+        ending: 'normal',
       });
 
       await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -1021,6 +1070,7 @@ describe('CourtsPage', () => {
         orderInCourt: 1,
         finishedAt: '2026-10-09T01:00:00+00:00',
         maxGameCount: 1,
+        ending: 'normal',
       });
       deliver({
         kind: 'match',
@@ -1030,6 +1080,7 @@ describe('CourtsPage', () => {
         orderInCourt: 2,
         finishedAt: null,
         maxGameCount: 1,
+        ending: 'normal',
       });
 
       // 進行中になった試合（元の「次」）の2部・川口・浜田が出る。終わった試合は「1つ前」に移る
@@ -1053,6 +1104,7 @@ describe('CourtsPage', () => {
         orderInCourt: 1,
         finishedAt: '2026-10-09T01:00:00+00:00',
         maxGameCount: 1,
+        ending: 'normal',
       });
 
       const card = screen.getByTestId('court-card-1');
@@ -1127,6 +1179,7 @@ describe('CourtsPage', () => {
       orderInCourt: 1,
       finishedAt: '2026-10-09T01:00:00+00:00',
       maxGameCount: 1,
+      ending: 'normal',
     };
 
     test('読み直しの間に届いた試合の終了は、読み直した一覧（それより前に読んだもの）で消されない', async () => {
@@ -1283,6 +1336,7 @@ describe('CourtsPage', () => {
         courtNumber: 1,
         orderInCourt: 1,
         finishedAt: FINISHED_AT,
+        ending: 'normal',
         reopened: false,
         classLabel: { name: '3部', colorNumber: 3 },
         roundLabel: '予選 0回戦',
@@ -1404,6 +1458,7 @@ describe('CourtsPage', () => {
         orderInCourt: 1,
         finishedAt: null,
         maxGameCount: 1,
+        ending: 'normal',
       };
       act(() => liveMock.handlers!.onChange(reopenedByOther));
       act(() =>
@@ -1493,6 +1548,7 @@ describe('CourtsPage', () => {
           orderInCourt: 1,
           finishedAt: null,
           maxGameCount: 1,
+          ending: 'normal',
         })
       );
 
@@ -1515,6 +1571,7 @@ describe('CourtsPage', () => {
           orderInCourt: 2,
           finishedAt: '2026-10-09T02:00:00+00:00',
           maxGameCount: 1,
+          ending: 'normal',
         })
       );
 
@@ -1554,6 +1611,7 @@ describe('CourtsPage', () => {
           orderInCourt: 1,
           finishedAt: '2026-10-09T03:00:00+00:00',
           maxGameCount: 1,
+          ending: 'normal',
         })
       );
 

@@ -5,6 +5,9 @@ import {
   gamesToWin,
   leadingSide,
   matchOutcome,
+  matchWinner,
+  retiredSideOf,
+  endingOfRetiredSide,
   winnerOfGame,
 } from '@/domain/match-rules';
 
@@ -174,5 +177,43 @@ describe('canFinishMatch が試合を終了してよいかを判定する（PR #
     const result = canFinishMatch([game(1, 15, 15)], 1);
 
     expect(result).toEqual({ ok: false, reason: '同点では終了できません' });
+  });
+});
+
+describe('matchWinner が試合の勝者を 1 か所で決める（棄権は相手の勝ち）', () => {
+  test('棄権が無ければ、ゲーム数の多いほうの勝ち', () => {
+    expect(matchWinner([game(1, 21, 19)], 1, 'normal')).toBe('A');
+    expect(matchWinner([game(1, 19, 21)], 1, 'normal')).toBe('B');
+  });
+
+  test('点数で勝っている A 側が棄権なら、B の勝ち', () => {
+    expect(matchWinner([game(1, 21, 19)], 1, 'retired_side_a')).toBe('B');
+  });
+
+  test('点数で勝っている B 側が棄権なら、A の勝ち', () => {
+    expect(matchWinner([game(1, 19, 21)], 1, 'retired_side_b')).toBe('A');
+  });
+
+  test('決勝を 1-0 のまま終えても、ゲーム数の多いほうが勝つ', () => {
+    expect(matchWinner([game(1, 21, 15)], 3, 'normal')).toBe('A');
+  });
+
+  test('同点は棄権でも勝者なし（終了できない）', () => {
+    expect(matchWinner([game(1, 15, 15)], 1, 'normal')).toBeNull();
+    expect(matchWinner([game(1, 15, 15)], 1, 'retired_side_a')).toBeNull();
+  });
+});
+
+describe('棄権の印と側の相互変換', () => {
+  test('retiredSideOf は ending から棄権した側を返す', () => {
+    expect(retiredSideOf('retired_side_a')).toBe('A');
+    expect(retiredSideOf('retired_side_b')).toBe('B');
+    expect(retiredSideOf('normal')).toBeNull();
+  });
+
+  test('endingOfRetiredSide は側から ending を返す', () => {
+    expect(endingOfRetiredSide('A')).toBe('retired_side_a');
+    expect(endingOfRetiredSide('B')).toBe('retired_side_b');
+    expect(endingOfRetiredSide(undefined)).toBe('normal');
   });
 });

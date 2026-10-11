@@ -22,6 +22,8 @@ export type LiveChange =
       orderInCourt: number | null;
       finishedAt: string | null;
       maxGameCount: number;
+      /** `matches.ending`（棄権の印）。 */
+      ending: string;
     }
   /** `game_scores` の INSERT / UPDATE。ある試合のあるゲームの点が変わった。 */
   | {
@@ -100,6 +102,7 @@ function applyMatch(
     target.orderInCourt === change.orderInCourt &&
     target.finishedAt === change.finishedAt &&
     target.maxGameCount === change.maxGameCount &&
+    target.ending === change.ending &&
     target.reopened === reopened;
   if (unchanged) return { board, needsRefresh: false };
 
@@ -110,6 +113,7 @@ function applyMatch(
     orderInCourt: change.orderInCourt,
     finishedAt: change.finishedAt,
     maxGameCount: change.maxGameCount,
+    ending: change.ending,
     reopened,
   };
   return {

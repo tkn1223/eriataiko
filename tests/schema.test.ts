@@ -520,15 +520,21 @@ describe('試合のルールと結果', () => {
     expect(error).toBeNull();
   });
 
-  test.each(['retired_side_a', 'retired_side_b', 'walkover_side_a', 'walkover_side_b'])(
-    '棄権・不戦勝（%s）を記録できる',
+  test.each(['retired_side_a', 'retired_side_b'])('棄権（%s）を記録できる', async (ending) => {
+    const matchId = await makeMatch();
+    const { error } = await admin
+      .from('matches')
+      .update({ ending, status: 'done' })
+      .eq('id', matchId);
+    expect(error).toBeNull();
+  });
+
+  test.each(['walkover_side_a', 'walkover_side_b'])(
+    '不戦勝（%s）の値は入らない',
     async (ending) => {
       const matchId = await makeMatch();
-      const { error } = await admin
-        .from('matches')
-        .update({ ending, status: 'done' })
-        .eq('id', matchId);
-      expect(error).toBeNull();
+      const { error } = await admin.from('matches').update({ ending }).eq('id', matchId);
+      expect(error).not.toBeNull();
     }
   );
 

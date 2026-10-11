@@ -4,7 +4,7 @@
  * 経緯: docs/specs/2026-09-05-me-real-data.md
  */
 
-import { leadingSide, matchOutcome } from '@/domain/match-rules';
+import { matchOutcome, matchWinner } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 
 /** 終了した 1 試合ぶんの記録。マイページの成績集計に渡す最小限の形。 */
@@ -13,6 +13,8 @@ export type FinishedMatchRecord = {
   gameScores: GameScore[];
   /** その試合で自分がどちら側だったか。 */
   mySide: 'A' | 'B';
+  /** matches.ending。棄権なら点数に関係なく相手の勝ち（ゲーム数・得失点は点数のまま）。 */
+  ending: string;
 };
 
 export type PlayerRecord = {
@@ -44,12 +46,9 @@ export function buildPlayerRecord(matches: FinishedMatchRecord[]): PlayerRecord 
     gamesWon += isSideA ? wonByA : wonByB;
     gamesLost += isSideA ? wonByB : wonByA;
 
-    // 勝敗は outcome.winner ではなく leadingSide で決める。**終了は人が押したときだけ**なので、
-    // 決勝（上限3ゲーム）を 1-0 のまま終了することがあり、そのとき outcome.winner はまだ null。
-    // null のまま数えると、21-15 で勝った人が 0 勝 0 敗になる（PR #53 レビュー）。
-    // ゲーム数が同数のときだけ null が返るが、同点では終了できないので終わった試合では起きない
-    // （match-rules.ts の canFinishMatch。画面と保存の入口の両方が通す）。
-    const winner = leadingSide(outcome.wonGames);
+    // 勝敗は matchWinner 1 か所で決める（順位表と食い違わないため。棄権は相手の勝ち）。
+    // 同点では終了できないので、終わった試合で null にはならない（match-rules.ts の canFinishMatch）。
+    const winner = matchWinner(played, match.maxGameCount, match.ending);
     if (winner === match.mySide) wins += 1;
     else if (winner !== null) losses += 1;
 

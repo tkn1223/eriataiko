@@ -24,6 +24,7 @@ const doneCard: LeagueCard = {
       teamBPlayers: ['山田', '田中'],
       gamesWonA: 1,
       gamesWonB: 0,
+      winner: 'A',
     },
     {
       id: 'm-2',
@@ -133,5 +134,39 @@ describe('CardDetailSheet', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('CardDetailSheet と棄権', () => {
+  // 点数は A が 1-0 でリードだが、A 側が棄権したので B の勝ち
+  const retiredCard: LeagueCard = {
+    ...doneCard,
+    matches: [
+      {
+        ...doneCard.matches[0],
+        winner: 'B',
+        retiredSide: 'A',
+      },
+    ],
+  };
+
+  test('棄権した側の負けとして、相手のペアが太字になる（ゲーム数は点数のまま）', () => {
+    render(<CardDetailSheet card={retiredCard} teams={teams} onClose={() => {}} />);
+
+    const row = screen.getByTestId('card-match-m-1');
+    expect(within(row).getByText('山田・田中')).toHaveClass('font-black');
+    expect(within(row).getByText('佐藤・鈴木')).toHaveClass('text-gray-500');
+    expect(within(row).getByText('1-0')).toBeInTheDocument();
+  });
+
+  test('「（佐藤・鈴木 棄権）」と添えられる。棄権の無い試合には出ない', () => {
+    const { unmount } = render(
+      <CardDetailSheet card={retiredCard} teams={teams} onClose={() => {}} />
+    );
+    expect(screen.getByText('（佐藤・鈴木 棄権）')).toBeInTheDocument();
+    unmount();
+
+    render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
+    expect(screen.queryByText(/棄権/)).not.toBeInTheDocument();
   });
 });

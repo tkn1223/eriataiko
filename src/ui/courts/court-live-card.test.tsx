@@ -70,7 +70,7 @@ function renderLiveCard({
   syncStatus?: ScoreSyncStatus | null;
   onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement?: (gameNumber: number, side: 'A' | 'B') => void;
-  onFinishMatch?: () => void;
+  onFinishMatch?: (retiredSide: 'A' | 'B' | null) => void;
 } = {}) {
   const court: Court = { courtNumber: 3, live, next, fixing: [], previous: null };
   // 呼出待ち（live が無い）でも、選手が次の試合に点を入れ始めていれば
@@ -523,7 +523,98 @@ describe('CourtLiveCard', () => {
       fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
 
-      expect(onFinishMatch).toHaveBeenCalled();
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith(null);
+    });
+  });
+
+  describe('棄権を選んで終了する（docs/specs/2026-10-11-retire-match.md）', () => {
+    // baseLive は 10-8 で A（佐藤・鈴木）が点数で勝っている
+    function openSheet(onFinishMatch = vi.fn(), canInput = true) {
+      renderLiveCard({ onFinishMatch, canInput });
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+      return onFinishMatch;
+    }
+
+    test('確認画面に、両ペアの名前の「棄権」ボタンが出る', () => {
+      openSheet();
+
+      expect(screen.getByRole('button', { name: '佐藤・鈴木が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+      expect(screen.getByRole('button', { name: '高橋・伊藤が棄権' })).toBeInTheDocument();
+    });
+
+    test('点数で勝っている A 側を棄権にすると、「試合の勝ち」が B 側に変わる', () => {
+      openSheet();
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('佐藤・鈴木');
+
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('高橋・伊藤');
+      expect(screen.getByRole('button', { name: '佐藤・鈴木が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+    });
+
+    test('もう一度押すと棄権を取り消せて、勝ちが点数のとおりに戻る', () => {
+      openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('佐藤・鈴木');
+    });
+
+    test('棄権を選んで「OK」を押すと、棄権した側つきで onFinishMatch が呼ばれる', () => {
+      const onFinishMatch = openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('A');
+    });
+
+    test('「戻る」で閉じて開き直すと、棄権の選択は消えている', () => {
+      openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '高橋・伊藤が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.getByRole('button', { name: '高橋・伊藤が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+    });
+
+    test('同点のときは、棄権を選ぶ前に止まる（確認画面が出ない）', () => {
+      renderLiveCard({ scores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 15 }] });
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.queryByRole('button', { name: '佐藤・鈴木が棄権' })).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('同点では終了できません');
+    });
+
+    test('観戦者には、終了ボタンも棄権を選ぶ欄も出ない', () => {
+      renderLiveCard({ canInput: false });
+
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /棄権/ })).not.toBeInTheDocument();
+    });
+
+    test('棄権で終了を送っている間は、勝ちが相手側になり「（佐藤・鈴木 棄権）」が添えられる', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: syncStatusOf({ finishing: true, finishRetiredSide: 'A' }),
+      });
+
+      expect(screen.getByText(/勝ち:/)).toHaveTextContent('高橋・伊藤');
+      expect(screen.getByText('（佐藤・鈴木 棄権）')).toBeInTheDocument();
+    });
+
+    test('棄権の無い終了には「棄権」の文字が出ない', () => {
+      renderLiveCard({ finished: true, syncStatus: syncStatusOf({ finishing: true }) });
+
+      expect(screen.queryByText(/棄権/)).not.toBeInTheDocument();
     });
   });
 
@@ -611,6 +702,7 @@ describe('直し中と1つ前', () => {
       { gameNumber: 2, sideAScore: 0, sideBScore: 0 },
     ],
     maxGameCount: 3,
+    ending: 'normal',
   };
 
   const fixingMatch: NonNullable<Court['live']> = {
@@ -669,6 +761,20 @@ describe('直し中と1つ前', () => {
   }
 
   describe('1つ前', () => {
+    test('棄権で終わった試合は、相手の勝ちと「（◯◯ 棄権）」が出る（点数では勝っていても）', () => {
+      renderCard({ court: { previous: { ...previousMatch, ending: 'retired_side_a' } } });
+
+      const row = screen.getByTestId('previous-match-3');
+      expect(within(row).getByText(/勝ち:/)).toHaveTextContent('松田・井上');
+      expect(within(row).getByText('（山本・清水 棄権）')).toBeInTheDocument();
+    });
+
+    test('棄権の無い試合には「棄権」の文字が出ない', () => {
+      renderCard({ court: { previous: previousMatch } });
+
+      expect(screen.queryByText(/棄権/)).not.toBeInTheDocument();
+    });
+
     test('「1つ前」に、部・両ペアの名前・実際にプレーされたゲームの得点が出る', () => {
       renderCard({ court: { previous: previousMatch } });
 
@@ -802,6 +908,19 @@ describe('直し中と1つ前', () => {
   });
 
   describe('直し中', () => {
+    test('「もう一度終了する」の確認で棄権を選ぶと、その側つきで終了が呼ばれる', () => {
+      const onFinishMatch = vi.fn();
+      renderCard({ court: { fixing: [fixingMatch] }, fix: actions({ onFinishMatch }) });
+
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: '加藤・吉田が棄権' }));
+      // 点数では B が勝っているが、B 側の棄権なので A の勝ちになる
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('中村・小林');
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('match-fixing', 'B');
+    });
+
     test('「直し中」の表示と、得点の枠が出る', () => {
       renderCard({ court: { fixing: [fixingMatch] } });
 
@@ -842,7 +961,7 @@ describe('直し中と1つ前', () => {
       expect(onFinishMatch).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
-      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('match-fixing');
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('match-fixing', null);
     });
 
     test('同点では「もう一度終了する」を押しても確認に進まず、理由が出る', () => {

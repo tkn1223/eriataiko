@@ -989,14 +989,14 @@ export async function writeGameScoreDirectly(
 /** 試合の状態と終了の時刻を読む。 */
 export async function findMatchResult(
   matchId: string
-): Promise<{ status: string; finishedAt: string | null } | null> {
+): Promise<{ status: string; finishedAt: string | null; ending: string } | null> {
   const { data, error } = await admin
     .from('matches')
-    .select('status, finished_at')
+    .select('status, finished_at, ending')
     .eq('id', matchId)
     .maybeSingle();
   if (error) throw new Error(`試合の状態を読めませんでした: ${error.message}`);
-  return data ? { status: data.status, finishedAt: data.finished_at } : null;
+  return data ? { status: data.status, finishedAt: data.finished_at, ending: data.ending } : null;
 }
 
 /** 画面を使わずに、データベースで試合を終了にする（「他の人が終了した」を再現する）。 */

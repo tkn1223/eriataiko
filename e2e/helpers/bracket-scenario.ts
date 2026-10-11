@@ -401,3 +401,19 @@ export async function deleteFinishedFinalScenario(): Promise<void> {
 
   await setKnockoutTeams(KNOCKOUT_FINAL, null, null);
 }
+
+/**
+ * 愛知北 - 愛知西 の 1 部の試合（愛知北が 21-10 で点数では勝っている）の ending を書き換える。
+ * 棄権で終わった試合の表示を確かめる test が、前後で呼ぶ（戻すときは 'normal'）。
+ */
+export async function setHokuSeiDivision1Ending(
+  ending: 'normal' | 'retired_side_a' | 'retired_side_b'
+): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ ending })
+    .eq('matchup_id', LEAGUE_HOKU_SEI)
+    .eq('division_id', DIVISION_1_ID)
+    .gte('order_in_matchup', ADDED_MATCH_ORDER_START);
+  if (error) throw new Error(`試合の終わり方を書き換えられませんでした: ${error.message}`);
+}

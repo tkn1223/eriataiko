@@ -57,6 +57,8 @@ export type CourtsViewMatchRow = {
   matchId: string;
   /** `matches.status`。 */
   status: string;
+  /** `matches.ending`。'normal' | 'retired_side_a' | 'retired_side_b'。 */
+  ending: string;
   maxGameCount: number;
   courtNumber: number | null;
   orderInCourt: number | null;
@@ -139,6 +141,7 @@ function toCourtMatch(
     matchId: match.matchId,
     // 画面に出す試合は live / waiting / done のどれか（表の check 制約で保証されている）
     status: match.status as CourtMatchStatus,
+    ending: match.ending,
     courtNumber: match.courtNumber,
     orderInCourt: match.orderInCourt,
     finishedAt: match.finishedAt,

@@ -14,6 +14,7 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
   return {
     matchId: 'm-1',
     status: 'live',
+    ending: 'normal',
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
@@ -49,6 +50,7 @@ function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> 
     orderInCourt: 1,
     finishedAt: null,
     maxGameCount: 3,
+    ending: 'normal',
     ...overrides,
   };
 }
@@ -239,5 +241,43 @@ describe('読み直した一覧に、直している試合の印を引き継ぐ'
     const reloaded = [match()];
 
     expect(carryOverReopened(reloaded, before)).toBe(reloaded);
+  });
+});
+
+describe('棄権の印（ending）を当てる', () => {
+  test('終了と一緒に届いた棄権の印が、その試合に映る', () => {
+    const result = applyLiveChange(
+      [match()],
+      matchChange({
+        status: 'done',
+        finishedAt: '2026-10-11T01:00:00+00:00',
+        ending: 'retired_side_a',
+      }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].ending).toBe('retired_side_a');
+  });
+
+  test('終了の取り消しで普通に戻った印が映る（棄権の印だけが変わった知らせも当てる）', () => {
+    const retired = match({
+      status: 'done',
+      finishedAt: '2026-10-11T01:00:00+00:00',
+      ending: 'retired_side_b',
+    });
+    const result = applyLiveChange(
+      [retired],
+      matchChange({ status: 'live', finishedAt: null, ending: 'normal' }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].ending).toBe('normal');
+
+    const onlyEndingChanged = applyLiveChange(
+      [match({ status: 'done', finishedAt: 'x', ending: 'normal' })],
+      matchChange({ status: 'done', finishedAt: 'x', ending: 'retired_side_a' }),
+      NO_PENDING
+    );
+    expect(onlyEndingChanged.board[0].ending).toBe('retired_side_a');
   });
 });

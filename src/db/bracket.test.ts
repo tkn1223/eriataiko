@@ -266,6 +266,15 @@ describe('findBracketData', () => {
     expect(done.gameScores).toEqual([{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }]);
   });
 
+  test('棄権の印（ending）が読める', async () => {
+    await admin.from('matches').update({ ending: 'retired_side_a' }).eq('id', doneMatchId);
+    const data = await findBracketData(competitionId, myPlayerId);
+    const league = data.matchups.find((m) => m.id === leagueMatchupId)!;
+
+    expect(league.matches.find((m) => m.id === doneMatchId)!.ending).toBe('retired_side_a');
+    expect(league.matches.find((m) => m.id !== doneMatchId)!.ending).toBe('normal');
+  });
+
   test('出場者も得点もまだ無い試合は、空の一覧で読める', async () => {
     const data = await findBracketData(competitionId, myPlayerId);
     const knockout = data.matchups.find((m) => m.id === knockoutMatchupId)!;

@@ -69,8 +69,10 @@ export type UseScoreSyncResult = {
   /**
    * 試合の終了を送る。その試合の点が全部届いてから送り、失敗したら送り直す。
    * 送っている途中にもう一度呼んでも、送るのは 1 本だけ。
+   * `retiredSide` は確認画面で選んだ棄権の側（無ければ普通の終了）。点が届くのを待つ間も、
+   * 送り直す間も預かって、終了の本文に載せる。
    */
-  finish: (matchId: string) => void;
+  finish: (matchId: string, retiredSide?: 'A' | 'B' | null) => void;
   /**
    * 試合 id ごとの案内と、まだ送れていない数字。表示するコートが `statusByMatchId[matchId]` を見る。
    * 一度でも送った試合だけが入る（送っていない試合は無い）。
@@ -121,6 +123,8 @@ type GameSyncState = {
 
 type FinishState = {
   matchId: string;
+  /** 確認画面で選んだ棄権の側。無ければ普通の終了。 */
+  retiredSide: 'A' | 'B' | null;
   /**
    * - waiting: その試合の点が全部届くのを待っている（まだ何も送っていない）
    * - sending: 終了を送っている
@@ -171,13 +175,15 @@ function clearEchoTimer(game: GameSyncState) {
  */
 export type ScoreSyncStore = {
   sync: (input: ScoreSyncInput) => void;
-  finish: (matchId: string) => void;
+  finish: (matchId: string, retiredSide?: 'A' | 'B' | null) => void;
   /**
-   * 試合の終了が入口に受け付けられたとき、その試合の id を受け取る。画面が「終わった」を
+   * 試合の終了が入口に受け付けられたとき、その試合の id と棄権の側（無ければ null）を受け取る。画面が「終わった」を
    * 表に反映するのに使う（Realtime が止まっていても、押した本人の画面はすぐ変わる）。
    * 画面を離れていて受け取る人がいなくても、送り直しは続く。
    */
-  subscribeFinished: (listener: (matchId: string) => void) => () => void;
+  subscribeFinished: (
+    listener: (matchId: string, retiredSide: 'A' | 'B' | null) => void
+  ) => () => void;
   /**
    * 点が入口に断られたとき、その試合の id を受け取る。画面はそのゲームを押した点のまま持っているので、
    * 読み直してサーバーの点に戻すのに使う（戻さないと、次に押した点を断られた点から数えて送る）。
@@ -213,7 +219,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
   const games = new Map<string, GameSyncState>();
   const finishes = new Map<string, FinishState>();
   const listeners = new Set<Listener>();
-  const finishedListeners = new Set<(matchId: string) => void>();
+  const finishedListeners = new Set<(matchId: string, retiredSide: 'A' | 'B' | null) => void>();
   const scoreRejectedListeners = new Set<(matchId: string) => void>();
   let snapshot: Record<string, MatchSyncState> = {};
   let unloadGuardInstalled = false;
@@ -272,6 +278,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
         ...existing,
         finishing: finish.phase !== 'rejected',
         finishRetrying: finish.phase === 'retrying',
+        ...(finish.retiredSide ? { finishRetiredSide: finish.retiredSide } : {}),
         finishRejectedMessage: finish.phase === 'rejected' ? finish.rejectedMessage : null,
       };
     }
@@ -380,14 +387,19 @@ export function createScoreSyncStore(): ScoreSyncStore {
     finish.retryTimer = null;
     notify();
 
-    sendRequest({ url: `/api/matches/${matchId}/result`, method: 'POST' }).then((result) => {
+    sendRequest({
+      url: `/api/matches/${matchId}/result`,
+      method: 'POST',
+      // 棄権が無い終了は本文なしのまま送る
+      ...(finish.retiredSide ? { body: { retiredSide: finish.retiredSide } } : {}),
+    }).then((result) => {
       // 返事を待っている間に dispose された（テストの後片付け）ときは何もしない
       if (finishes.get(matchId) !== finish) return;
 
       if (result.ok) {
         finishes.delete(matchId);
         notify();
-        for (const listener of finishedListeners) listener(matchId);
+        for (const listener of finishedListeners) listener(matchId, finish.retiredSide);
         return;
       }
 
@@ -451,7 +463,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
       notify();
     },
 
-    finish(matchId) {
+    finish(matchId, retiredSide = null) {
       // サーバー側の描画では何も預からない（sync と同じ理由）
       if (typeof window === 'undefined') return;
 
@@ -461,6 +473,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
 
       finishes.set(matchId, {
         matchId,
+        retiredSide,
         phase: 'waiting',
         attempt: 0,
         retryTimer: null,

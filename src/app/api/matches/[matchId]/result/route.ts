@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { logWrite, requirePlayer, toErrorResponse } from '@/server/route-helpers';
+import { logWrite, parseBody, requirePlayer, toErrorResponse } from '@/server/route-helpers';
 import { matchesDb } from '@/db/matches';
-import { finishMatch } from '@/usecases/finish-match';
+import { finishMatch, finishMatchBodySchema } from '@/usecases/finish-match';
 import { reopenMatch } from '@/usecases/reopen-match';
 
 /**
@@ -17,20 +17,25 @@ import { reopenMatch } from '@/usecases/reopen-match';
  */
 
 /**
- * 試合を終了する。1 点も入っていなければ止める（押し間違い防止）。
+ * 試合を終了する。本文 `{ retiredSide?: 'A' | 'B' }` で棄権した側を受け取る
+ * （本文が空なら普通の終了。棄権を使わない呼び出しをそのまま通すため）。
+ * 1 点も入っていなければ止める（押し間違い防止）。
  * 既に done のときは何も変えずに成功を返す（二重押し対策）。
  * 詳しい分岐は `src/usecases/finish-match.ts` を参照。
  */
 export async function POST(
-  _request: Request,
+  request: Request,
   context: RouteContext<'/api/matches/[matchId]/result'>
 ) {
   try {
     const player = await requirePlayer();
     const { matchId } = await context.params;
+    // 本文なしの POST を 400 にしない。parseBody は空の本文を「形式が不正」にするので、先に有無を見る
+    const hasBody = (await request.clone().text()).trim() !== '';
+    const body = hasBody ? await parseBody(request, finishMatchBodySchema) : {};
 
-    await finishMatch(matchesDb, { matchId, now: new Date() });
-    await logWrite(player, 'match.finish', { matchId });
+    await finishMatch(matchesDb, { matchId, now: new Date(), retiredSide: body.retiredSide });
+    await logWrite(player, 'match.finish', { matchId, retiredSide: body.retiredSide ?? null });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

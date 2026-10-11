@@ -218,3 +218,21 @@ describe('MyPage', () => {
     expect(screen.queryByText(/新しい大会を作る/)).not.toBeInTheDocument();
   });
 });
+
+describe('MyPage と棄権', () => {
+  const retiredMatch: MyMatch = {
+    ...matches[1],
+    id: 'match-retired',
+    won: false,
+    retiredNames: ['山田', '自分'],
+  };
+
+  test('棄権で終わった試合に「（◯◯ 棄権）」が添えられる。棄権の無い試合には出ない', () => {
+    render(<MyPage profile={profile} record={record} matches={[retiredMatch, matches[0]]} />);
+
+    expect(
+      within(screen.getByTestId('match-match-retired')).getByText('（山田・自分 棄権）')
+    ).toBeInTheDocument();
+    expect(within(screen.getByTestId('match-match-1')).queryByText(/棄権/)).not.toBeInTheDocument();
+  });
+});

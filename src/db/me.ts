@@ -157,6 +157,7 @@ async function findMyMatches(
   return matches.map((match) => ({
     matchId: match.id,
     status: match.status,
+    ending: match.ending,
     maxGameCount: match.max_game_count,
     courtNumber: match.court_number,
     orderInCourt: match.order_in_court,
@@ -185,6 +186,7 @@ async function findMyMatchIds(
 type MatchRow = {
   id: string;
   status: string;
+  ending: string;
   max_game_count: number;
   court_number: number | null;
   order_in_court: number | null;
@@ -198,7 +200,9 @@ async function findMatchesByIds(
 ): Promise<MatchRow[]> {
   const { data, error } = await supabase
     .from('matches')
-    .select('id, status, max_game_count, court_number, order_in_court, division_id, matchup_id')
+    .select(
+      'id, status, ending, max_game_count, court_number, order_in_court, division_id, matchup_id'
+    )
     .in('id', matchIds)
     .limit(MAX_MY_MATCHES);
   if (error) throw error;

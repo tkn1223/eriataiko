@@ -11,6 +11,7 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
   return {
     matchId: 'm-1',
     status: 'live',
+    ending: 'normal',
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
@@ -228,5 +229,20 @@ describe('deriveCourts', () => {
       expect(after[0].previous).toBeNull();
       expect(after[0].fixing.map((fixing) => fixing.matchId)).toEqual(['m-1']);
     });
+  });
+});
+
+describe('deriveCourts と棄権の印', () => {
+  test('1 つ前の試合に、棄権の印が引き継がれる', () => {
+    const courts = deriveCourts([
+      match({
+        status: 'done',
+        finishedAt: '2026-10-11T01:00:00+00:00',
+        ending: 'retired_side_a',
+        scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 10 }],
+      }),
+    ]);
+
+    expect(courts[0].previous?.ending).toBe('retired_side_a');
   });
 });

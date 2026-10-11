@@ -872,6 +872,211 @@ test.describe('1つ前と直す', () => {
 });
 
 /**
+ * 棄権を記録する（docs/specs/2026-10-11-retire-match.md）。
+ * コート 11 は 青山・赤坂（A）5-3 緑川・紫野（B）で、点数では A が勝っている。
+ * A 側を棄権にして終了すると B の勝ちになる。
+ */
+test.describe('棄権で終了する', () => {
+  const RETIRED_NOTE = `（${LIVE_A.join('・')} 棄権）`;
+
+  async function openAsPlayer(browser: Browser) {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await openCourtsAndWaitForLive(page);
+    await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+    return { context, page };
+  }
+
+  function previousRow(page: Page) {
+    return page.getByTestId(`previous-match-${LIVE_COURT}`);
+  }
+
+  async function finishWithALeftRetired(page: Page) {
+    await courtCard(page, LIVE_COURT).getByRole('button', { name: '試合を終了する' }).click();
+    const dialog = page.getByRole('dialog');
+    // 点数では A（青山・赤坂）が勝っているので、選ぶ前の勝ちは A
+    await expect(dialog.getByText(/試合の勝ち/)).toContainText(LIVE_A.join('・'));
+    await dialog.getByRole('button', { name: `${LIVE_A.join('・')}が棄権` }).click();
+    await expect(dialog.getByText(/試合の勝ち/)).toContainText(LIVE_B.join('・'));
+    await dialog.getByRole('button', { name: 'OK' }).click();
+  }
+
+  test('点数で勝っている A 側を棄権にして終了すると、B の勝ちで記録され、1つ前・他の画面・myページに映る', async ({
+    browser,
+  }) => {
+    const mine = await openAsPlayer(browser);
+    const viewer = await openAnotherBrowser(browser, 'viewer');
+
+    await finishWithALeftRetired(mine.page);
+
+    await expect
+      .poll(async () => (await findMatchResult(matchIds.live))?.ending)
+      .toBe('retired_side_a');
+    // 自分の画面の 1 つ前
+    await expect(previousRow(mine.page).getByText(/勝ち:/)).toContainText(LIVE_B.join('・'));
+    await expect(previousRow(mine.page).getByText(RETIRED_NOTE)).toBeVisible();
+    // 他のブラウザにも、その場で映る（開き直さない）
+    await expect(previousRow(viewer.page).getByText(/勝ち:/)).toContainText(LIVE_B.join('・'), {
+      timeout: 5000,
+    });
+    await expect(previousRow(viewer.page).getByText(RETIRED_NOTE)).toBeVisible();
+    expect(viewer.refreshes.count).toBe(0);
+
+    // 開き直しても（サーバーから読み直しても）同じ
+    await viewer.page.reload();
+    await expect(previousRow(viewer.page).getByText(RETIRED_NOTE)).toBeVisible();
+
+    // 棄権した本人（青山）のマイページは負け、相手側（緑川）は勝ち
+    const loser = await browser.newContext();
+    const loserPage = await loser.newPage();
+    await enterAsPlayer(loserPage, '愛知北', LIVE_A[0]);
+    await loserPage.goto('/me');
+    const loserCard = loserPage.getByText('予選 11回戦').locator('xpath=ancestor::li[1]');
+    await expect(loserCard.getByRole('img', { name: '負け' })).toBeVisible();
+    await expect(loserCard.getByText(RETIRED_NOTE)).toBeVisible();
+    await loser.close();
+
+    const winner = await browser.newContext();
+    const winnerPage = await winner.newPage();
+    await enterAsPlayer(winnerPage, '愛知西', LIVE_B[0]);
+    await winnerPage.goto('/me');
+    const winnerCard = winnerPage.getByText('予選 11回戦').locator('xpath=ancestor::li[1]');
+    await expect(winnerCard.getByRole('img', { name: '勝ち' })).toBeVisible();
+    await winner.close();
+
+    // 対戦表の試合一覧は e2e/bracket.spec.ts で確かめる（この画面のシナリオは同じ組み合わせの対戦を
+    // 足すので、星取表のマスにどの対戦が出るか決まらない）
+
+    await mine.context.close();
+    await viewer.context.close();
+  });
+
+  test('棄権を選ばずに終了すると、いままでどおり（棄権の印は付かない）', async ({ browser }) => {
+    const mine = await openAsPlayer(browser);
+
+    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '試合を終了する' }).click();
+    await mine.page.getByRole('button', { name: 'OK' }).click();
+
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+    expect((await findMatchResult(matchIds.live))?.ending).toBe('normal');
+    await expect(mine.page.getByText(/棄権/)).toHaveCount(0);
+
+    await mine.context.close();
+  });
+
+  test('「直す」で棄権の印が消え、もう一度終了するときに選び直せる', async ({ browser }) => {
+    const mine = await openAsPlayer(browser);
+    await finishWithALeftRetired(mine.page);
+    await expect(previousRow(mine.page).getByText(RETIRED_NOTE)).toBeVisible();
+
+    await previousRow(mine.page).getByRole('button', { name: '直す' }).click();
+    await mine.page.getByRole('button', { name: 'OK' }).click();
+
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.ending).toBe('normal');
+    const fixing = mine.page.getByTestId(`fixing-match-${LIVE_COURT}`);
+    await expect(fixing.getByText('直し中')).toBeVisible();
+    await expect(mine.page.getByText(RETIRED_NOTE)).toHaveCount(0);
+
+    // 選び直せる（前回の選択は残っていない）
+    await fixing.getByRole('button', { name: 'もう一度終了する' }).click();
+    const dialog = mine.page.getByRole('dialog');
+    await expect(
+      dialog.getByRole('button', { name: `${LIVE_A.join('・')}が棄権` })
+    ).toHaveAttribute('aria-pressed', 'false');
+    await dialog.getByRole('button', { name: `${LIVE_B.join('・')}が棄権` }).click();
+    await dialog.getByRole('button', { name: 'OK' }).click();
+    await expect
+      .poll(async () => (await findMatchResult(matchIds.live))?.ending)
+      .toBe('retired_side_b');
+
+    await mine.context.close();
+  });
+
+  test('観戦者には棄権を選ぶ欄が出ない', async ({ browser }) => {
+    const viewer = await openAnotherBrowser(browser, 'viewer');
+
+    await expect(viewer.page.getByRole('button', { name: /棄権/ })).toHaveCount(0);
+    await expect(viewer.page.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+
+    await viewer.context.close();
+  });
+
+  test('棄権した側が A / B 以外の終了は 400 と日本語の理由で断られ、記録されない', async ({
+    browser,
+  }) => {
+    const mine = await openAsPlayer(browser);
+
+    // 入場済みの cookie を使って、入口へ直接送る（画面からは A / B 以外を送れないため）
+    const response = await mine.page.request.post(`/api/matches/${matchIds.live}/result`, {
+      data: { retiredSide: 'C' },
+    });
+
+    expect(response.status()).toBe(400);
+    expect((await response.json()).error).toContain('棄権した側は A か B で指定してください。');
+    expect((await findMatchResult(matchIds.live))?.status).toBe('live');
+
+    await mine.context.close();
+  });
+
+  test('同点のときは、棄権を選ぶ画面に進まず止まる', async ({ browser }) => {
+    await writeGameScoreDirectly(matchIds.live, 1, 8, 8);
+    const mine = await openAsPlayer(browser);
+
+    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '試合を終了する' }).click();
+
+    await expect(mine.page.getByRole('dialog')).toHaveCount(0);
+    await expect(mine.page.getByText('同点では終了できません')).toBeVisible();
+
+    await mine.context.close();
+  });
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、確認画面の棄権の欄が横にはみ出さない（長い名前・3 ゲーム）`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport: { width, height: 844 } });
+      const page = await context.newPage();
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+      await courtCard(page, LONG_COURT).getByRole('button', { name: '試合を終了する' }).click();
+      const dialog = page.getByRole('dialog');
+      const retireButton = dialog.getByRole('button', { name: /棄権/ }).first();
+      await expect(retireButton).toBeVisible();
+      await retireButton.click();
+
+      const { stickingOut, buttonHeights } = await dialog.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return {
+          stickingOut: Array.from(element.querySelectorAll('*'))
+            .map((child) => ({ text: child.textContent, rect: child.getBoundingClientRect() }))
+            .filter(
+              ({ rect }) =>
+                rect.width > 0 && (rect.right > box.right + 0.5 || rect.left < box.left - 0.5)
+            )
+            .map(({ text }) => text),
+          buttonHeights: Array.from(element.querySelectorAll('button[aria-pressed]')).map(
+            (button) => button.getBoundingClientRect().height
+          ),
+        };
+      });
+      expect(stickingOut).toEqual([]);
+      // 片手・汗ばんだ指でも押せる大きさ（44px 以上）
+      expect(buttonHeights).toHaveLength(2);
+      for (const height of buttonHeights) expect(height).toBeGreaterThanOrEqual(44);
+      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(innerWidth).toBe(width);
+      expect(scrollWidth).toBe(innerWidth);
+
+      await context.close();
+    });
+  }
+});
+
+/**
  * 入口に断られた点の後始末。断られた点はもう送らないので、画面はサーバーの点に戻し、
  * 古い「断られた」の印で終了を止め続けない（PR #66 レビュー）。
  * 「他の人が先に終了した」を待ち合わせなしで起こすため、入口の返事を 409 に差し替える。

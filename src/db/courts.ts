@@ -186,7 +186,7 @@ function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
   return supabase
     .from('matches')
     .select(
-      `id, status, max_game_count, court_number, order_in_court, finished_at, division_id,
+      `id, status, ending, max_game_count, court_number, order_in_court, finished_at, division_id,
       divisions!inner(competition_id),
       matchups!inner(
         stage_id, round_name, side_a_slot_label, side_b_slot_label,
@@ -214,6 +214,7 @@ function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
   return {
     matchId: match.id,
     status: match.status,
+    ending: match.ending,
     maxGameCount: match.max_game_count,
     courtNumber: match.court_number,
     orderInCourt: match.order_in_court,

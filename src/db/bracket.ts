@@ -136,7 +136,7 @@ async function findMatchups(supabase: SupabaseReadClient, competitionId: string)
         id, round_name, sort_order,
         side_a_team_id, side_b_team_id, side_a_slot_label, side_b_slot_label,
         matches(
-          id, status, max_game_count, division_id, order_in_matchup,
+          id, status, ending, max_game_count, division_id, order_in_matchup,
           match_players(side, order_in_pair, participants!inner(players!inner(name))),
           game_scores(game_number, side_a_score, side_b_score)
         )
@@ -187,6 +187,7 @@ async function findMatchups(supabase: SupabaseReadClient, competitionId: string)
           return {
             id: match.id,
             status: match.status,
+            ending: match.ending,
             maxGameCount: match.max_game_count,
             divisionId: match.division_id,
             orderInMatchup: match.order_in_matchup,

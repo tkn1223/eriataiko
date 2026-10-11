@@ -109,10 +109,10 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
     }));
   },
 
-  async finish({ matchId, finishedAt }) {
+  async finish({ matchId, finishedAt, ending }) {
     const { error } = await getSupabaseAdminClient()
       .from('matches')
-      .update({ status: 'done', finished_at: finishedAt.toISOString() })
+      .update({ status: 'done', finished_at: finishedAt.toISOString(), ending })
       .eq('id', matchId);
     if (error) throw error;
   },
@@ -120,7 +120,7 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
   async reopen({ matchId }) {
     const { error } = await getSupabaseAdminClient()
       .from('matches')
-      .update({ status: 'live', finished_at: null })
+      .update({ status: 'live', finished_at: null, ending: 'normal' })
       .eq('id', matchId);
     if (error) throw error;
   },

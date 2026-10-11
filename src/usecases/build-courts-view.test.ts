@@ -44,6 +44,7 @@ function match(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow 
   return {
     matchId: 'match-1',
     status: 'live',
+    ending: 'normal',
     maxGameCount: 1,
     courtNumber: 1,
     orderInCourt: 1,

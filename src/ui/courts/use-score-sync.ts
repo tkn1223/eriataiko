@@ -138,8 +138,15 @@ async function sendScore(input: ScoreSyncInput): Promise<SendResult> {
 
 type Listener = () => void;
 
-/** まだサーバーに届いたと確かめられていないか（送信中・送り直し待ち・断られたまま、を全部含む）。 */
+/**
+ * まだサーバーに届いたと確かめられていないか（送信中・送り直し待ち）。
+ *
+ * 入口に断られたまま（rejectedMessage がある）は数えない。もう送らない点なので、数えると
+ * 戻ったときにサーバーの正しい点より断られた古い点が優先して出て（initial-live-scores.ts）、
+ * 閉じる・更新するたびの確認もタブを閉じるまで出続ける。理由はコートに出すので点を押し直せる。
+ */
 function isUnsent(game: GameSyncState): boolean {
+  if (game.rejectedMessage !== null) return false;
   return game.inFlight || !sameScore(game.savedAsOf, game.desired);
 }
 

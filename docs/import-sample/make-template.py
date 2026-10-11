@@ -45,8 +45,11 @@ def table(ws, data, widths, notes):
         if text:
             ws.cell(row=1, column=c).comment = Comment(text, "見本")
     ws.freeze_panes = "A2"
-    # 入力する場所は薄い黄色（見本の行も、あとから書き換えて使う）
-    last_col = chr(64 + len(widths))
+
+def input_area(ws, last_col):
+    # 入力する場所は薄い黄色（見本の行も、あとから書き換えて使う）。
+    # **赤・橙の目印より後に足す。** Google スプレッドシートは重なった条件付き書式のうち最初の 1 つしか効かないので、
+    # 先に足すと黄色が勝って書き間違いに色が付かない（実際に付かなかった）。
     ws.conditional_formatting.add(
         f"A2:{last_col}{MAXROW}",
         FormulaRule(formula=["TRUE"], fill=input_fill, stopIfTrue=False),
@@ -109,6 +112,7 @@ table(ws, rows("大会"), [12, 40, 14], [
 dv = DataValidation(type="list", formula1='"大会,会場,面数,チーム,部,段,ゲーム数"', allow_blank=True)
 dv.error, dv.errorTitle = "大会・会場・面数・チーム・部・段・ゲーム数 から選んでください", "種類"
 ws.add_data_validation(dv); dv.add(f"A2:A{MAXROW}")
+input_area(ws, "C")
 
 # ---- 選手 ----
 ws = wb.create_sheet("選手")
@@ -121,6 +125,7 @@ table(ws, rows("選手"), [12, 22, 16, 10], [
 flag(ws, f"A2:A{MAXROW}", 'AND($A2<>"",COUNTIF($A:$A,$A2)>1)', bad_fill)
 flag(ws, f"C2:C{MAXROW}", 'AND($C2<>"",COUNTIFS(INDIRECT("大会!$A:$A"),"チーム",INDIRECT("大会!$B:$B"),$C2)=0)', bad_fill)
 flag(ws, f"D2:D{MAXROW}", 'AND($D2<>"",COUNTIFS(INDIRECT("大会!$A:$A"),"部",INDIRECT("大会!$B:$B"),$D2)=0)', bad_fill)
+input_area(ws, "D")
 
 # ---- 試合 ----
 ws = wb.create_sheet("試合")
@@ -144,10 +149,9 @@ flag(ws, f"F2:F{MAXROW}", 'AND($F2<>"",COUNTIFS(INDIRECT("大会!$A:$A"),"部",I
 flag(ws, f"D2:E{MAXROW}", 'AND(D2<>"",COUNTIFS(INDIRECT("大会!$A:$A"),"チーム",INDIRECT("大会!$B:$B"),D2)=0)', warn_fill)
 flag(ws, f"H2:H{MAXROW}", 'AND($H2<>"",IFERROR($H2>INDEX(INDIRECT("大会!$C:$C"),MATCH("面数",INDIRECT("大会!$A:$A"),0)),FALSE))', bad_fill)
 flag(ws, f"J2:M{MAXROW}", 'AND(J2<>"",COUNTIF(INDIRECT("選手!$A:$A"),J2)=0)', bad_fill)
-for col in ("C", "G", "H", "I"):
-    v = DataValidation(type="whole", operator="greaterThanOrEqual", formula1="1", allow_blank=True)
-    v.error, v.errorTitle = "1 以上の整数を書いてください", "数字"
-    ws.add_data_validation(v); v.add(f"{col}2:{col}{MAXROW}")
+# 数字の列に「整数だけ」の入力制限は付けない。付けると Google スプレッドシートに取り込んだとき、
+# このタブだけ中身ごと落ちた（10/11 に確かめた）。数字かどうかは取り込みのときに検査する。
+input_area(ws, "M")
 
 wb.save(out)
 print("saved", out)

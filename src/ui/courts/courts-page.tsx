@@ -109,6 +109,22 @@ function currentEmptyReason(
 }
 
 /**
+ * 終了していた試合が進行中に戻った（「直す」で取り消された）ら、その試合の「断られた」の印を捨てる。
+ * 断られた理由（終了済み）はもう当てはまらないのに、残すと「点が保存できていない」として
+ * 「もう一度終了する」を止め続ける（use-score-sync.ts の forgetRejected）。
+ */
+function forgetRejectionsOfReopened(before: CourtMatch[], after: CourtMatch[]) {
+  const doneBefore = new Set(
+    before.filter((match) => match.status === 'done').map((match) => match.matchId)
+  );
+  for (const match of after) {
+    if (match.status === 'live' && doneBefore.has(match.matchId)) {
+      appScoreSyncStore.forgetRejected(match.matchId);
+    }
+  }
+}
+
+/**
  * 結果LIVE画面（トップ）。
  *
  * 表示だけを担当する。データの出どころ（DB かダミーか）は知らない。
@@ -168,14 +184,24 @@ export function CourtsPage({
     for (const change of refreshScheduler.takeChangesSinceRefresh()) {
       reloaded = applyLiveChange(reloaded, change, appScoreSyncStore.getSnapshot()).board;
     }
+    forgetRejectionsOfReopened(liveBoard.get(), reloaded);
     // 手元の点は、重ね直して残す
     liveBoard.set(overlayPendingScores(reloaded, canInput, appScoreSyncStore.getSnapshot()));
   }, [serverBoard, canInput, liveBoard, refreshScheduler]);
 
+  // 点が断られたら読み直して、そのゲームをサーバーの点に戻す。画面は押した点のまま持っているので、
+  // 戻さないと次に押した点を断られた点から数えて送ってしまう（終了を取り消されたあとに 2 点ずれる）。
+  useEffect(
+    () => appScoreSyncStore.subscribeScoreRejected(() => refreshScheduler.request()),
+    [refreshScheduler]
+  );
+
   /** 変化を一覧に当てる。読み直しの最中なら、読み直した一覧に当て直すために覚えておく。 */
   function applyChange(change: LiveChange): boolean {
     refreshScheduler.record(change);
-    const result = applyLiveChange(liveBoard.get(), change, appScoreSyncStore.getSnapshot());
+    const before = liveBoard.get();
+    const result = applyLiveChange(before, change, appScoreSyncStore.getSnapshot());
+    forgetRejectionsOfReopened(before, result.board);
     liveBoard.set(result.board);
     return result.needsRefresh;
   }

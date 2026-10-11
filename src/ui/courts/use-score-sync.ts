@@ -179,6 +179,17 @@ export type ScoreSyncStore = {
    */
   subscribeFinished: (listener: (matchId: string) => void) => () => void;
   /**
+   * 点が入口に断られたとき、その試合の id を受け取る。画面はそのゲームを押した点のまま持っているので、
+   * 読み直してサーバーの点に戻すのに使う（戻さないと、次に押した点を断られた点から数えて送る）。
+   */
+  subscribeScoreRejected: (listener: (matchId: string) => void) => () => void;
+  /**
+   * その試合の「断られた」の印（点・終了の両方）を捨てる。終了していた試合が取り消されて
+   * 進行中に戻ったときに呼ぶ。断られた理由（終了済み）はもう当てはまらないのに、残すと
+   * 「点が保存できていない」として終了を止め続ける。
+   */
+  forgetRejected: (matchId: string) => void;
+  /**
    * 購読で届いた点を知らせる。自分が送った値の戻りなら、そこまでの戻り待ちを消す。
    * 画面に当ててよいかは、このあとの `pendingScores` で決まる（まだ手元が優先なら当てない）。
    */
@@ -203,6 +214,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
   const finishes = new Map<string, FinishState>();
   const listeners = new Set<Listener>();
   const finishedListeners = new Set<(matchId: string) => void>();
+  const scoreRejectedListeners = new Set<(matchId: string) => void>();
   let snapshot: Record<string, MatchSyncState> = {};
   let unloadGuardInstalled = false;
 
@@ -335,6 +347,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
         // 点が断られたままでは、終了を待たせ続けても送れない。理由を出して待つのをやめる
         startFinishIfReady(current.matchId);
         notify();
+        for (const listener of scoreRejectedListeners) listener(current.matchId);
       }
     });
   }
@@ -489,6 +502,31 @@ export function createScoreSyncStore(): ScoreSyncStore {
       return () => {
         finishedListeners.delete(listener);
       };
+    },
+
+    subscribeScoreRejected(listener) {
+      scoreRejectedListeners.add(listener);
+      return () => {
+        scoreRejectedListeners.delete(listener);
+      };
+    },
+
+    forgetRejected(matchId) {
+      let changed = false;
+      for (const [key, game] of games) {
+        if (game.matchId !== matchId || game.rejectedMessage === null) continue;
+        // 断られた点はもう送らないので、ゲームごと手放す（押し直せば最初から預かり直す）
+        if (game.retryTimer) clearTimeout(game.retryTimer);
+        clearEchoTimer(game);
+        games.delete(key);
+        changed = true;
+      }
+      const finish = finishes.get(matchId);
+      if (finish?.phase === 'rejected') {
+        finishes.delete(matchId);
+        changed = true;
+      }
+      if (changed) notify();
     },
 
     getSnapshot() {

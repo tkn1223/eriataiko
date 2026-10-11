@@ -1007,3 +1007,12 @@ export async function finishMatchDirectly(matchId: string): Promise<void> {
     .eq('id', matchId);
   if (error) throw new Error(`試合を終了にできませんでした: ${error.message}`);
 }
+
+/** 画面を使わずに、データベースで試合の終了を取り消す（「他の人が『直す』を押した」を再現する）。 */
+export async function reopenMatchDirectly(matchId: string): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ status: 'live', finished_at: null })
+    .eq('id', matchId);
+  if (error) throw new Error(`試合の終了を取り消せませんでした: ${error.message}`);
+}

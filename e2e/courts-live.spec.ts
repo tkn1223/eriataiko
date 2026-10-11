@@ -6,6 +6,7 @@ import {
   findMatchResult,
   findSavedGameScore,
   finishMatchDirectly,
+  reopenMatchDirectly,
   writeGameScoreDirectly,
 } from './helpers/courts-scenario';
 
@@ -868,4 +869,70 @@ test.describe('1つ前と直す', () => {
       await context.close();
     });
   }
+});
+
+/**
+ * 入口に断られた点の後始末。断られた点はもう送らないので、画面はサーバーの点に戻し、
+ * 古い「断られた」の印で終了を止め続けない（PR #66 レビュー）。
+ * 「他の人が先に終了した」を待ち合わせなしで起こすため、入口の返事を 409 に差し替える。
+ */
+test.describe('入口に断られた点', () => {
+  const SCORES_URL = '**/api/matches/*/scores';
+
+  async function pressRejectedPlus(page: Page) {
+    await page.route(SCORES_URL, (route) =>
+      route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: '終了した試合です。' }),
+      })
+    );
+    await plusButton(page, LIVE_COURT, LIVE_A).click();
+    await expect(courtCard(page, LIVE_COURT).getByRole('status')).toContainText('終了した試合です');
+    await page.unroute(SCORES_URL);
+  }
+
+  test('断られたら画面はサーバーの点に戻り、次に押した点はサーバーの点から数える', async ({
+    browser,
+  }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    const card = courtCard(mine.page, LIVE_COURT);
+
+    // サーバーは 5-3。押した 6 は断られる
+    await pressRejectedPlus(mine.page);
+    await expect(card.getByText('5', { exact: true })).toBeVisible({ timeout: 5000 });
+    await expect(card.getByText('6', { exact: true })).toHaveCount(0);
+
+    // 次に押すと、断られた 6 からではなく 5 から数えて 6 が保存される
+    await plusButton(mine.page, LIVE_COURT, LIVE_A).click();
+    await expect
+      .poll(() => findSavedGameScore(matchIds.live, 1))
+      .toEqual({ sideAScore: 6, sideBScore: 3 });
+
+    await mine.context.close();
+  });
+
+  test('断られたあと、その試合が終了されて取り消されたら、もう一度終了できる', async ({
+    browser,
+  }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+
+    await pressRejectedPlus(mine.page);
+
+    // 他の人が終了し、さらに「直す」で取り消した
+    await finishMatchDirectly(matchIds.live);
+    await expect(mine.page.getByTestId(`previous-match-${LIVE_COURT}`)).toBeVisible({
+      timeout: 5000,
+    });
+    await reopenMatchDirectly(matchIds.live);
+    const fixing = mine.page.getByTestId(`fixing-match-${LIVE_COURT}`);
+    await expect(fixing.getByText('直し中')).toBeVisible({ timeout: 5000 });
+
+    // 古い「断られた」の印で止まらず、終了が記録される
+    await fixing.getByRole('button', { name: 'もう一度終了する' }).click();
+    await mine.page.getByRole('button', { name: 'OK' }).click();
+    await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+
+    await mine.context.close();
+  });
 });

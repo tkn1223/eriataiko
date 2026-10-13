@@ -1,8 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { MatchesPage } from '@/ui/matches/matches-page';
 import { boardMatch } from '@/ui/matches/test-support';
 import type { BoardMatch } from '@/ui/matches/types';
+
+/**
+ * 画面は読み直し（router.refresh）と、他の人の変化の受け取り（結果LIVE と共有の
+ * use-live-updates.ts）を使う。この中は表示の確認だけなので、どちらも何もしない偽物にする
+ * （受け取りと読み直しの確認は matches-live.test.tsx）。
+ */
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('@/ui/courts/use-live-updates', () => ({ useLiveUpdates: () => 'live' }));
 
 /**
  * 進行表の画面。見るだけで、得点を入れる場所は結果LIVE だけ。

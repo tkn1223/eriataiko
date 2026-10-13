@@ -5,12 +5,17 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { endingOfRetiredSide } from '@/domain/match-rules';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
+import { LiveDownNotice } from '@/ui/components/live-down-notice';
 import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
 import { CourtLiveCard, type FixActions, type ReopenState } from '@/ui/courts/court-live-card';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import { createLiveBoard } from '@/ui/courts/live-board';
 import { overlayPendingScores } from '@/ui/courts/overlay-pending-scores';
-import { createRefreshScheduler } from '@/ui/courts/refresh-scheduler';
+import {
+  createRefreshScheduler,
+  REFRESH_MIN_INTERVAL_MS,
+  REFRESH_SETTLE_MS,
+} from '@/ui/courts/refresh-scheduler';
 import { shouldRetry } from '@/ui/courts/save-retry-policy';
 import { sendRequest } from '@/ui/courts/send-request';
 import {
@@ -87,10 +92,6 @@ function EmptyCourtsNotice({ reason }: { reason: CourtsEmptyReason }) {
 /** 終了の取り消しがつながらない・サーバーの一時的な失敗で届かなかったとき。自動では送り直さない。 */
 const REOPEN_RETRY_MESSAGE = '取り消せませんでした。電波を確かめて、もう一度押してください。';
 const REOPEN_REJECTED_FALLBACK = '取り消せませんでした。画面を更新してから確認してください。';
-
-/** 読み直しの依頼をまとめる間隔（src/ui/courts/refresh-scheduler.ts）。 */
-const REFRESH_SETTLE_MS = 300;
-const REFRESH_MIN_INTERVAL_MS = 3000;
 
 /**
  * 案内を出すかと、その理由。サーバーが読んだときの理由（`serverReason`）を、
@@ -387,15 +388,7 @@ export function CourtsPage({
         </span>
       </div>
 
-      {connection === 'down' && (
-        <p
-          role="status"
-          data-testid="live-down-notice"
-          className="text-live mb-[14px] rounded-[10px] bg-red-100 px-3 py-2 text-[12px] font-extrabold"
-        >
-          自動更新が止まっています。電波が戻ると自動でつながります。
-        </p>
-      )}
+      {connection === 'down' && <LiveDownNotice />}
 
       {truncated && (
         <p

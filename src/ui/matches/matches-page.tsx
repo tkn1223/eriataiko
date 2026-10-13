@@ -1,12 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import { LiveDownNotice } from '@/ui/components/live-down-notice';
 import { CourtCard } from '@/ui/matches/court-card';
 import { deriveMatchesCourts } from '@/ui/matches/derive-matches-courts';
+import { useLiveMatches } from '@/ui/matches/use-live-matches';
 import type { BoardMatch } from '@/ui/matches/types';
 
 type Props = {
-  /** 試合の一覧（読み込んだ時点の様子）。コートのカードはここから組み立てる。 */
+  /**
+   * 試合の一覧（読み込んだ時点の様子）。コートのカードはここから組み立てる。
+   * 読み直されて新しい一覧が渡されたら、画面が持っている様子を置き換える。
+   */
   board: BoardMatch[];
   /**
    * 「自分の試合」の絞り込みを出すか。選手として入った人だけ true。
@@ -23,10 +28,13 @@ type Filter = 'all' | 'mine';
  * 進行表画面。**見るだけの画面**（得点を入れる場所は結果LIVE だけ。
  * docs/specs/2026-10-14-matches-real-data.md の「決めたこと」1）。
  *
- * データの出どころ（DB かダミーか）は知らない。渡す props は `page.tsx` が DB から組み立てる
- * （`src/usecases/build-matches-view.ts`）。
+ * 渡す props は `page.tsx` が DB から組み立てる（`src/usecases/build-matches-view.ts`）。
+ * 他の人の点や試合の終了は `use-live-matches.ts` が結果LIVE と同じ購読で受け取り、届いた行だけを
+ * 一覧に当てる（点が変わるたびに画面全体を読み直さない）。
  */
-export function MatchesPage({ board, canFilterMine, truncated }: Props) {
+export function MatchesPage({ board: serverBoard, canFilterMine, truncated }: Props) {
+  // 他の人の点や試合の終了は、結果LIVE と同じ購読で受け取って一覧に当てる
+  const { board, connection } = useLiveMatches(serverBoard);
   const [filter, setFilter] = useState<Filter>('all');
   const [openCourts, setOpenCourts] = useState<Record<string, boolean>>({});
   const [shownDoneCourts, setShownDoneCourts] = useState<Record<string, boolean>>({});
@@ -54,6 +62,8 @@ export function MatchesPage({ board, canFilterMine, truncated }: Props) {
           <FilterPill label="自分の試合" active={onlyMine} onClick={() => setFilter('mine')} />
         )}
       </div>
+
+      {connection === 'down' && <LiveDownNotice />}
 
       {truncated && (
         <p

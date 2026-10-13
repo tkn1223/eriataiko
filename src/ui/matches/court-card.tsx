@@ -1,39 +1,44 @@
 import { MatchRow } from '@/ui/matches/match-row';
-import type { CourtMatch } from '@/ui/matches/sample-data';
+import type { BoardMatch } from '@/ui/matches/types';
 
 type Props = {
-  courtNumber: number;
+  /** コートの番号。決まっていない試合をまとめたカードは null（「コート未定」と出す）。 */
+  courtNumber: number | null;
   /** 見出しの「現在◯試合目」「残り◯試合」を出すもと。絞り込みで並ぶ試合が減っても、
    *  コートの進み具合そのものは変わらないので、そのコートの全試合を渡す。 */
-  allMatches: CourtMatch[];
+  allMatches: BoardMatch[];
   /** 中身に並べる試合（絞り込み後）。 */
-  listedMatches: CourtMatch[];
+  listedMatches: BoardMatch[];
   isOpen: boolean;
   showDone: boolean;
   onToggleOpen: () => void;
   onToggleShowDone: () => void;
-  onSelectMatch: (match: CourtMatch) => void;
 };
 
-/** 見出しの右側と、進行中がある場合の「現在◯試合目」の文言を組み立てる。 */
-function headingTextOf(matches: CourtMatch[]) {
-  if (matches.length === 0) {
-    return { liveText: null, rightText: '予定なし' };
-  }
-
-  const liveMatch = matches.find((match) => match.status === 'live');
+/**
+ * 見出しの右側と、進行中がある場合の「現在◯試合目」の文言を組み立てる。
+ * コートが決まっていないカードには「現在◯試合目」を出さない（どのコートの何試合目かが決まっていない）。
+ */
+function headingTextOf(matches: BoardMatch[], hasCourt: boolean) {
+  // 進行中が 2 つあるとき（終了を取り消して直している）は、順番が後のほうを「現在」にする。
+  // 結果LIVE の「今の試合」と同じ決まり（derive-courts.ts）
+  const liveOrders = matches.flatMap((match) =>
+    match.status === 'live' && match.orderInCourt !== null ? [match.orderInCourt] : []
+  );
+  const currentOrder = hasCourt && liveOrders.length > 0 ? Math.max(...liveOrders) : null;
   // 進行中の試合もまだ終わっていないので「残り」に数える。数えないと、
   // 進行中が最後の 1 試合になったコートが「残り0試合」と出て、終わったと読み違える。
   const remaining = matches.filter((match) => match.status !== 'done').length;
 
   return {
-    liveText: liveMatch ? `現在${liveMatch.orderInCourt}試合目` : null,
+    liveText: currentOrder === null ? null : `現在${currentOrder}試合目`,
     rightText: remaining === 0 ? 'すべて終了' : `残り${remaining}試合`,
   };
 }
 
 /**
  * コート 1 面ぶんのカード。見出しを押すと中身が開閉する。
+ * 中の行は見るだけ（押せない）。
  */
 export function CourtCard({
   courtNumber,
@@ -43,9 +48,8 @@ export function CourtCard({
   showDone,
   onToggleOpen,
   onToggleShowDone,
-  onSelectMatch,
 }: Props) {
-  const { liveText, rightText } = headingTextOf(allMatches);
+  const { liveText, rightText } = headingTextOf(allMatches, courtNumber !== null);
   const doneMatches = listedMatches.filter((match) => match.status === 'done');
   const visibleMatches = showDone
     ? listedMatches
@@ -59,7 +63,9 @@ export function CourtCard({
         aria-expanded={isOpen}
         className="flex min-h-11 w-full items-center gap-[10px] py-[15px] text-left"
       >
-        <span className="text-[18px] font-black tracking-[0.04em]">コート{courtNumber}</span>
+        <span className="text-[18px] font-black tracking-[0.04em]">
+          {courtNumber === null ? 'コート未定' : `コート${courtNumber}`}
+        </span>
         {liveText && (
           <span className="text-accent text-[12px] font-extrabold whitespace-nowrap">
             {liveText}
@@ -89,7 +95,7 @@ export function CourtCard({
 
           <ul className="divide-y divide-dashed divide-gray-200">
             {visibleMatches.map((match) => (
-              <MatchRow key={match.id} match={match} onSelect={() => onSelectMatch(match)} />
+              <MatchRow key={match.matchId} match={match} />
             ))}
           </ul>
         </div>

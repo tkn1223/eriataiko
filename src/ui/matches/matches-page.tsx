@@ -2,118 +2,104 @@
 
 import { useState } from 'react';
 import { CourtCard } from '@/ui/matches/court-card';
-import { ScoreSheet } from '@/ui/matches/score-sheet';
-import type { Court, CourtMatch, GameScore } from '@/ui/matches/sample-data';
+import { deriveMatchesCourts } from '@/ui/matches/derive-matches-courts';
+import type { BoardMatch } from '@/ui/matches/types';
 
 type Props = {
-  courts: Court[];
+  /** 試合の一覧（読み込んだ時点の様子）。コートのカードはここから組み立てる。 */
+  board: BoardMatch[];
+  /**
+   * 「自分の試合」の絞り込みを出すか。選手として入った人だけ true。
+   * 観戦者には「全試合」だけを出す（誰の試合かが決まらないため）。
+   */
+  canFilterMine: boolean;
+  /** 読む上限を超えて、試合が出しきれていないかもしれない。 */
+  truncated: boolean;
 };
 
 type Filter = 'all' | 'mine';
 
-type Selected = {
-  courtNumber: number;
-  match: CourtMatch;
-};
-
 /**
- * 進行表画面。
+ * 進行表画面。**見るだけの画面**（得点を入れる場所は結果LIVE だけ。
+ * docs/specs/2026-10-14-matches-real-data.md の「決めたこと」1）。
  *
- * 表示だけを担当する。データの出どころ（DB かダミーか）は知らない。
- * 本物のデータをつなぐときは、渡す props を差し替えるだけでよい。
- *
- * 得点入力の状態（この画面を開いている間だけの得点）はここで持つ。
- * まだ保存する表が無いので、シートを閉じると消える。
+ * データの出どころ（DB かダミーか）は知らない。渡す props は `page.tsx` が DB から組み立てる
+ * （`src/usecases/build-matches-view.ts`）。
  */
-export function MatchesPage({ courts }: Props) {
+export function MatchesPage({ board, canFilterMine, truncated }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
-  const [openCourts, setOpenCourts] = useState<Record<number, boolean>>({});
-  const [shownDoneCourts, setShownDoneCourts] = useState<Record<number, boolean>>({});
+  const [openCourts, setOpenCourts] = useState<Record<string, boolean>>({});
+  const [shownDoneCourts, setShownDoneCourts] = useState<Record<string, boolean>>({});
 
-  const [selected, setSelected] = useState<Selected | null>(null);
-  const [sessionGames, setSessionGames] = useState<GameScore[]>([]);
-  const [currentGame, setCurrentGame] = useState<GameScore>([0, 0]);
+  const courts = deriveMatchesCourts(board);
 
   // 絞り込みは「並べる試合」だけを減らす。見出しの「残り◯試合」「現在◯試合目」は
   // コートの進み具合なので、絞り込んでも全試合から出す（でないと自分の試合が 1 つ終わった
   // だけのコートが「すべて終了」と出てしまう）。
+  const onlyMine = canFilterMine && filter === 'mine';
   const visibleCourts = courts
     .map((court) => ({
       court,
-      listedMatches:
-        filter === 'all' ? court.matches : court.matches.filter((match) => match.isMine),
+      listedMatches: onlyMine ? court.matches.filter((match) => match.isMine) : court.matches,
     }))
-    .filter(({ listedMatches }) => filter === 'all' || listedMatches.length > 0);
-
-  function openScoreSheet(courtNumber: number, match: CourtMatch) {
-    setSelected({ courtNumber, match });
-    setSessionGames([]);
-    setCurrentGame(match.currentGame ?? [0, 0]);
-  }
-
-  function closeScoreSheet() {
-    setSelected(null);
-  }
-
-  function increment(side: 'A' | 'B') {
-    setCurrentGame(([a, b]) => (side === 'A' ? [a + 1, b] : [a, b + 1]));
-  }
-
-  function decrement(side: 'A' | 'B') {
-    setCurrentGame(([a, b]) => (side === 'A' ? [Math.max(0, a - 1), b] : [a, Math.max(0, b - 1)]));
-  }
-
-  function finishGame() {
-    setSessionGames((games) => [...games, currentGame]);
-    setCurrentGame([0, 0]);
-  }
+    .filter(({ listedMatches }) => !onlyMine || listedMatches.length > 0);
 
   return (
     <div className="mx-auto max-w-md px-4 py-4">
       <h1 className="mb-[14px] text-[18px] font-black">進行表</h1>
 
       <div className="mb-[14px] flex gap-2">
-        <FilterPill label="全試合" active={filter === 'all'} onClick={() => setFilter('all')} />
-        <FilterPill
-          label="自分の試合"
-          active={filter === 'mine'}
-          onClick={() => setFilter('mine')}
-        />
+        <FilterPill label="全試合" active={!onlyMine} onClick={() => setFilter('all')} />
+        {canFilterMine && (
+          <FilterPill label="自分の試合" active={onlyMine} onClick={() => setFilter('mine')} />
+        )}
       </div>
+
+      {truncated && (
+        <p
+          role="alert"
+          className="text-live mb-[14px] rounded-[10px] bg-red-100 px-3 py-2 text-[12px] font-extrabold"
+        >
+          試合の数が多すぎて、出しきれていない試合があるかもしれません。運営の方に知らせてください。
+        </p>
+      )}
+
+      {board.length === 0 && (
+        <div
+          data-testid="matches-empty-notice"
+          className="rounded-[14px] border border-gray-200 bg-white px-[14px] py-5 text-center"
+        >
+          <p className="text-[15px] font-black">まだ試合が登録されていません</p>
+          <p className="mt-2 text-[13px] text-gray-500">運営の方に確認してください。</p>
+        </div>
+      )}
+
+      {board.length > 0 && visibleCourts.length === 0 && (
+        <div
+          data-testid="matches-no-mine-notice"
+          className="rounded-[14px] border border-gray-200 bg-white px-[14px] py-5 text-center"
+        >
+          <p className="text-[15px] font-black">あなたの試合は見つかりませんでした</p>
+          <p className="mt-2 text-[13px] text-gray-500">
+            「全試合」を押すと、すべての試合が見られます。
+          </p>
+        </div>
+      )}
 
       {visibleCourts.map(({ court, listedMatches }) => (
         <CourtCard
-          key={court.courtNumber}
+          key={court.key}
           courtNumber={court.courtNumber}
           allMatches={court.matches}
           listedMatches={listedMatches}
-          isOpen={openCourts[court.courtNumber] ?? false}
-          showDone={shownDoneCourts[court.courtNumber] ?? false}
-          onToggleOpen={() =>
-            setOpenCourts((prev) => ({
-              ...prev,
-              [court.courtNumber]: !prev[court.courtNumber],
-            }))
-          }
+          isOpen={openCourts[court.key] ?? false}
+          showDone={shownDoneCourts[court.key] ?? false}
+          onToggleOpen={() => setOpenCourts((prev) => ({ ...prev, [court.key]: !prev[court.key] }))}
           onToggleShowDone={() =>
-            setShownDoneCourts((prev) => ({
-              ...prev,
-              [court.courtNumber]: !prev[court.courtNumber],
-            }))
+            setShownDoneCourts((prev) => ({ ...prev, [court.key]: !prev[court.key] }))
           }
-          onSelectMatch={(match) => openScoreSheet(court.courtNumber, match)}
         />
       ))}
-
-      <ScoreSheet
-        match={selected ? { ...selected.match, courtNumber: selected.courtNumber } : null}
-        sessionGames={sessionGames}
-        currentGame={currentGame}
-        onIncrement={increment}
-        onDecrement={decrement}
-        onFinishGame={finishGame}
-        onClose={closeScoreSheet}
-      />
     </div>
   );
 }

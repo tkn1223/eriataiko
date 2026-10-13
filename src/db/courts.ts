@@ -32,6 +32,10 @@ import type {
  * `src/db/snapshot.ts` と同じく**上限より 1 件多く読み**、超えたら `truncated` で分かるようにする
  * （超えた 1 件は判定にだけ使い、渡さない）。
  * 埋め込んだ表の上限は、親の 1 行あたり（試合 1 つ・段 1 つあたり）に効く。
+ *
+ * `export` している読み方（`withinLimit` / `findDivisions` / `selectMatchRows` / `toViewMatchRow` /
+ * `findMyParticipantId`）は進行表（`src/db/matches-board.ts`）も使う。試合 1 行をどう読むかを
+ * 2 か所に持たないため（片方だけ直して、同じ試合が画面によって違って見えるのを防ぐ）。
  */
 const MAX_DIVISIONS = 20;
 const MAX_STAGES = 20;
@@ -79,10 +83,10 @@ export type CourtsData = {
   truncated: boolean;
 };
 
-type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
+export type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
 
 /** 上限 + 1 件まで読んだ行から、上限を超えたかの判定と、上限までの行を取り出す。 */
-function withinLimit<Row>(rows: Row[], max: number): { rows: Row[]; overflowed: boolean } {
+export function withinLimit<Row>(rows: Row[], max: number): { rows: Row[]; overflowed: boolean } {
   return { rows: rows.slice(0, max), overflowed: rows.length > max };
 }
 
@@ -118,7 +122,7 @@ export async function findCourtsData(
 }
 
 /** いまの大会の部すべて（並び順で色を付けるのと、部の名前を出すのに使う）。 */
-async function findDivisions(supabase: SupabaseReadClient, competitionId: string) {
+export async function findDivisions(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('divisions')
     .select('id, name, sort_order')
@@ -182,7 +186,7 @@ function sumCounts(countsPerMatchup: { count: number }[][]): number {
  * 部は必ず大会に属する（`matches.division_id` は not null）ので、ここを通せば 1 段で絞れる。
  * チームは matchups から 2 本（a 側・b 側）出ているので、外部キーの名前で向きを指定する。
  */
-function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
+export function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
   return supabase
     .from('matches')
     .select(
@@ -203,7 +207,7 @@ function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
 
 type MatchRow = NonNullable<Awaited<ReturnType<typeof selectMatchRows>>['data']>[number];
 
-function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
+export function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
   const players = match.match_players.map((row) => ({
     side: row.side,
     participantId: row.participant_id,
@@ -295,7 +299,7 @@ function toSideRow(
 }
 
 /** その大会でのその人の participants.id。参加者情報が無ければ null。 */
-async function findMyParticipantId(
+export async function findMyParticipantId(
   supabase: SupabaseReadClient,
   competitionId: string,
   playerId: string

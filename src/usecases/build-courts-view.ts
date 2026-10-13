@@ -132,7 +132,8 @@ function classLabelOf(
   return classLabelById.get(match.divisionId) ?? UNKNOWN_CLASS_LABEL;
 }
 
-function toCourtMatch(
+/** DB の行 1 つを、画面が持つ試合 1 つにする。進行表（build-matches-view.ts）も同じものを使う。 */
+export function toCourtMatch(
   match: CourtsViewMatchRow,
   myParticipantId: string | null,
   classLabelById: Map<string, ClassLabel>

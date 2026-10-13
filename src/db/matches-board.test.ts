@@ -81,15 +81,15 @@ beforeAll(async () => {
   const players = await admin
     .from('players')
     .insert([
-      { player_number: 899931, name: `${tag} 自分` },
-      { player_number: 899932, name: `${tag} 相方` },
-      { player_number: 899933, name: `${tag} 相手` },
+      { player_number: 899981, name: `${tag} 自分` },
+      { player_number: 899982, name: `${tag} 相方` },
+      { player_number: 899983, name: `${tag} 相手` },
     ])
     .select('id, player_number');
   expect(players.error, `選手の作成に失敗: ${players.error?.message}`).toBeNull();
-  myPlayerId = players.data!.find((p) => p.player_number === 899931)!.id;
-  partnerPlayerId = players.data!.find((p) => p.player_number === 899932)!.id;
-  opponentPlayerId = players.data!.find((p) => p.player_number === 899933)!.id;
+  myPlayerId = players.data!.find((p) => p.player_number === 899981)!.id;
+  partnerPlayerId = players.data!.find((p) => p.player_number === 899982)!.id;
+  opponentPlayerId = players.data!.find((p) => p.player_number === 899983)!.id;
 
   const participants = await admin
     .from('participants')

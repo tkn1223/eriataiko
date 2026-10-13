@@ -17,6 +17,7 @@ const UI_COMPONENT_FILES = [
   'src/ui/matches/court-card.tsx',
   'src/ui/matches/match-row.tsx',
   'src/ui/matches/derive-matches-courts.ts',
+  'src/ui/matches/use-live-matches.ts',
   'src/ui/matches/types.ts',
 ];
 
@@ -41,6 +42,17 @@ describe('/matches の画面', () => {
       expect(source).not.toMatch(/\bfetch\(/);
     }
   );
+
+  // 購読と「届いた行を当てる判断」は結果LIVE と共有する。進行表で作り直すと、
+  // 同じ試合が 2 つの画面で違って見える原因になる（docs/specs/2026-10-14-matches-real-data.md の「決めたこと」3）。
+  test('use-live-matches.ts は結果LIVE の購読・当てる判断・読み直しのまとめを使い、自前の購読を持たない', () => {
+    const source = readSource('src/ui/matches/use-live-matches.ts');
+
+    expect(source).toMatch(/from\s+['"]@\/ui\/courts\/use-live-updates['"]/);
+    expect(source).toMatch(/from\s+['"]@\/ui\/courts\/apply-live-change['"]/);
+    expect(source).toMatch(/from\s+['"]@\/ui\/courts\/refresh-scheduler['"]/);
+    expect(source).not.toMatch(/\.channel\(|getSupabaseBrowserClient|postgres_changes/);
+  });
 
   test('page.tsx は @/db/admin を import していない', () => {
     expect(readSource(PAGE_FILE)).not.toMatch(/from\s+['"]@\/db\/admin['"]/);

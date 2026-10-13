@@ -13,11 +13,13 @@ import type { CourtMatchStatus } from '@/ui/courts/types';
  *
  * 接続は**アプリ全体で 1 本**（`appLiveHub`）。結果LIVE の画面が何回開き直されても、
  * 画面が 2 つの部品から呼んでも、Supabase との接続は 1 本で、使う人が全員いなくなったら止める。
+ * 使うのは結果LIVE（`courts-page.tsx`）と進行表（`src/ui/matches/use-live-matches.ts`）の 2 画面。
+ * どちらかを開いている間だけつなぐ。
  * 100 人が同時に見るので、1 人が何本も繋ぐと同時接続の枠（無料プランは 200）を食い潰す。
  *
  * 届いた行は `LiveChange` に直して渡すだけで、画面にどう当てるかは `apply-live-change.ts`。
  *
- * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md
+ * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md（進行表からも使う: docs/specs/2026-10-14-matches-real-data.md）
  */
 
 /** 接続の状態。'connecting' は開いた直後でまだつながっていない（案内は出さない）。 */
@@ -216,7 +218,7 @@ type Handlers = {
   onConnected: () => void;
 };
 
-/** 結果LIVE を開いている間だけ、変化を受け取る。離れたら止める。戻り値は接続の状態。 */
+/** 結果LIVE か進行表を開いている間だけ、変化を受け取る。離れたら止める。戻り値は接続の状態。 */
 export function useLiveUpdates(handlers: Handlers, hub: LiveHub = appLiveHub): LiveConnection {
   const [connection, setConnection] = useState<LiveConnection>('connecting');
 

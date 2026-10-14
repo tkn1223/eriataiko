@@ -24,6 +24,7 @@ import type {
 } from '@/ui/courts/types';
 import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 import { ReopenConfirmSheet } from '@/ui/courts/reopen-confirm-sheet';
+import type { FinishSheetControl } from '@/ui/courts/use-finish-sheets';
 
 type Props = {
   court: Court;
@@ -42,6 +43,12 @@ type Props = {
   /** 確認画面で「OK」が押されたときに呼ばれる。実際に試合を終了する処理はページ側が持つ。 */
   onFinishMatch: (retiredSide: 'A' | 'B' | null) => void;
   /**
+   * 試合ごとの「終了の確認画面」の操作。開き閉じと選んだ棄権は、カードの中ではなくページが試合ごとに
+   * 覚える（カードは試合の状態が変わると作り直されるので、中で覚えると確認画面が閉じてしまう。
+   * また、コートに結びつけると、開いている間に試合が終わったとき次の試合の中身で開いたままになる）。
+   */
+  finishSheetOf: (matchId: string) => FinishSheetControl;
+  /**
    * 直し中の試合と、1 つ前の「直す」を動かすのに要るもの。今の試合ではなく、試合の id ごとに呼ぶ。
    * 渡さなければ、直し中と1つ前は見るだけ（押せるボタンは出ない）。
    */
@@ -58,6 +65,8 @@ export type FixActions = {
   onIncrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
   onFinishMatch: (matchId: string, retiredSide: 'A' | 'B' | null) => void;
+  /** 「もう一度終了する」の確認画面の操作（ページが試合ごとに覚える）。 */
+  finishSheetOf: (matchId: string) => FinishSheetControl;
   /** 確認画面の「OK」で呼ばれる。終了を取り消す入口に送るのはページ側。 */
   onReopen: (matchId: string) => void;
 };
@@ -249,13 +258,9 @@ export function CourtLiveCard({
   onIncrement,
   onDecrement,
   onFinishMatch,
+  finishSheetOf,
   fix,
 }: Props) {
-  // 「試合を終了する」を押したときの確認画面。誤タップの歯止めがこれ 1 つしか無いので、
-  // ここで開く・閉じるを持つ。
-  const [sheetOpen, setSheetOpen] = useState(false);
-  // 確認画面で選んだ棄権の側。開くたびに選び直す（前の試合の選択を持ち越さない）。
-  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -271,6 +276,9 @@ export function CourtLiveCard({
   }
   // ここから先は必ず値がある（handleFinishClick などの入れ子の関数からも null を疑わなくてよい）。
   const live = resolvedLive;
+  // 「試合を終了する」の確認画面。誤タップの歯止めがこれ 1 つしか無い。試合ごとにページが覚える
+  const finishSheet = finishSheetOf(live.matchId);
+  const retiredSide = finishSheet.retiredSide;
 
   // 得点が渡ってこなかったときも試合そのものは出す。
   // ここで「予定なし」に化けると、進行中のコートが黙って消えてしまう。
@@ -314,12 +322,11 @@ export function CourtLiveCard({
       return;
     }
     setNotice(null);
-    setRetiredSide(null);
-    setSheetOpen(true);
+    finishSheet.onOpen();
   }
 
   function handleOk() {
-    setSheetOpen(false);
+    finishSheet.onClose();
     onFinishMatch(retiredSide);
   }
 
@@ -418,16 +425,16 @@ export function CourtLiveCard({
           </button>
 
           <FinishConfirmSheet
-            open={sheetOpen}
+            open={finishSheet.open}
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
             teamAName={teamAName}
             teamBName={teamBName}
             retiredSide={retiredSide}
-            onRetiredSideChange={setRetiredSide}
+            onRetiredSideChange={finishSheet.onRetiredSideChange}
             onOk={handleOk}
-            onClose={() => setSheetOpen(false)}
+            onClose={finishSheet.onClose}
           />
         </>
       )}
@@ -648,9 +655,10 @@ function FixingPanel({
   canInput: boolean;
   fix: FixActions | undefined;
 }) {
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 確認画面の開き閉じと選んだ棄権はページが試合ごとに覚える（この枠が作り直されても閉じない）
+  const finishSheet = fix?.finishSheetOf(match.matchId);
+  const retiredSide = finishSheet?.retiredSide ?? null;
 
   const syncStatus = fix?.syncStatusOf(match.matchId) ?? null;
   // 終了を送っている間は、今の試合と同じく終わった見た目にする（記録されたら 1 つ前に移る）
@@ -681,8 +689,7 @@ function FixingPanel({
       return;
     }
     setNotice(null);
-    setRetiredSide(null);
-    setSheetOpen(true);
+    finishSheet?.onOpen();
   }
 
   return (
@@ -750,19 +757,19 @@ function FixingPanel({
           </button>
 
           <FinishConfirmSheet
-            open={sheetOpen}
+            open={finishSheet?.open ?? false}
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
             teamAName={teamAName}
             teamBName={teamBName}
             retiredSide={retiredSide}
-            onRetiredSideChange={setRetiredSide}
+            onRetiredSideChange={(side) => finishSheet?.onRetiredSideChange(side)}
             onOk={() => {
-              setSheetOpen(false);
+              finishSheet?.onClose();
               fix.onFinishMatch(match.matchId, retiredSide);
             }}
-            onClose={() => setSheetOpen(false)}
+            onClose={() => finishSheet?.onClose()}
           />
         </>
       )}

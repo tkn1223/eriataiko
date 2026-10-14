@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
+import { takeScorer } from './helpers/scorer';
 import {
   addLiveMatchLater,
   createMatchesScenario,
@@ -490,6 +491,8 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     await page.goto('/courts');
     await caughtUp;
     await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+    // ＋ − と「試合を終了する」は担当にだけ出る。先に「得点を入力する」を 1 度押す
+    await takeScorer(courtCard(page, LIVE_COURT));
     return { context, page };
   }
 

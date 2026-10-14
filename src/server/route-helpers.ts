@@ -26,9 +26,14 @@ import type { Json } from '@/types/database';
  */
 
 export class ApiError extends Error {
+  /**
+   * @param code 画面が理由の種類を見分けるための印（任意）。同じ状態番号（409 など）でも
+   *   出し方を変えたいときだけ付ける。例: 'not-scorer'（`src/domain/scorer.ts`）
+   */
   constructor(
     readonly status: number,
-    message: string
+    message: string,
+    readonly code?: string
   ) {
     super(message);
     this.name = 'ApiError';
@@ -98,7 +103,10 @@ export async function logWrite(
 
 export function toErrorResponse(error: unknown) {
   if (error instanceof ApiError) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json(
+      { error: error.message, ...(error.code ? { code: error.code } : {}) },
+      { status: error.status }
+    );
   }
   console.error('[api] 想定外のエラー', error);
   return NextResponse.json(

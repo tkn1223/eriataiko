@@ -19,7 +19,7 @@ import { reopenMatch } from '@/usecases/reopen-match';
 /**
  * 試合を終了する。本文 `{ retiredSide?: 'A' | 'B' }` で棄権した側を受け取る
  * （本文が空なら普通の終了。棄権を使わない呼び出しをそのまま通すため）。
- * 1 点も入っていなければ止める（押し間違い防止）。
+ * 1 点も入っていなければ止める（押し間違い防止）。**担当でない人は 409（code `not-scorer`）で断る。**
  * 既に done のときは何も変えずに成功を返す（二重押し対策）。
  * 詳しい分岐は `src/usecases/finish-match.ts` を参照。
  */
@@ -34,7 +34,12 @@ export async function POST(
     const hasBody = (await request.clone().text()).trim() !== '';
     const body = hasBody ? await parseBody(request, finishMatchBodySchema) : {};
 
-    await finishMatch(matchesDb, { matchId, now: new Date(), retiredSide: body.retiredSide });
+    await finishMatch(matchesDb, {
+      matchId,
+      playerId: player.playerId,
+      now: new Date(),
+      retiredSide: body.retiredSide,
+    });
     await logWrite(player, 'match.finish', { matchId, retiredSide: body.retiredSide ?? null });
 
     return NextResponse.json({ ok: true });
@@ -46,6 +51,7 @@ export async function POST(
 /**
  * 終了を取り消す。`done` の試合を `live` に戻し、`finished_at` を空にする。
  * `done` でない試合に送っても、何も変えずに成功を返す。
+ * **誰でも押せて、押した人がその試合の担当になる**（言われたその場で直せるように）。
  * 詳しい分岐は `src/usecases/reopen-match.ts` を参照。
  */
 export async function DELETE(
@@ -56,7 +62,7 @@ export async function DELETE(
     const player = await requirePlayer();
     const { matchId } = await context.params;
 
-    await reopenMatch(matchesDb, { matchId });
+    await reopenMatch(matchesDb, { matchId, playerId: player.playerId, now: new Date() });
     await logWrite(player, 'match.reopen', { matchId });
 
     return NextResponse.json({ ok: true });

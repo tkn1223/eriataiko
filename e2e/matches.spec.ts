@@ -539,6 +539,10 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     // 先に書いた変化が届き終わったことを、あとから別のコートに書いた点が映ることで確かめる
     await writeGameScoreDirectly(matchIds['long-live'], 1, 30, 0);
     await expect(row(watcher.page, 'long-live')).toContainText('30-0', { timeout: 5000 });
+    // 読み直しは頼まれてから最長で最小の間隔（3 秒）待って走る。開いてすぐ押すと、
+    // 点のたびに読み直す作りでも、まだ走っていないだけで 0 回に見えてしまう（実際にすり抜けた）。
+    // 「起きない」ことは、待つ以外に確かめようがない
+    await watcher.page.waitForTimeout(3500);
     expect(watcher.refreshes.count).toBe(0);
 
     await operator.context.close();
@@ -568,6 +572,141 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     expect(watcher.refreshes.count).toBe(1);
 
     await watcher.context.close();
+  });
+});
+
+// ---------------------------------------------------------------------
+// 結果LIVE と進行表を行き来する（購読はアプリ全体で 1 本）
+// ---------------------------------------------------------------------
+
+/** Realtime の 1 通（`[join_ref, ref, topic, event, payload]` の形。古い形のオブジェクトも読む）。 */
+function parseRealtimeFrame(
+  frame: string | Buffer
+): { ref: string | null; topic: string; event: string; status: unknown } | null {
+  if (typeof frame !== 'string') return null;
+  try {
+    const parsed: unknown = JSON.parse(frame);
+    if (Array.isArray(parsed)) {
+      const [, ref, topic, event, payload] = parsed as [
+        unknown,
+        unknown,
+        unknown,
+        unknown,
+        unknown,
+      ];
+      if (typeof topic !== 'string' || typeof event !== 'string') return null;
+      const status = (payload as { status?: unknown } | null)?.status;
+      return { ref: typeof ref === 'string' ? ref : null, topic, event, status };
+    }
+    const message = parsed as {
+      ref?: unknown;
+      topic?: unknown;
+      event?: unknown;
+      payload?: unknown;
+    };
+    if (typeof message.topic !== 'string' || typeof message.event !== 'string') return null;
+    return {
+      ref: typeof message.ref === 'string' ? message.ref : null,
+      topic: message.topic,
+      event: message.event,
+      status: (message.payload as { status?: unknown } | null)?.status,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * この画面が Supabase とつないでいる購読（`use-live-updates.ts` の `courts-live-◯`）を、
+ * WebSocket の中身から数える。つないだ（参加の返事が ok）ら足し、離れた・通信が閉じたら引く。
+ * 画面の中の作りに頼らず、外から見て「同時に何本つながっているか」を確かめるため。
+ */
+function trackLiveChannels(page: Page) {
+  const joined = new Set<string>();
+  const finished = new Set<string>();
+  const topicByJoinRef = new Map<string, string>();
+  let lastJoinedTopic: string | null = null;
+
+  page.on('websocket', (socket) => {
+    if (!/\/realtime\/v1\/websocket/.test(socket.url())) return;
+    const topicsOfThisSocket = new Set<string>();
+
+    socket.on('framesent', ({ payload }) => {
+      const message = parseRealtimeFrame(payload);
+      if (!message?.topic.startsWith('realtime:courts-live-')) return;
+      if (message.event === 'phx_join' && message.ref) {
+        topicByJoinRef.set(message.ref, message.topic);
+        topicsOfThisSocket.add(message.topic);
+      }
+      if (message.event === 'phx_leave') {
+        finished.add(message.topic);
+        joined.delete(message.topic);
+      }
+    });
+    socket.on('framereceived', ({ payload }) => {
+      const message = parseRealtimeFrame(payload);
+      if (message?.event !== 'phx_reply' || !message.ref || message.status !== 'ok') return;
+      const topic = topicByJoinRef.get(message.ref);
+      if (!topic || finished.has(topic)) return;
+      joined.add(topic);
+      lastJoinedTopic = topic;
+    });
+    socket.on('close', () => {
+      for (const topic of topicsOfThisSocket) {
+        finished.add(topic);
+        joined.delete(topic);
+      }
+    });
+  });
+
+  return {
+    /** いまつながっている購読の名前。 */
+    joinedTopics: () => [...joined],
+    lastJoinedTopic: () => lastJoinedTopic,
+  };
+}
+
+test.describe('結果LIVE と進行表を行き来する', () => {
+  test('行き来を繰り返しても、つながっている購読は常に 1 本。戻った進行表にも点がその場で映る', async ({
+    page,
+  }) => {
+    const channels = trackLiveChannels(page);
+    await enterAsViewer(page);
+    await page.goto('/matches');
+    await expect(courtHeading(page, LIVE_COURT)).toBeVisible();
+    // 開発サーバーだけが左下に出す Next.js のバッジが「結果LIVE」を覆って押せなくするので隠す
+    // （e2e/courts.spec.ts の goToTab と同じ。画面を移ってもこの指定は残る）
+    await page.addStyleTag({ content: 'nextjs-portal { display: none !important; }' });
+
+    /**
+     * 下のメニューで画面を移り、その画面の購読がつながるまで待つ。
+     * 離れた画面の購読は止まり、移った先の 1 本だけがつながっていることを確かめる。
+     */
+    async function moveTo(label: string, shown: () => Promise<void>) {
+      const before = channels.lastJoinedTopic();
+      await page.getByRole('navigation', { name: 'メインメニュー' }).getByText(label).click();
+      await shown();
+      await expect
+        .poll(() => {
+          const topics = channels.joinedTopics();
+          return topics.length === 1 && topics[0] !== before ? 'つながった' : topics.join(',');
+        })
+        .toBe('つながった');
+    }
+
+    await expect.poll(() => channels.joinedTopics().length).toBe(1);
+    for (let round = 0; round < 3; round += 1) {
+      await moveTo('結果LIVE', () =>
+        expect(page.getByTestId(`court-card-${LIVE_COURT}`)).toBeVisible()
+      );
+      await moveTo('進行表', () => expect(courtHeading(page, LIVE_COURT)).toBeVisible());
+    }
+
+    await expect(page.getByTestId('live-down-notice')).toHaveCount(0);
+    await openCourt(page, LIVE_COURT);
+    await writeGameScoreDirectly(matchIds.live, 1, 7, 3);
+    await expect(row(page, 'live')).toContainText('7-3', { timeout: 5000 });
+    expect(channels.joinedTopics()).toHaveLength(1);
   });
 });
 

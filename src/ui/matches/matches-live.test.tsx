@@ -1,5 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { CourtsPage } from '@/ui/courts/courts-page';
+import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 import { MatchesPage } from '@/ui/matches/matches-page';
 import { boardMatch } from '@/ui/matches/test-support';
 import type { BoardMatch } from '@/ui/matches/types';
@@ -20,6 +22,8 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh }) }));
 
 type FakeChannel = {
   name: string;
+  /** removeChannel に渡される本体。どの購読が止められたかを見分けるのに使う。 */
+  handle: unknown;
   bindings: { event: string; table: string; callback: (payload: { new: unknown }) => void }[];
   status: ((status: string) => void) | null;
 };
@@ -30,7 +34,7 @@ const fake = vi.hoisted(() => ({
 vi.mock('@/db/client', () => ({
   getSupabaseBrowserClient: () => ({
     channel(name: string) {
-      const record: FakeChannel = { name, bindings: [], status: null };
+      const record: FakeChannel = { name, handle: null, bindings: [], status: null };
       fake.channels.push(record);
       const channel = {
         on(
@@ -46,6 +50,7 @@ vi.mock('@/db/client', () => ({
           return channel;
         },
       };
+      record.handle = channel;
       return channel;
     },
     removeChannel: fake.removeChannel,
@@ -141,7 +146,15 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  // 結果LIVE の画面も描くテストがあるので、アプリ全体で 1 つの預かり場所を次のテストに持ち越さない
+  appScoreSyncStore.dispose();
 });
+
+/** まだ止められていない（つながったままの）購読。 */
+function activeChannels(): FakeChannel[] {
+  const removed = new Set(fake.removeChannel.mock.calls.map(([handle]) => handle));
+  return fake.channels.filter((channel) => !removed.has(channel.handle));
+}
 
 describe('他の人の点がその場で映る（結果LIVE と同じ購読・同じ当てかた）', () => {
   test('進行表を開くと購読が始まり、つながると「自動更新が止まっています」は出ない', () => {
@@ -350,5 +363,84 @@ describe('購読はアプリ全体で 1 本。進行表を離れたら止める'
     passRefreshWait();
 
     expect(refresh).not.toHaveBeenCalled();
+  });
+});
+
+describe('結果LIVE と進行表を行き来しても、購読はアプリ全体で 1 本のまま', () => {
+  const board = twoMatchBoard();
+
+  function Courts() {
+    return (
+      <CourtsPage
+        board={board}
+        stageLabel="予選リーグ"
+        completedMatches={0}
+        totalMatches={2}
+        canInput={false}
+        emptyReason={null}
+        truncated={false}
+      />
+    );
+  }
+
+  function Matches() {
+    return (
+      <section data-testid="matches-screen">
+        <MatchesPage board={board} canFilterMine={false} truncated={false} />
+      </section>
+    );
+  }
+
+  /** 下のメニューで画面を移るのと同じく、前の画面を閉じて次の画面を開く。 */
+  function Screen({ at }: { at: 'courts' | 'matches' }) {
+    return at === 'courts' ? <Courts /> : <Matches />;
+  }
+
+  test('行き来を繰り返しても、つながっている購読は常に 1 本。戻った進行表にも点が映る', () => {
+    const view = render(<Screen at="matches" />);
+    setStatus('SUBSCRIBED');
+
+    for (let round = 0; round < 3; round += 1) {
+      view.rerender(<Screen at="courts" />);
+      expect(activeChannels()).toHaveLength(1);
+      setStatus('SUBSCRIBED');
+
+      view.rerender(<Screen at="matches" />);
+      expect(activeChannels()).toHaveLength(1);
+      setStatus('SUBSCRIBED');
+    }
+
+    // 離れた画面の古い購読から遅れて「閉じた」が届いても、いまの進行表は「止まっています」にならない
+    act(() => fake.channels[0].status?.('CLOSED'));
+    expect(screen.queryByTestId('live-down-notice')).not.toBeInTheDocument();
+
+    act(() => screen.getByRole('button', { name: /^コート1/ }).click());
+    deliverScore('m-live', 1, 13, 9);
+    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('13-9');
+  });
+
+  test('2 つの画面が同時に開いていても 1 本。片方を閉じても、もう片方には届き続ける', () => {
+    function Both({ showCourts }: { showCourts: boolean }) {
+      return (
+        <div>
+          {showCourts && <Courts />}
+          <Matches />
+        </div>
+      );
+    }
+    const view = render(<Both showCourts />);
+    setStatus('SUBSCRIBED');
+    expect(fake.channels).toHaveLength(1);
+
+    view.rerender(<Both showCourts={false} />);
+    expect(fake.removeChannel).not.toHaveBeenCalled();
+
+    const matchesScreen = within(screen.getByTestId('matches-screen'));
+    act(() => matchesScreen.getByRole('button', { name: /^コート1/ }).click());
+    deliverScore('m-live', 1, 13, 9);
+    expect(matchesScreen.getByTestId('match-row-m-live')).toHaveTextContent('13-9');
+
+    view.unmount();
+    expect(fake.removeChannel).toHaveBeenCalledTimes(1);
   });
 });

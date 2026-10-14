@@ -16,6 +16,14 @@
  * サーバーが読む前に起きた変化を当て直しても、購読の知らせは書いた順に届くので、最後は新しい値になる。
  */
 
+/**
+ * 読み直しの依頼をまとめる間隔。結果LIVE と進行表で同じ値を使う（どちらも同じ通信量の枠を使うため）。
+ * - 依頼が来てから `REFRESH_SETTLE_MS` だけ待って、その間に来た依頼を 1 回にまとめる
+ * - 前回の読み直しから `REFRESH_MIN_INTERVAL_MS` が空くまでは次をしない
+ */
+export const REFRESH_SETTLE_MS = 300;
+export const REFRESH_MIN_INTERVAL_MS = 3000;
+
 type Options = {
   refresh: () => void;
   /** 最初の依頼から、まとめて読み直すまで待つ時間。 */

@@ -1,11 +1,21 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, test, vi } from 'vitest';
 import { MatchesPage } from '@/ui/matches/matches-page';
-import { sampleCourts } from '@/ui/matches/sample-data';
+import { boardMatch } from '@/ui/matches/test-support';
+import type { BoardMatch } from '@/ui/matches/types';
 
-function renderPage() {
-  return render(<MatchesPage courts={sampleCourts} />);
-}
+/**
+ * 画面は読み直し（router.refresh）と、他の人の変化の受け取り（結果LIVE と共有の
+ * use-live-updates.ts）を使う。この中は表示の確認だけなので、どちらも何もしない偽物にする
+ * （受け取りと読み直しの確認は matches-live.test.tsx）。
+ */
+vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock('@/ui/courts/use-live-updates', () => ({ useLiveUpdates: () => 'live' }));
+
+/**
+ * 進行表の画面。見るだけで、得点を入れる場所は結果LIVE だけ。
+ * 仕様: docs/specs/2026-10-14-matches-real-data.md
+ */
 
 /** 見出しの文字列は区切りの空白を挟まず連結される（例: 「コート1現在3試合目残り4試合」）。
  *  「コート1」の直後に別の数字が続かないことだけを見て、他のコート番号と区別する。 */
@@ -13,9 +23,48 @@ function courtHeadingName(courtNumber: number) {
   return new RegExp(`^コート${courtNumber}(?!\\d)`);
 }
 
-/** コート1 を開いて、その中身が見える状態にする。 */
-function openCourt1() {
-  fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
+/** コート 1 は 終了 2・進行中 1・これから 3。うち 1 つ（終了のほう）が自分の試合。 */
+function court1Matches(): BoardMatch[] {
+  return [
+    boardMatch({
+      matchId: 'c1-1',
+      orderInCourt: 1,
+      status: 'done',
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
+    }),
+    boardMatch({
+      matchId: 'c1-2',
+      orderInCourt: 2,
+      status: 'done',
+      isMine: true,
+      teamA: { teamNumber: 3, players: ['渡辺', '小林'], slotLabel: null },
+      teamB: { teamNumber: 4, players: ['山本', '松本'], slotLabel: null },
+      scores: [{ gameNumber: 1, sideAScore: 18, sideBScore: 21 }],
+    }),
+    boardMatch({
+      matchId: 'c1-3',
+      orderInCourt: 3,
+      status: 'live',
+      teamA: { teamNumber: 1, players: ['中村'], slotLabel: null },
+      teamB: { teamNumber: 2, players: ['加藤'], slotLabel: null },
+      scores: [{ gameNumber: 1, sideAScore: 12, sideBScore: 9 }],
+    }),
+    boardMatch({ matchId: 'c1-4', orderInCourt: 4, status: 'waiting' }),
+    boardMatch({ matchId: 'c1-5', orderInCourt: 5, status: 'waiting' }),
+    boardMatch({ matchId: 'c1-6', orderInCourt: 6, status: 'waiting' }),
+  ];
+}
+
+function renderPage({
+  board = court1Matches(),
+  canFilterMine = true,
+  truncated = false,
+}: {
+  board?: BoardMatch[];
+  canFilterMine?: boolean;
+  truncated?: boolean;
+} = {}) {
+  return render(<MatchesPage board={board} canFilterMine={canFilterMine} truncated={truncated} />);
 }
 
 describe('MatchesPage', () => {
@@ -24,143 +73,212 @@ describe('MatchesPage', () => {
     expect(screen.getByText('進行表')).toBeInTheDocument();
   });
 
-  test('「全試合」「自分の試合」の絞り込みが出る', () => {
+  test('本物の試合（部・両ペアの名前・点数）が出る。見本の名前は出ない', () => {
     renderPage();
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
 
-    expect(screen.getByRole('button', { name: '全試合' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '自分の試合' })).toBeInTheDocument();
+    const live = screen.getByTestId('match-row-c1-3');
+    expect(live).toHaveTextContent('3試合目');
+    expect(live).toHaveTextContent('1部');
+    expect(live).toHaveTextContent('中村');
+    expect(live).toHaveTextContent('加藤');
+    expect(live).toHaveTextContent('12-9');
+    // 見本データの名前（sample-data.ts にあった名前）は出ない
+    expect(screen.queryByText(/杉山|増田|須藤/)).not.toBeInTheDocument();
   });
 
-  test('コートごとのカードが8枚出る', () => {
-    renderPage();
+  test('コートのカードは試合のあるコートだけ、番号順に出る（9・10 番も、飛び番号もそのまま）', () => {
+    renderPage({
+      board: [
+        boardMatch({ matchId: 'a', courtNumber: 10 }),
+        boardMatch({ matchId: 'b', courtNumber: 2 }),
+        boardMatch({ matchId: 'c', courtNumber: 9 }),
+      ],
+    });
 
-    for (let courtNumber = 1; courtNumber <= 8; courtNumber += 1) {
-      expect(
-        screen.getByRole('button', { name: courtHeadingName(courtNumber) })
-      ).toBeInTheDocument();
-    }
+    const headings = screen
+      .getAllByRole('button', { name: /^コート\d/ })
+      .map((button) => button.textContent?.match(/^コート(\d+)/)?.[1]);
+    expect(headings).toEqual(['2', '9', '10']);
+    // 試合の無いコート（1・3〜8）のカードは出ない
+    expect(screen.queryByRole('button', { name: courtHeadingName(1) })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: courtHeadingName(3) })).not.toBeInTheDocument();
+  });
+
+  test('コートが決まっていない試合は、最後に「コート未定」としてまとまる', () => {
+    renderPage({
+      board: [
+        boardMatch({ matchId: 'u', courtNumber: null, orderInCourt: null }),
+        boardMatch({ matchId: 'a', courtNumber: 3 }),
+      ],
+    });
+
+    const headings = screen.getAllByRole('button', { name: /^コート/ });
+    expect(headings.map((button) => button.textContent)).toEqual([
+      expect.stringMatching(/^コート3/),
+      expect.stringMatching(/^コート未定/),
+    ]);
   });
 
   test('見出しを押すと中身が開いたり閉じたりする', () => {
     renderPage();
 
-    // c1-4 はこれからの試合。終了した試合と違い、最初から見える対象。
     expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
 
-    openCourt1();
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
     expect(screen.getByTestId('match-row-c1-4')).toBeInTheDocument();
 
-    openCourt1();
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
     expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
   });
 
-  test('「自分の試合」を押すと、自分の試合を含むコートだけになる', () => {
-    renderPage();
+  test('見出しに「現在◯試合目」「残り◯試合」が試合の状態どおりに出る', () => {
+    renderPage({
+      board: [
+        ...court1Matches(),
+        boardMatch({ matchId: 'c2-1', courtNumber: 2, orderInCourt: 1, status: 'done' }),
+      ],
+    });
 
-    // 絞り込み前は 8 コートとも見出しが出る
-    expect(screen.getByRole('button', { name: courtHeadingName(8) })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
-
-    // コート8（予定なし）には自分の試合が無いので消える
-    expect(screen.queryByRole('button', { name: courtHeadingName(8) })).not.toBeInTheDocument();
-    // コート1（自分の試合 c1-2 を含む）は残る
-    expect(screen.getByRole('button', { name: courtHeadingName(1) })).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '全試合' }));
-    expect(screen.getByRole('button', { name: courtHeadingName(8) })).toBeInTheDocument();
+    const heading1 = screen.getByRole('button', { name: courtHeadingName(1) });
+    expect(heading1).toHaveTextContent('現在3試合目');
+    expect(heading1).toHaveTextContent('残り4試合');
+    expect(screen.getByRole('button', { name: courtHeadingName(2) })).toHaveTextContent(
+      'すべて終了'
+    );
   });
 
-  test('「自分の試合」で絞っても、見出しはコート全体の状態を出す', () => {
+  test('終わった試合は最初は隠れていて、「✓ 終了した◯試合を見る」を押すと出る', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
 
-    // コート1 で自分の試合は終わった c1-2 だけ。コート自体はまだ進行中なので
-    // 「すべて終了」ではなく、進行中と残りの数がそのまま出る。
-    const heading = screen.getByRole('button', { name: courtHeadingName(1) });
-    expect(heading).toHaveTextContent('現在3試合目');
-    expect(heading).toHaveTextContent('残り4試合');
-    expect(heading).not.toHaveTextContent('すべて終了');
+    expect(screen.queryByTestId('match-row-c1-1')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '✓ 終了した2試合を見る' }));
+    expect(screen.getByTestId('match-row-c1-1')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '✓ 終了した2試合を隠す' })).toBeInTheDocument();
   });
 
-  test('進行中の行を押すと得点入力シートが下から出る', () => {
+  test('進行中の行を押しても何も起きない（得点入力は出ない）', () => {
     renderPage();
-    openCourt1();
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
+
+    fireEvent.click(screen.getByTestId('match-row-c1-3'));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-
-    // c1-3 は進行中の試合（中村 対 加藤）
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(
-      within(screen.getByRole('dialog')).getByText('コート1 ・ [3部] 予選 2回戦')
-    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /＋1|−1|閉じる/ })).not.toBeInTheDocument();
   });
 
-  test('「＋1」を押すと数字が1増え、「−1」で1減る。0より下にはならない', () => {
+  test('「入れた点はまだ保存されません」の帯は出ない', () => {
     renderPage();
-    openCourt1();
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
+    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
 
-    // c1-3 の currentGame は [12, 9]
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('12')).toBeInTheDocument();
-    expect(within(dialog).getByText('9')).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getAllByRole('button', { name: '＋1' })[0]);
-    expect(within(dialog).getByText('13')).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getAllByRole('button', { name: '−1' })[0]);
-    fireEvent.click(within(dialog).getAllByRole('button', { name: '−1' })[0]);
-    // 12 -> 13 -> 12 -> 11
-    expect(within(dialog).getByText('11')).toBeInTheDocument();
-
-    for (let i = 0; i < 20; i += 1) {
-      fireEvent.click(within(dialog).getAllByRole('button', { name: '−1' })[1]);
-    }
-    expect(within(dialog).getByText('0')).toBeInTheDocument();
+    expect(screen.queryByText(/まだ保存されません/)).not.toBeInTheDocument();
   });
 
-  test('得点入力は「閉じる」で閉じる', () => {
-    renderPage();
-    openCourt1();
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  describe('選手として入った人', () => {
+    test('「全試合」「自分の試合」が出る', () => {
+      renderPage({ canFilterMine: true });
 
-    fireEvent.click(screen.getByRole('button', { name: /閉じる/ }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '全試合' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '自分の試合' })).toBeInTheDocument();
+    });
+
+    test('「自分の試合」で、自分の出る試合を含むコートだけになる', () => {
+      renderPage({
+        board: [
+          ...court1Matches(),
+          boardMatch({ matchId: 'c2-1', courtNumber: 2, orderInCourt: 1, status: 'waiting' }),
+        ],
+      });
+
+      expect(screen.getByRole('button', { name: courtHeadingName(2) })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
+
+      expect(screen.queryByRole('button', { name: courtHeadingName(2) })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: courtHeadingName(1) })).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('button', { name: '全試合' }));
+      expect(screen.getByRole('button', { name: courtHeadingName(2) })).toBeInTheDocument();
+    });
+
+    test('「自分の試合」で、コートの中も自分の試合だけが並ぶ', () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
+      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
+      fireEvent.click(screen.getByRole('button', { name: '✓ 終了した1試合を見る' }));
+
+      expect(screen.getByTestId('match-row-c1-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('match-row-c1-3')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
+    });
+
+    test('「自分の試合」で絞っても、見出しはコート全体の状態を出す', () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
+
+      // 自分の試合は終わった c1-2 だけ。コート自体はまだ進行中なので「すべて終了」にしない。
+      const heading = screen.getByRole('button', { name: courtHeadingName(1) });
+      expect(heading).toHaveTextContent('現在3試合目');
+      expect(heading).toHaveTextContent('残り4試合');
+      expect(heading).not.toHaveTextContent('すべて終了');
+    });
+
+    test('自分の試合には「あなたの試合」の印が出る', () => {
+      renderPage();
+      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
+      fireEvent.click(screen.getByRole('button', { name: '✓ 終了した2試合を見る' }));
+
+      expect(screen.getByTestId('match-row-c1-2')).toHaveTextContent('あなたの試合');
+      expect(screen.getByTestId('match-row-c1-1')).not.toHaveTextContent('あなたの試合');
+    });
+
+    test('自分の試合が 1 つも無いときは、空のまま黙らず案内を出す', () => {
+      renderPage({ board: [boardMatch({ matchId: 'x', isMine: false })] });
+
+      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
+
+      expect(screen.getByText('あなたの試合は見つかりませんでした')).toBeInTheDocument();
+    });
   });
 
-  test('得点入力は「背景」で閉じる', () => {
-    renderPage();
-    openCourt1();
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
+  describe('観戦者', () => {
+    test('「全試合」だけが出て、「自分の試合」は出ない', () => {
+      renderPage({ canFilterMine: false });
 
-    fireEvent.click(screen.getByRole('button', { name: '背景' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '全試合' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '自分の試合' })).not.toBeInTheDocument();
+    });
+
+    test('「あなたの試合」の印は出ない', () => {
+      // 観戦者の読み込みでは isMine は付かない（build-matches-view.test.ts）
+      renderPage({
+        canFilterMine: false,
+        board: [boardMatch({ matchId: 'a', isMine: false })],
+      });
+      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
+
+      expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
+    });
   });
 
-  test('得点入力は Esc で閉じる', () => {
-    renderPage();
-    openCourt1();
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
+  test('試合が 1 つも無いときは「まだ試合が登録されていません」と出る', () => {
+    renderPage({ board: [] });
 
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('まだ試合が登録されていません')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^コート/ })).not.toBeInTheDocument();
   });
 
-  test('シートを閉じてもう一度開くと、入れた点は消えている', () => {
-    renderPage();
-    openCourt1();
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
+  test('読む上限を超えたときは、出しきれていないかもしれないと知らせる', () => {
+    renderPage({ truncated: true });
 
-    fireEvent.click(screen.getAllByRole('button', { name: '＋1' })[0]);
-    expect(screen.getByText('13')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('出しきれていない');
+  });
 
-    fireEvent.click(screen.getByRole('button', { name: /閉じる/ }));
-    fireEvent.click(screen.getByRole('button', { name: '中村 対 加藤 の試合' }));
+  test('上限を超えていなければ、その知らせは出ない', () => {
+    renderPage({ truncated: false });
 
-    expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

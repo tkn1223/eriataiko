@@ -806,9 +806,12 @@ export async function findMatchIdByCourtNumber(courtNumber: number): Promise<str
 export type ScenarioMatchSpec = {
   /** 戻り値で試合の id を引く名前。 */
   key: string;
-  courtNumber: number;
-  orderInCourt: number;
+  /** コートが決まっていない試合は null（進行表の「コート未定」を確かめるのに使う）。 */
+  courtNumber: number | null;
+  orderInCourt: number | null;
   status: 'waiting' | 'live' | 'done';
+  /** 棄権で終わった試合にする。省略は普通の終わり方。 */
+  ending?: 'normal' | 'retired_side_a' | 'retired_side_b';
   maxGameCount: number;
   roundName: string;
   /** 1 ゲームめから順の [A の点, B の点]。 */
@@ -889,6 +892,7 @@ export async function createMatchesScenario(
         max_game_count: spec.maxGameCount,
         court_number: spec.courtNumber,
         order_in_court: spec.orderInCourt,
+        ending: spec.ending ?? 'normal',
         finished_at:
           spec.status === 'done'
             ? new Date(now - (spec.finishedMinutesAgo ?? 10) * 60_000).toISOString()
@@ -1015,4 +1019,42 @@ export async function reopenMatchDirectly(matchId: string): Promise<void> {
     .update({ status: 'live', finished_at: null })
     .eq('id', matchId);
   if (error) throw new Error(`試合の終了を取り消せませんでした: ${error.message}`);
+}
+
+/**
+ * 画面を開いたあとに、試合を 1 つ足して進行中にする（「手元に無い試合の変化」を再現する）。
+ * 既にある試合と同じ対戦（matchup）の下に、同じコートの次の順番で作る。出場者は付けない。
+ * 購読が届けるのは試合の更新（UPDATE）だけなので、いったん作ってから進行中に更新する。
+ * 対戦ごと消えるので、`deleteMatchesScenario` で一緒に消える。
+ */
+export async function addLiveMatchLater(
+  siblingMatchId: string,
+  courtNumber: number,
+  orderInCourt: number
+): Promise<string> {
+  const sibling = await admin
+    .from('matches')
+    .select('matchup_id, division_id')
+    .eq('id', siblingMatchId)
+    .single();
+  if (sibling.error) throw new Error(`元の試合を読めませんでした: ${sibling.error.message}`);
+
+  const created = await admin
+    .from('matches')
+    .insert({
+      matchup_id: sibling.data.matchup_id,
+      division_id: sibling.data.division_id,
+      order_in_matchup: 2,
+      status: 'waiting',
+      max_game_count: 1,
+      court_number: courtNumber,
+      order_in_court: orderInCourt,
+    })
+    .select('id')
+    .single();
+  if (created.error) throw new Error(`試合を足せませんでした: ${created.error.message}`);
+
+  const started = await admin.from('matches').update({ status: 'live' }).eq('id', created.data.id);
+  if (started.error) throw new Error(`試合を進行中にできませんでした: ${started.error.message}`);
+  return created.data.id;
 }

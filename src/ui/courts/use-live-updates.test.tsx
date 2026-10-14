@@ -115,8 +115,57 @@ describe('createLiveHub', () => {
         finishedAt: '2026-10-09T01:00:00+00:00',
         maxGameCount: 3,
         ending: 'normal',
+        scorerParticipantId: null,
+        scorerLastScoredAt: null,
       },
     });
+  });
+
+  test('担当（参加者の id）と、最後に点を入れた時刻も状態の変化として渡される', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.deliver('matches', 'UPDATE', {
+      ...MATCH_ROW,
+      status: 'live',
+      finished_at: null,
+      scorer_participant_id: 'p-taro',
+      scorer_last_scored_at: '2027-01-22T10:00:00+00:00',
+    });
+
+    expect(events).toContainEqual({
+      type: 'change',
+      change: expect.objectContaining({
+        kind: 'match',
+        scorerParticipantId: 'p-taro',
+        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+      }),
+    });
+  });
+
+  test('担当が外れた行（どちらも null）は、担当なしの変化として渡される', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.deliver('matches', 'UPDATE', {
+      ...MATCH_ROW,
+      scorer_participant_id: null,
+      scorer_last_scored_at: null,
+    });
+
+    expect(events).toContainEqual({
+      type: 'change',
+      change: expect.objectContaining({ scorerParticipantId: null, scorerLastScoredAt: null }),
+    });
+  });
+
+  test('担当の列が文字でも null でもない行は読み取れないので渡さない', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.deliver('matches', 'UPDATE', { ...MATCH_ROW, scorer_participant_id: 123 });
+
+    expect(events.filter((event) => event.type === 'change')).toEqual([]);
   });
 
   test('棄権の印（ending）も状態の変化として渡される。ending の無い古い形は普通として扱う', () => {

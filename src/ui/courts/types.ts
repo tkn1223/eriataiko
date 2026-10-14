@@ -95,10 +95,38 @@ export type NextMatch = {
 };
 
 /**
+ * 担当を取る・やめる操作の途中経過（送っている最中、または送り直し待ち）。
+ * 画面はこの間、操作の結果になったものとして見せる（取るなら自分が担当、やめるなら担当なし）。
+ * 電波が細くて操作が失敗しても入力は止めない（仕様 ⑤）。
+ */
+export type ScorerOpState = {
+  kind: 'claim' | 'release';
+  /** 一度失敗して、送り直しを待っている。 */
+  retrying: boolean;
+};
+
+/**
+ * 送った点が「担当ではない」と断られたときの知らせ（仕様 ⑧⑨）。カードの中に出し、閉じるまで残す。
+ * 送れなかった点数を出すのは、点数が食い違っていたときに口で伝えられるようにするため。
+ */
+export type ScorerRejection = {
+  /** 入口が返した理由（「愛知北のじろうさんが担当しています。」）。 */
+  message: string;
+  /** 送れなかった点（ゲーム番号順）。 */
+  games: GameScore[];
+};
+
+/**
  * 送る・送り直す仕組み（`use-score-sync.ts`）がコートに渡す、いまの保存状況。
  * 案内が無ければ何も出さない。
  */
 export type ScoreSyncStatus = {
+  /** 担当を取る・やめる操作を送っている途中の様子。無ければ null / 省略。 */
+  scorerOp?: ScorerOpState | null;
+  /** 担当を取る・やめる操作が断られた日本語の理由（担当が移ったのが理由のときは出さない）。無ければ null / 省略。 */
+  scorerOpMessage?: string | null;
+  /** 送った点が担当でないと断られたときの知らせ。無ければ null / 省略。 */
+  scorerRejection?: ScorerRejection | null;
   /** つながらない・5xx・429 で送り直している間の案内。無ければ null。 */
   retryingMessage: string | null;
   /** 4xx で断られ、送り直さないと決めたときの日本語の理由。無ければ null。 */
@@ -158,6 +186,10 @@ export type CourtMatch = {
   orderInCourt: number | null;
   /** 終了した時刻（ISO 8601）。終了していなければ null。「1 つ前」を決めるのに使う。 */
   finishedAt: string | null;
+  /** いまの入力担当（`matches.scorer_participant_id`）。いなければ null。 */
+  scorerParticipantId: string | null;
+  /** 担当が最後に点を入れた（担当になった）時刻（ISO 8601）。5 分たつと担当は外れた扱いになる。 */
+  scorerLastScoredAt: string | null;
   /**
    * 終了を取り消して直している試合か。この画面で取り消した、または取り消されたのを見た試合だけ true。
    * 取り消しても表には痕が残らない（live に戻り、finished_at が空になるだけ）ので、

@@ -17,6 +17,8 @@ function matchOf(matchId: string, status: CourtMatch['status']): CourtMatch {
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: status === 'done' ? '2026-10-14T01:00:00+00:00' : null,
+    scorerParticipantId: null,
+    scorerLastScoredAt: null,
     reopened: false,
     classLabel: { name: '1部', colorNumber: 1 },
     roundLabel: '予選 1回戦',

@@ -1,16 +1,24 @@
 import type { SendResult } from '@/ui/courts/save-retry-policy';
 
-/** 応答の本文から日本語のエラーメッセージ（`{ error: string }`）を取り出す。取れなければ null。 */
-async function readErrorMessage(response: Response): Promise<string | null> {
+/**
+ * 応答の本文から日本語のエラーメッセージ（`{ error: string }`）と、断った理由の種類（`{ code: string }`）を
+ * 取り出す。取れなければ null。
+ */
+async function readErrorBody(
+  response: Response
+): Promise<{ message: string | null; code: string | null }> {
   try {
     const body: unknown = await response.json();
-    if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string') {
-      return body.error;
+    if (body && typeof body === 'object') {
+      return {
+        message: 'error' in body && typeof body.error === 'string' ? body.error : null,
+        code: 'code' in body && typeof body.code === 'string' ? body.code : null,
+      };
     }
   } catch {
     // 本文が JSON でない・空のときは既定文言（save-retry-policy.ts）に任せる
   }
-  return null;
+  return { message: null, code: null };
 }
 
 /**
@@ -40,6 +48,6 @@ export async function sendRequest(request: {
   }
 
   if (response.ok) return { ok: true };
-  const message = await readErrorMessage(response);
-  return { ok: false, kind: 'http', status: response.status, message };
+  const { message, code } = await readErrorBody(response);
+  return { ok: false, kind: 'http', status: response.status, message, ...(code ? { code } : {}) };
 }

@@ -28,6 +28,10 @@ export type LiveChange =
       maxGameCount: number;
       /** `matches.ending`（棄権の印）。 */
       ending: string;
+      /** `matches.scorer_participant_id`。いまの入力担当（参加者）。いなければ null。 */
+      scorerParticipantId: string | null;
+      /** `matches.scorer_last_scored_at`。担当が最後に点を入れた（担当になった）時刻。 */
+      scorerLastScoredAt: string | null;
     }
   /** `game_scores` の INSERT / UPDATE。ある試合のあるゲームの点が変わった。 */
   | {
@@ -107,6 +111,8 @@ function applyMatch(
     target.finishedAt === change.finishedAt &&
     target.maxGameCount === change.maxGameCount &&
     target.ending === change.ending &&
+    target.scorerParticipantId === change.scorerParticipantId &&
+    target.scorerLastScoredAt === change.scorerLastScoredAt &&
     target.reopened === reopened;
   if (unchanged) return { board, needsRefresh: false };
 
@@ -118,6 +124,8 @@ function applyMatch(
     finishedAt: change.finishedAt,
     maxGameCount: change.maxGameCount,
     ending: change.ending,
+    scorerParticipantId: change.scorerParticipantId,
+    scorerLastScoredAt: change.scorerLastScoredAt,
     reopened,
   };
   return {

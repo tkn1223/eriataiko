@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
+import { takeScorer } from './helpers/scorer';
 import {
   BASE_COURT_NUMBERS,
   BASE_LEAGUE_COMPLETED_MATCHES,
@@ -333,6 +334,7 @@ test.describe('選手として入った人の操作', () => {
     const teamAName = SCORE_TEAM_A_NAMES.join('・');
     const teamBName = SCORE_TEAM_B_NAMES.join('・');
 
+    await takeScorer(card);
     await expect(card.getByText('2', { exact: true })).toBeVisible();
 
     await card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1増やす` }).click();
@@ -352,6 +354,7 @@ test.describe('選手として入った人の操作', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, ZERO_SCORE_COURT_NUMBER);
+    await takeScorer(card);
     await card.getByRole('button', { name: '試合を終了する' }).click();
 
     await expect(card.getByText('まだ点が入っていません')).toBeVisible();
@@ -363,6 +366,7 @@ test.describe('選手として入った人の操作', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
+    await takeScorer(card);
     await card.getByRole('button', { name: '試合を終了する' }).click();
     await expect(page.getByText('この試合を終了します')).toBeVisible();
 
@@ -384,6 +388,7 @@ test.describe('選手として入った人の操作', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
+    await takeScorer(card);
     await card.getByRole('button', { name: '試合を終了する' }).click();
     await page.getByRole('button', { name: '戻る' }).click();
 
@@ -396,6 +401,7 @@ test.describe('選手として入った人の操作', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
+    await takeScorer(card);
 
     await card.getByRole('button', { name: '試合を終了する' }).click();
     await page.getByRole('button', { name: '背景' }).click();
@@ -411,6 +417,7 @@ test.describe('選手として入った人の操作', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
+    await takeScorer(card);
     const plus = card.getByRole('button', {
       name: `${SCORE_TEAM_B_NAMES.join('・')}の第1ゲームの得点を1増やす`,
     });
@@ -443,6 +450,7 @@ test('確認画面の「OK」「戻る」はどちらも44px以上', async ({ pa
   await enterAsPlayer(page, '愛知南', 'たろう');
   await page.goto('/courts');
 
+  await takeScorer(courtCard(page, SCORE_COURT_NUMBER));
   await courtCard(page, SCORE_COURT_NUMBER).getByRole('button', { name: '試合を終了する' }).click();
 
   const tooSmall = await page
@@ -589,6 +597,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
     const card = courtCard(page, FINAL_COURT_NUMBER);
     const teamAName = FINAL_TEAM_A_NAMES.join('・');
+    await takeScorer(card);
     await card.getByRole('button', { name: `${teamAName}の第2ゲームの得点を1増やす` }).click();
 
     const matchId = await findMatchIdByCourtNumber(FINAL_COURT_NUMBER);
@@ -604,6 +613,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await page.goto('/courts');
 
     const card = courtCard(page, FINAL_COURT_NUMBER);
+    await takeScorer(card);
     await card.getByRole('button', { name: '試合を終了する' }).click();
 
     await expect(card.getByText('同点では終了できません')).toBeVisible();
@@ -617,6 +627,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
     const card = courtCard(page, FINAL_COURT_NUMBER);
     const teamAName = FINAL_TEAM_A_NAMES.join('・');
 
+    await takeScorer(card);
     await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
     await expect(card.getByText('同点では終了できません')).toHaveCount(0);
 
@@ -682,6 +693,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
       // いちばん詰まった確認画面を実測する。
       const card = courtCard(page, FINAL_COURT_NUMBER);
       const teamAName = FINAL_TEAM_A_NAMES.join('・');
+      await takeScorer(card);
       await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
       await card.getByRole('button', { name: '試合を終了する' }).click();
 
@@ -698,6 +710,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
       const card = courtCard(page, FINAL_COURT_NUMBER);
       const teamAName = FINAL_TEAM_A_NAMES.join('・');
+      await takeScorer(card);
       await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
       // 終了が記録されると次の試合に切り替わってしまうので、終了を送れないようにして、
       // 「終了を送っています」の終わった見た目のまま測る
@@ -753,6 +766,8 @@ test.describe('保存（1-b）', () => {
     await expect(card.getByText('呼出待ち')).toBeVisible();
     await expect(card.getByText('第1ゲーム')).toBeVisible();
 
+    // 呼出待ちの試合も、先に「得点を入力する」を 1 度押す（そのあとの最初の 1 点で LIVE になる）
+    await takeScorer(card);
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
 
     await expect(card.getByText('LIVE')).toBeVisible();
@@ -782,6 +797,7 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamBName = WAITING_ONLY_TEAM_B_NAMES.join('・');
     const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
+    await takeScorer(card);
     const plus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1増やす` });
     const minus = card.getByRole('button', { name: `${teamBName}の第1ゲームの得点を1減らす` });
 
@@ -812,6 +828,7 @@ test.describe('保存（1-b）', () => {
     const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
     const plus = card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` });
 
+    await takeScorer(card);
     await page.route('**/api/matches/*/scores', (route) => route.abort());
     await plus.click();
 
@@ -838,6 +855,8 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, REJECT_COURT_NUMBER);
     const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
+    // 担当になってから、ほかの人が試合を終了する（購読が止まっているので、この画面はまだ知らない）
+    await takeScorer(card);
     await markRejectMatchDone();
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
 
@@ -852,6 +871,7 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
 
+    await takeScorer(card);
     await page.route('**/api/matches/*/scores', (route) => route.abort());
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
     await expect(card.getByRole('status')).toContainText('保存できていません');
@@ -864,11 +884,14 @@ test.describe('保存（1-b）', () => {
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
+    // 担当になってから試合を終了にするあいだに、終了の知らせで画面が先に切り替わると、押す相手が消える
+    await keepRealtimeDisconnected(page);
     await page.goto('/courts');
 
     const card = courtCard(page, REJECT_COURT_NUMBER);
     const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
+    await takeScorer(card);
     await markRejectMatchDone();
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
     await expect(card.getByRole('status')).toContainText('終了した試合です');
@@ -901,6 +924,7 @@ test.describe('保存（1-b）', () => {
 
       const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
       const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
+      await takeScorer(card);
       await page.route(SCORES_URL, (route) => route.abort());
       await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
       await expect(card.getByRole('status')).toContainText('保存できていません');
@@ -1014,6 +1038,7 @@ test.describe('保存（1-b）', () => {
 
       const card = courtCard(page, REJECT_COURT_NUMBER);
       const teamAName = REJECT_TEAM_A_NAMES.join('・');
+      await takeScorer(card);
       await page.route(SCORES_URL, (route) => route.abort());
       await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
       await expect(card.getByRole('status')).toContainText('保存できていません');
@@ -1088,6 +1113,7 @@ test.describe('保存（1-b）', () => {
       const card = courtCard(page, REJECT_COURT_NUMBER);
       const teamAName = REJECT_TEAM_A_NAMES.join('・');
 
+      await takeScorer(card);
       await markRejectMatchDone();
       await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
       await expect(card.getByRole('status')).toBeVisible();

@@ -214,14 +214,16 @@ players  人（大会をまたぐ。番号で見分ける）── participants 
 | 入口 | 触る表 | 中身 |
 | --- | --- | --- |
 | `POST /api/session` | `write_logs`（入場の記録だけ） | 名前を選んで入場する |
-| `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない） |
-| `POST /api/matches/[matchId]/result` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める） |
-| `DELETE /api/matches/[matchId]/result` | `matches` | 終了を取り消す（`done` を `live` に戻す） |
+| `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき・担当の時刻を更新するとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない）。担当でない人の点は 409 で断る |
+| `POST /api/matches/[matchId]/result` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める。担当でなければ 409） |
+| `DELETE /api/matches/[matchId]/result` | `matches` | 終了を取り消す（`done` を `live` に戻す）。誰でも押せて、押した人がその試合の担当になる |
+| `POST /api/matches/[matchId]/scorer` | `matches`（`scorer_participant_id` / `scorer_last_scored_at`） | 入力の担当を取る。空いている／最後に点を入れてから 5 分たった担当は確認なしで取れ、ほかの人が担当中なら `{ "takeOver": true }` のときだけ取れる |
+| `DELETE /api/matches/[matchId]/scorer` | `matches`（同上） | 入力の担当をやめる（自分が担当のときだけ） |
 
 どれも `AGENTS.md` の順（`requirePlayer()` → 入力検証 → 書き込み → `logWrite()`）を守っています。
 中身の分岐（1 点も入っていない試合の終了は 400、終了済みの試合への得点は 409、など）は `src/usecases/save-score.ts` /
-`finish-match.ts` / `reopen-match.ts` にまとまっています。仕様は
-`docs/specs/2026-08-29-score-input-backend.md`。
+`finish-match.ts` / `reopen-match.ts` / `claim-scorer.ts` / `release-scorer.ts` にまとまっています。仕様は
+`docs/specs/2026-08-29-score-input-backend.md`（入力の担当は `docs/specs/2026-10-14-match-scorer.md`）。
 
 ---
 

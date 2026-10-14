@@ -1058,3 +1058,83 @@ export async function addLiveMatchLater(
   if (started.error) throw new Error(`試合を進行中にできませんでした: ${started.error.message}`);
   return created.data.id;
 }
+
+// ---------------------------------------------------------------------
+// 入力の担当（docs/specs/2026-10-14-match-scorer.md）の確認用
+// ---------------------------------------------------------------------
+
+/** DB に保存された試合の担当（参加者の id と、最後に点を入れた時刻）を読む。 */
+export async function findMatchScorer(
+  matchId: string
+): Promise<{ participantId: string | null; lastScoredAt: string | null }> {
+  const { data, error } = await admin
+    .from('matches')
+    .select('scorer_participant_id, scorer_last_scored_at')
+    .eq('id', matchId)
+    .single();
+  if (error) throw new Error(`担当を読めませんでした: ${error.message}`);
+  return { participantId: data.scorer_participant_id, lastScoredAt: data.scorer_last_scored_at };
+}
+
+/** seed.sql のチーム名・名前から、その人の participants.id を引く。 */
+export async function findParticipantId(teamName: string, playerName: string): Promise<string> {
+  const { data, error } = await admin
+    .from('participants')
+    .select('id, players!inner(name), teams!inner(name)')
+    .eq('competition_id', COMPETITION_ID)
+    .eq('players.name', playerName)
+    .eq('teams.name', teamName)
+    .limit(1)
+    .single();
+  if (error) throw new Error(`${teamName} の ${playerName} が見つかりません: ${error.message}`);
+  return data.id;
+}
+
+/**
+ * 画面を使わずに、データベースで試合の担当を決める（「ほかの人が入力している」を再現する）。
+ * `minutesAgo` 分前に最後の点を入れた担当にする（既定は「いま」）。
+ */
+export async function setMatchScorerDirectly(
+  matchId: string,
+  participantId: string,
+  minutesAgo = 0
+): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({
+      scorer_participant_id: participantId,
+      scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    })
+    .eq('id', matchId);
+  if (error) throw new Error(`担当を書き換えられませんでした: ${error.message}`);
+}
+
+/** 画面を使わずに、担当の「最後に点を入れた時刻」だけをずらす（「5 分たった」を作る）。 */
+export async function shiftMatchScorerTime(matchId: string, minutesAgo: number): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString() })
+    .eq('id', matchId);
+  if (error) throw new Error(`担当の時刻を書き換えられませんでした: ${error.message}`);
+}
+
+/** 画面を使わずに、データベースで試合の担当を外す。 */
+export async function clearMatchScorerDirectly(matchId: string): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+    .eq('id', matchId);
+  if (error) throw new Error(`担当を外せませんでした: ${error.message}`);
+}
+
+/** 担当の記録（write_logs）のうち、その試合のものを古い順に読む。 */
+export async function findScorerLogActions(matchId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from('write_logs')
+    .select('action')
+    .like('action', 'scorer.%')
+    .eq('action_detail->>matchId', matchId)
+    .order('id', { ascending: true });
+  if (error) throw new Error(`記録を読めませんでした: ${error.message}`);
+  return (data ?? []).map((row) => row.action);
+}

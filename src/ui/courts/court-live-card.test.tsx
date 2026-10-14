@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 import { hasAnyPoint } from '@/domain/scoring';
+import { type ComponentProps } from 'react';
 import { CourtLiveCard, type FixActions } from '@/ui/courts/court-live-card';
+import { useFinishSheets } from '@/ui/courts/use-finish-sheets';
 import type {
   Court,
   CourtTeam,
@@ -49,6 +51,25 @@ const baseLive: NonNullable<Court['live']> = {
   maxGameCount: 1,
 };
 
+/**
+ * 終了の確認画面の開き閉じはページが試合ごとに覚える（use-finish-sheets.ts）ので、
+ * カードだけを試すときは、その覚える役を同じ部品で付けて渡す。
+ */
+type HarnessProps = Omit<ComponentProps<typeof CourtLiveCard>, 'finishSheetOf' | 'fix'> & {
+  fix?: Omit<FixActions, 'finishSheetOf'>;
+};
+
+function CardHarness({ fix, ...props }: HarnessProps) {
+  const { finishSheetOf } = useFinishSheets(null);
+  return (
+    <CourtLiveCard
+      {...props}
+      finishSheetOf={finishSheetOf}
+      fix={fix ? { ...fix, finishSheetOf } : undefined}
+    />
+  );
+}
+
 function renderLiveCard({
   live = baseLive,
   next = null,
@@ -78,7 +99,7 @@ function renderLiveCard({
   const hasLiveScore = live !== null || (canInput && next !== null);
   const liveScore: LiveScore | null = hasLiveScore ? { scores, finished, started } : null;
   return render(
-    <CourtLiveCard
+    <CardHarness
       court={court}
       liveScore={liveScore}
       canInput={canInput}
@@ -716,7 +737,7 @@ describe('直し中と1つ前', () => {
     maxGameCount: 1,
   };
 
-  function actions(overrides: Partial<FixActions> = {}): FixActions {
+  function actions(overrides: Partial<FixActions> = {}): Omit<FixActions, 'finishSheetOf'> {
     return {
       syncStatusOf: () => null,
       reopenStateOf: () => null,
@@ -735,7 +756,7 @@ describe('直し中と1つ前', () => {
   }: {
     court: Partial<Court>;
     canInput?: boolean;
-    fix?: FixActions;
+    fix?: Omit<FixActions, 'finishSheetOf'>;
   }) {
     const full: Court = {
       courtNumber: 3,
@@ -747,7 +768,7 @@ describe('直し中と1つ前', () => {
     };
     const live = full.live;
     return render(
-      <CourtLiveCard
+      <CardHarness
         court={full}
         liveScore={live ? { scores: live.scores, finished: false, started: true } : null}
         canInput={canInput}
@@ -877,7 +898,7 @@ describe('直し中と1つ前', () => {
     test('進行中の試合の下に出て、今の試合の点も入れられる', () => {
       const onIncrement = vi.fn();
       render(
-        <CourtLiveCard
+        <CardHarness
           court={{
             courtNumber: 3,
             live: baseLive,
@@ -1020,7 +1041,7 @@ describe('直し中と1つ前', () => {
     test('直し中があっても、今の試合の点は入れられ、「試合を終了する」も出る', () => {
       const onIncrement = vi.fn();
       render(
-        <CourtLiveCard
+        <CardHarness
           court={{
             courtNumber: 3,
             live: baseLive,

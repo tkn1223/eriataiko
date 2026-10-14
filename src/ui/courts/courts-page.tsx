@@ -19,6 +19,7 @@ import {
   type CourtsEmptyReason,
   type LiveScore,
 } from '@/ui/courts/types';
+import { useFinishSheets } from '@/ui/courts/use-finish-sheets';
 import { useLiveUpdates } from '@/ui/courts/use-live-updates';
 import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
 
@@ -162,6 +163,8 @@ export function CourtsPage({
     createLiveBoard(overlayPendingScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()))
   );
   const board = useSyncExternalStore(liveBoard.subscribe, liveBoard.get, liveBoard.get);
+  // 終了の確認画面は試合ごとにここで覚える。開いている試合が終わったら閉じる
+  const { finishSheetOf } = useFinishSheets(board);
 
   // 読み直しは、依頼をまとめて連続しないようにする。読み直しの間に届いた変化も覚えておく。
   const [refreshScheduler] = useState(() =>
@@ -376,6 +379,7 @@ export function CourtsPage({
     onIncrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, 1),
     onDecrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, -1),
     onFinishMatch: (matchId, retiredSide) => finish(matchId, retiredSide),
+    finishSheetOf,
     onReopen: (matchId) => void reopenMatch(matchId),
   };
 
@@ -453,6 +457,7 @@ export function CourtsPage({
                 changeScore(court.courtNumber, gameNumber, side, -1)
               }
               onFinishMatch={(retiredSide) => finishMatch(court.courtNumber, retiredSide)}
+              finishSheetOf={finishSheetOf}
               fix={fixActions}
             />
           );

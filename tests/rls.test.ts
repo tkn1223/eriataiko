@@ -266,3 +266,68 @@ describe('大会データの表は anon から読めるが書けない', () => {
     expect(data?.length, '狙った行が消えている').toBe(1);
   });
 });
+
+/**
+ * 試合の入力担当の列（matches.scorer_participant_id / scorer_last_scored_at）。
+ * 担当は全員の画面に映すので読めるが、書けるのは入口（Route Handler）だけ。
+ * 書けてしまうと、誰でも他人を担当から外したり、自分を担当にして点を止められる。
+ */
+describe('試合の入力担当の列は anon から読めるが書けない', () => {
+  let matchId = '';
+  let participantId = '';
+  const scoredAt = '2027-01-22T10:00:00.000Z';
+
+  beforeAll(async () => {
+    const { data: match } = await admin.from('matches').select('id').limit(1).single();
+    const { data: participant } = await admin.from('participants').select('id').limit(1).single();
+    matchId = match!.id;
+    participantId = participant!.id;
+    await admin
+      .from('matches')
+      .update({ scorer_participant_id: participantId, scorer_last_scored_at: scoredAt })
+      .eq('id', matchId);
+  });
+
+  afterAll(async () => {
+    await admin
+      .from('matches')
+      .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+      .eq('id', matchId);
+  });
+
+  test('担当と最後に点を入れた時刻を読める', async () => {
+    const { data, error } = await anon
+      .from('matches')
+      .select('scorer_participant_id, scorer_last_scored_at')
+      .eq('id', matchId)
+      .single();
+    expect(error).toBeNull();
+    expect(data!.scorer_participant_id).toBe(participantId);
+    expect(new Date(data!.scorer_last_scored_at!).toISOString()).toBe(scoredAt);
+  });
+
+  test('担当を空にする書き換えは通らない', async () => {
+    await anon.from('matches').update({ scorer_participant_id: null }).eq('id', matchId);
+
+    const { data } = await admin
+      .from('matches')
+      .select('scorer_participant_id')
+      .eq('id', matchId)
+      .single();
+    expect(data!.scorer_participant_id).toBe(participantId);
+  });
+
+  test('最後に点を入れた時刻の書き換えは通らない', async () => {
+    await anon
+      .from('matches')
+      .update({ scorer_last_scored_at: '2099-01-01T00:00:00.000Z' })
+      .eq('id', matchId);
+
+    const { data } = await admin
+      .from('matches')
+      .select('scorer_last_scored_at')
+      .eq('id', matchId)
+      .single();
+    expect(new Date(data!.scorer_last_scored_at!).toISOString()).toBe(scoredAt);
+  });
+});

@@ -5,6 +5,7 @@ import {
   type DivisionRow,
 } from '@/domain/class-labels';
 import type { GameScore } from '@/domain/scoring';
+import { scorerLabel } from '@/domain/scorer';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import type {
   Court,
@@ -53,6 +54,17 @@ export type CourtsViewSideRow = {
 
 export type CourtsViewGameScoreRow = GameScore;
 
+/**
+ * 参加者 1 人（その大会での人）。担当の名前を「愛知南のたろう」の形で出すために読む。
+ * 担当は誰でもなれるので、試合に出る人だけでなく大会の参加者全員が要る。
+ */
+export type CourtsViewParticipantRow = {
+  participantId: string;
+  playerName: string;
+  /** チーム名。チームの無い参加者（入力だけの人）は null。 */
+  teamName: string | null;
+};
+
 export type CourtsViewMatchRow = {
   matchId: string;
   /** `matches.status`。 */
@@ -64,6 +76,10 @@ export type CourtsViewMatchRow = {
   orderInCourt: number | null;
   /** `matches.finished_at`（ISO 8601）。終わっていない試合は null。 */
   finishedAt: string | null;
+  /** `matches.scorer_participant_id`。いまの入力担当（参加者）。いなければ null。 */
+  scorerParticipantId: string | null;
+  /** `matches.scorer_last_scored_at`（ISO 8601）。担当が最後に点を入れた（担当になった）時刻。 */
+  scorerLastScoredAt: string | null;
   divisionId: string;
   stageId: string;
   /** `matchups.round_name`。例: '予選 1回戦'。 */
@@ -85,6 +101,8 @@ export type CourtsViewInput = {
    * 並び順は問わない（この関数が時刻で選ぶ）。
    */
   previousMatches: CourtsViewMatchRow[];
+  /** その大会の参加者（担当の名前を引く元）。 */
+  participants: CourtsViewParticipantRow[];
   /** 読む上限を超えた（読み切れていない）。黙って欠けさせず、画面で知らせる。 */
   truncated: boolean;
 };
@@ -101,6 +119,13 @@ export type CourtsView = {
    * 届いた変化を当てたあとも同じ関数でカードにするため、画面にはカードではなくこちらを渡す。
    */
   board: CourtMatch[];
+  /** 選手として入った人の participants.id。観戦者・未入場は null。担当が自分かを画面で判断するのに使う。 */
+  myParticipantId: string | null;
+  /**
+   * 参加者の id → 担当として出す名前（「愛知南のたろう」。チームが無ければ名前だけ。「さん」は画面が付ける）。
+   * 画面に届く担当の変化は参加者の id だけで来るので、名前はここから引く。
+   */
+  scorerLabels: Record<string, string>;
   courts: Court[];
   /**
    * 進行中・未実施の試合が入ったコートが 1 つも無いときだけ入る。
@@ -146,6 +171,8 @@ export function toCourtMatch(
     courtNumber: match.courtNumber,
     orderInCourt: match.orderInCourt,
     finishedAt: match.finishedAt,
+    scorerParticipantId: match.scorerParticipantId,
+    scorerLastScoredAt: match.scorerLastScoredAt,
     reopened: false,
     classLabel: classLabelOf(match, classLabelById),
     roundLabel: match.roundName,
@@ -243,6 +270,13 @@ export function buildCourtsView(input: CourtsViewInput): CourtsView {
     completedMatches: progress.completedMatches,
     totalMatches: progress.totalMatches,
     board,
+    myParticipantId: input.myParticipantId,
+    scorerLabels: Object.fromEntries(
+      input.participants.map((p) => [
+        p.participantId,
+        scorerLabel({ teamName: p.teamName, playerName: p.playerName }),
+      ])
+    ),
     courts,
     emptyReason: hasCardWithMatch ? null : emptyReasonOf(remainingMatches, input.stages),
     truncated: input.truncated,

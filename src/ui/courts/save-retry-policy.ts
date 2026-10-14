@@ -1,3 +1,5 @@
+import { SCORER_ERROR_CODE } from '@/domain/scorer';
+
 /**
  * 得点の保存（`POST /api/matches/[matchId]/scores`）が失敗したときに
  * 「送り直すか・諦めるか」を決める、DB も HTTP も触らない純粋な関数。
@@ -8,11 +10,14 @@
  * 仕様: docs/specs/2026-09-19-save-score-from-courts.md
  */
 
-/** 1 回の送信の結果。fetch 自体が失敗した（オフライン等）ときは 'network'。 */
+/**
+ * 1 回の送信の結果。fetch 自体が失敗した（オフライン等）ときは 'network'。
+ * `code` は入口が付ける断った理由の種類（`src/domain/scorer.ts` の `SCORER_ERROR_CODE`）。無ければ省略。
+ */
 export type SendResult =
   | { ok: true }
   | { ok: false; kind: 'network' }
-  | { ok: false; kind: 'http'; status: number; message: string | null };
+  | { ok: false; kind: 'http'; status: number; message: string | null; code?: string | null };
 
 /**
  * 送り直すべきか。
@@ -24,6 +29,23 @@ export type SendResult =
 export function shouldRetry(result: Extract<SendResult, { ok: false }>): boolean {
   if (result.kind === 'network') return true;
   return result.status === 429 || result.status >= 500;
+}
+
+/**
+ * 断られた理由の種類。同じ 409 でも出し方が違う。
+ * - not-scorer: 担当でないので点・終了・やめるを受けなかった。カードの中に「◯◯さんが担当しています」と
+ *   送れなかった点を出す（仕様 ⑧⑨）
+ * - scorer-active: 担当を取ろうとしたが、ほかの人が入力中だった。理由は画面に出ている担当の表示と同じなので、
+ *   読み直して担当の表示を最新にするだけ
+ * - other: そのほか（終了した試合・試合が見つからないなど）。理由をそのまま出す
+ */
+export type RejectionKind = 'not-scorer' | 'scorer-active' | 'other';
+
+export function rejectionKind(result: SendResult): RejectionKind {
+  if (result.ok || result.kind !== 'http') return 'other';
+  if (result.code === SCORER_ERROR_CODE.notScorer) return 'not-scorer';
+  if (result.code === SCORER_ERROR_CODE.scorerActive) return 'scorer-active';
+  return 'other';
 }
 
 /** 送り直しの間隔（ミリ秒）。1 秒→2 秒→4 秒→8 秒→最大 10 秒（以降は 10 秒間隔）。 */

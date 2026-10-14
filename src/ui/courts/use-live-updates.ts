@@ -56,6 +56,12 @@ function nullableNumber(value: unknown): number | null | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/** 文字か null。列そのものが届いていない（undefined）古い形は null として扱い、それ以外の型は読み取れない（undefined）。 */
+function nullableText(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'string' ? value : undefined;
+}
+
 /** `matches` の行を状態の変化に直す。読み取れない形なら null。 */
 function toMatchChange(row: unknown): LiveChange | null {
   if (!isRecord(row)) return null;
@@ -64,12 +70,17 @@ function toMatchChange(row: unknown): LiveChange | null {
   const ending = typeof row.ending === 'string' ? row.ending : 'normal';
   const courtNumber = nullableNumber(row.court_number);
   const orderInCourt = nullableNumber(row.order_in_court);
+  // 担当の列が無い古い形の通知は、担当なしとして扱う
+  const scorerParticipantId = nullableText(row.scorer_participant_id);
+  const scorerLastScoredAt = nullableText(row.scorer_last_scored_at);
   if (
     typeof id !== 'string' ||
     typeof status !== 'string' ||
     !MATCH_STATUSES.includes(status) ||
     courtNumber === undefined ||
     orderInCourt === undefined ||
+    scorerParticipantId === undefined ||
+    scorerLastScoredAt === undefined ||
     typeof maxGameCount !== 'number' ||
     !(finishedAt === null || typeof finishedAt === 'string')
   ) {
@@ -84,6 +95,8 @@ function toMatchChange(row: unknown): LiveChange | null {
     finishedAt,
     maxGameCount,
     ending,
+    scorerParticipantId,
+    scorerLastScoredAt,
   };
 }
 

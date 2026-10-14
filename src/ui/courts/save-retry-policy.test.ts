@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   DEFAULT_REJECTED_MESSAGE,
+  rejectionKind,
   rejectionMessage,
   retryDelayMs,
   shouldRetry,
@@ -70,5 +71,57 @@ describe('rejectionMessage', () => {
     expect(rejectionMessage({ ok: false, kind: 'http', status: 404, message: null })).toBe(
       DEFAULT_REJECTED_MESSAGE
     );
+  });
+});
+
+describe('担当でないと断られたとき（docs/specs/2026-10-14-match-scorer.md の ⑧）', () => {
+  const notScorer: SendResult = {
+    ok: false,
+    kind: 'http',
+    status: 409,
+    message: '愛知北のじろうさんが担当しています。',
+    code: 'not-scorer',
+  };
+
+  test('送り直さない（送り直しても、いまの担当の点を上書きするだけになるため）', () => {
+    expect(shouldRetry(notScorer)).toBe(false);
+  });
+
+  test('理由は入口の日本語（いまの担当の名前つき）をそのまま出す', () => {
+    expect(rejectionMessage(notScorer as Extract<SendResult, { kind: 'http' }>)).toBe(
+      '愛知北のじろうさんが担当しています。'
+    );
+  });
+
+  test('同じ 409 でも、code が not-scorer なら「担当でない」と見分けられる', () => {
+    expect(rejectionKind(notScorer)).toBe('not-scorer');
+  });
+
+  test('終了した試合の 409（code なし）は「担当でない」ではなく、ふつうの断られ方', () => {
+    expect(
+      rejectionKind({
+        ok: false,
+        kind: 'http',
+        status: 409,
+        message: '終了した試合です。',
+      })
+    ).toBe('other');
+  });
+
+  test('担当を取るのを、ほかの人が入力中で断られたときは scorer-active', () => {
+    expect(
+      rejectionKind({
+        ok: false,
+        kind: 'http',
+        status: 409,
+        message: '愛知北のじろうさんが入力しています。',
+        code: 'scorer-active',
+      })
+    ).toBe('scorer-active');
+  });
+
+  test('つながらない・5xx は断られではないので other', () => {
+    expect(rejectionKind({ ok: false, kind: 'network' })).toBe('other');
+    expect(rejectionKind({ ok: false, kind: 'http', status: 500, message: null })).toBe('other');
   });
 });

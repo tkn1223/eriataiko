@@ -61,6 +61,8 @@ export default async function Page() {
       canInput={state.canInput}
       emptyReason={state.view.emptyReason}
       truncated={state.view.truncated}
+      myParticipantId={state.view.myParticipantId}
+      scorerLabels={state.view.scorerLabels}
     />
   );
 }

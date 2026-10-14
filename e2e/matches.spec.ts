@@ -49,7 +49,26 @@ const UNDECIDED_B = ['椎名', '樫村'];
 
 let matchIds: Record<string, string>;
 
+/**
+ * テスト用の試合が、前のテストで書き換えられたか。書き換えられたときだけ作り直す。
+ *
+ * 毎回作り直すと、消す・作るたびに試合と点の変化が Realtime から届き、手元の Realtime の
+ * 「1 秒あたりの知らせの上限」（100）を超える。超えると Realtime はしばらく知らせを止め、
+ * 次の 2 台のブラウザのテストで、押した点が進行表に届かず落ちる
+ * （`MessagePerSecondRateLimitReached` が Realtime の記録に出ていた。全体を流すと 2 回に 1 回ほど落ちた）。
+ * 点や終了を書き換えるテストは、`markScenarioChanged()` で次のテストに作り直しを頼む。
+ * テストが落ちると Playwright は続きを新しい作業場所（worker）で流し、この変数も初めの値に戻るので、
+ * そのときも作り直される。
+ */
+let scenarioChanged = true;
+
+function markScenarioChanged() {
+  scenarioChanged = true;
+}
+
 test.beforeEach(async () => {
+  if (!scenarioChanged) return;
+  scenarioChanged = false;
   matchIds = await createMatchesScenario([
     {
       key: 'wait9',
@@ -452,6 +471,9 @@ test.describe('選手として入った人', () => {
 // ---------------------------------------------------------------------
 
 test.describe('結果LIVE の操作が、別のブラウザの進行表にその場で映る', () => {
+  // 点・終了・試合を書き換えるので、次のテストでは作り直す
+  test.beforeEach(markScenarioChanged);
+
   function courtCard(page: Page, courtNumber: number) {
     return page.getByTestId(`court-card-${courtNumber}`);
   }
@@ -667,6 +689,9 @@ function trackLiveChannels(page: Page) {
 }
 
 test.describe('結果LIVE と進行表を行き来する', () => {
+  // 点・終了・試合を書き換えるので、次のテストでは作り直す
+  test.beforeEach(markScenarioChanged);
+
   test('行き来を繰り返しても、つながっている購読は常に 1 本。戻った進行表にも点がその場で映る', async ({
     page,
   }) => {
@@ -738,6 +763,9 @@ async function controlRealtimeSocket(page: Page) {
 // ---------------------------------------------------------------------
 
 test.describe('自動更新が途切れたとき', () => {
+  // 点・終了・試合を書き換えるので、次のテストでは作り直す
+  test.beforeEach(markScenarioChanged);
+
   test('「自動更新が止まっています」が出て、つながると消えて 1 回だけ読み直し、途切れている間の点が出る', async ({
     browser,
   }) => {

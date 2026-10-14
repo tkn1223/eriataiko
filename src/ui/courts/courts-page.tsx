@@ -316,15 +316,6 @@ export function CourtsPage({
     if (matchId) changeScoreOfMatch(matchId, gameNumber, side, delta);
   }
 
-  /**
-   * 確認画面の「OK」で呼ばれる。終了を預かり場所に載せる（点が届いてから送られる）。
-   * 画面は「終了を送っています」を出し、記録されたら次の試合に切り替わる。
-   */
-  function finishMatch(courtNumber: number, retiredSide: 'A' | 'B' | null) {
-    const matchId = activeMatchIdOfCourt(courtNumber);
-    if (matchId) finish(matchId, retiredSide);
-  }
-
   // 終了の取り消し（「直す」）。点や終了と違って、自動では送り直さない（取り消しは押した人が
   // 結果を見て決める操作で、勝手に繰り返すと、あとから別の人が終了したのを取り消してしまうため）。
   // 失敗したら理由を出して、もう一度押してもらう。
@@ -426,6 +417,8 @@ export function CourtsPage({
 
       <div className="flex flex-col gap-[10px]">
         {courts.map((court) => {
+          // 確認画面の「OK」は、このカードの試合（確認画面を開いた試合）を終了する。
+          // 押した瞬間のコートから引き直すと、開いている間に入れ替わった次の試合を終了してしまう
           const matchId = activeMatchId(court, canInput);
           const activeMatch = board.find((match) => match.matchId === matchId);
           const syncStatus = matchId ? (statusByMatchId[matchId] ?? null) : null;
@@ -456,7 +449,7 @@ export function CourtsPage({
               onDecrement={(gameNumber, side) =>
                 changeScore(court.courtNumber, gameNumber, side, -1)
               }
-              onFinishMatch={(retiredSide) => finishMatch(court.courtNumber, retiredSide)}
+              onFinishMatch={(retiredSide) => matchId && finish(matchId, retiredSide)}
               finishSheetOf={finishSheetOf}
               fix={fixActions}
             />

@@ -6,6 +6,7 @@ import {
   selectMatchRows,
   toViewMatchRow,
   withinLimit,
+  type SupabaseReadClient,
 } from '@/db/courts';
 import { createSupabaseServerClient } from '@/db/server';
 import type { MatchesViewInput } from '@/usecases/build-matches-view';
@@ -63,10 +64,7 @@ export async function findMatchesBoardData(
  * 上限を超えたとき**どの行が欠けるかが決まっている**よう、コート番号・順番で並べる
  * （欠けるのはコートが未定の試合と、番号の大きいコートのほう）。
  */
-async function findAllMatches(
-  supabase: ReturnType<typeof createSupabaseServerClient>,
-  competitionId: string
-) {
+async function findAllMatches(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await selectMatchRows(supabase, competitionId)
     .order('court_number', { ascending: true })
     .order('order_in_court', { ascending: true })

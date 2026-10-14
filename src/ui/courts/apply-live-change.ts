@@ -9,7 +9,11 @@ import type { CourtMatch, CourtMatchStatus, MatchSyncState } from '@/ui/courts/t
  * 1 点ごとにコート全部ぶんを取り直す（docs/roadmap.md の 1 の通信量の注意）。
  * 手元に無い試合の変化だけは当てる先が無いので、`needsRefresh` で「読み直して」と返す。
  *
- * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md
+ * 進行表（`src/ui/matches/use-live-matches.ts`）も同じ判断を使う（同じ試合が 2 つの画面で違って
+ * 見えないように）。進行表は点を入れないので、手元の点（`pendingByMatchId`）は空で渡す。
+ * 置き場所が `courts/` なのは、結果LIVE で先に作ったため。
+ *
+ * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md（進行表: docs/specs/2026-10-14-matches-real-data.md）
  */
 
 export type LiveChange =

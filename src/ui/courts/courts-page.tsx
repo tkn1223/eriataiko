@@ -200,6 +200,13 @@ export function CourtsPage({
     [refreshScheduler]
   );
 
+  // 自分の終了・取り消しが戻らないまま待ちが終わり、その間に当てなかった知らせがあったら読み直す。
+  // 当てなかったのがほかの人の終了・取り消しだったら、読み直さないと次の変化まで記録と食い違う
+  useEffect(
+    () => appScoreSyncStore.subscribeMatchEchoGaveUp(() => refreshScheduler.request()),
+    [refreshScheduler]
+  );
+
   /** 変化を一覧に当てる。読み直しの最中なら、読み直した一覧に当て直すために覚えておく。 */
   function applyChange(change: LiveChange): boolean {
     refreshScheduler.record(change);

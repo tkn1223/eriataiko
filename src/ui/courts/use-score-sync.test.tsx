@@ -1244,6 +1244,85 @@ describe('useScoreSync', () => {
       expect(shouldApply(LIVE)).toBe(true);
     });
 
+    // 当てなかった知らせは、自分の状態が戻れば「それより古い」と分かる。戻らないまま待ちが
+    // 終わると、本物の変化（ほかの人の終了・取り消し）だったかもしれないので、読み直して確かめる
+    describe('戻らないまま待ちが終わったときの読み直し', () => {
+      function listenGaveUp() {
+        const gaveUp = vi.fn();
+        const unsubscribe = appScoreSyncStore.subscribeMatchEchoGaveUp(gaveUp);
+        return { gaveUp, unsubscribe };
+      }
+
+      test('戻ってこないまま待ちきったとき、待っている間に当てなかった知らせがあれば、読み直しを頼む（1 回）', async () => {
+        vi.useFakeTimers();
+        const { gaveUp } = listenGaveUp();
+        sendAndAccept(DONE);
+        expect(shouldApply(LIVE)).toBe(false);
+        expect(shouldApply(LIVE)).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
+
+        expect(gaveUp).toHaveBeenCalledTimes(1);
+        expect(gaveUp).toHaveBeenCalledWith('m');
+      });
+
+      test('待ちきっても、当てなかった知らせが無ければ読み直しは頼まない', async () => {
+        vi.useFakeTimers();
+        const { gaveUp } = listenGaveUp();
+        sendAndAccept(DONE);
+
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
+
+        expect(gaveUp).not.toHaveBeenCalled();
+      });
+
+      test('自分の状態が戻って待ちが終わったときは、当てなかった知らせがあっても読み直しは頼まない', async () => {
+        vi.useFakeTimers();
+        const { gaveUp } = listenGaveUp();
+        sendAndAccept(DONE);
+        expect(shouldApply(LIVE)).toBe(false);
+        expect(shouldApply(DONE)).toBe(true);
+
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
+
+        expect(gaveUp).not.toHaveBeenCalled();
+      });
+
+      test('送れなかったとき、送っている間に当てなかった知らせがあれば、読み直しを頼む', () => {
+        const { gaveUp } = listenGaveUp();
+        const ticket = appScoreSyncStore.expectMatchEcho('m', LIVE);
+        expect(shouldApply(DONE)).toBe(false);
+
+        ticket.failed();
+
+        expect(gaveUp).toHaveBeenCalledWith('m');
+      });
+
+      test('つながり直したとき（読み直しはそちらで頼む）は、ここでは頼まない', async () => {
+        vi.useFakeTimers();
+        const { gaveUp } = listenGaveUp();
+        sendAndAccept(DONE);
+        expect(shouldApply(LIVE)).toBe(false);
+
+        appScoreSyncStore.forgetAwaitingEchoes();
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
+
+        expect(gaveUp).not.toHaveBeenCalled();
+      });
+
+      test('受け取りをやめたら呼ばれない', async () => {
+        vi.useFakeTimers();
+        const { gaveUp, unsubscribe } = listenGaveUp();
+        unsubscribe();
+        sendAndAccept(DONE);
+        expect(shouldApply(LIVE)).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS);
+
+        expect(gaveUp).not.toHaveBeenCalled();
+      });
+    });
+
     test('つながったとき（forgetAwaitingEchoes）は待つのをやめる。送っている最中の状態は待ち続ける', () => {
       sendAndAccept(DONE);
       appScoreSyncStore.expectMatchEcho('m', LIVE); // まだ返事が来ていない

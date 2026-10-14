@@ -1762,6 +1762,34 @@ describe('CourtsPage', () => {
       expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
     });
 
+    test('自分の状態が戻らないまま待ちが終わり、その間に当てなかった知らせがあったら、1 回読み直す', async () => {
+      renderPage();
+      await finishThenReopenOnCourt1();
+      // 「もう一度終了する」を送っている最中（返事がまだ来ない）
+      let respond!: (response: Response) => void;
+      vi.mocked(fetch).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            respond = resolve;
+          })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3));
+      // 届いた「取り消し」の知らせ（自分の 1 つ前の状態の戻り）と、自分のどの状態とも違う知らせ。
+      // どちらも当てない。後のほうは、ほかの人の変化だったかもしれない
+      act(() => liveMock.handlers!.onChange(liveEcho()));
+      act(() => liveMock.handlers!.onChange(matchChange({ status: 'waiting', finishedAt: null })));
+      expect(refresh).not.toHaveBeenCalled();
+
+      // 終了は断られた（自分の終了の知らせはもう来ない）
+      await act(async () =>
+        respond(new Response(JSON.stringify({ error: '終了できません。' }), { status: 400 }))
+      );
+
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    });
+
     test('つながり直したあとは、自分の終了・取り消しの戻りを待たずに、届いた変化を当てる', async () => {
       renderPage();
       await finishThenReopenOnCourt1();

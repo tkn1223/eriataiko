@@ -210,7 +210,13 @@ export function CourtsPage({
   function handleLiveChange(change: LiveChange) {
     // 自分が送った点の戻りなら、戻り待ちを消す（そのあとの当てる判断に効く。use-score-sync.ts）
     if (change.kind === 'score') appScoreSyncStore.noteRemoteScore(change);
-    else forgetReopenFailure(change.matchId);
+    else {
+      // 自分が送った終了・取り消しより古い知らせは当てない。当てると画面が一瞬前の状態に戻り、
+      // 枠が作り直されて開いていた確認画面が閉じる。当てなかった知らせは読み直しの当て直しにも
+      // 入れない（applyChange に渡さない）。
+      if (!appScoreSyncStore.noteRemoteMatch(change)) return;
+      forgetReopenFailure(change.matchId);
+    }
     if (applyChange(change)) refreshScheduler.request();
   }
 
@@ -325,9 +331,12 @@ export function CourtsPage({
     if (reopenStates[matchId]?.pending) return;
     setReopenStates((previous) => ({ ...previous, [matchId]: { pending: true, error: null } }));
 
+    // 取り消しが購読で戻ってくるまで、それより古い「終了」の知らせは当てない（use-score-sync.ts）
+    const echo = appScoreSyncStore.expectMatchEcho(matchId, 'live');
     const result = await sendRequest({ url: `/api/matches/${matchId}/result`, method: 'DELETE' });
 
     if (result.ok) {
+      echo.accepted();
       setReopenStates((previous) => {
         const rest = { ...previous };
         delete rest[matchId];
@@ -338,6 +347,7 @@ export function CourtsPage({
       return;
     }
 
+    echo.failed();
     const error = shouldRetry(result)
       ? REOPEN_RETRY_MESSAGE
       : result.kind === 'http'

@@ -105,10 +105,8 @@ export async function secureScorerForScoring(
   const standing = standingOfPlayer(input.scorer, input.playerId, input.now);
 
   if (standing === 'other') {
-    throw otherIsScoringError(
-      input.scorer!,
-      '点は保存していません。入力するには、先に引き継いでください。'
-    );
+    // 画面はこの理由に「送れなかった点」を添えて出す（理由は名前だけにしておく。仕様 ⑧）
+    throw otherIsScoringError(input.scorer!, '');
   }
 
   if (standing === 'mine') {

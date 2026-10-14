@@ -7,7 +7,13 @@ import { endingOfRetiredSide } from '@/domain/match-rules';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { LiveDownNotice } from '@/ui/components/live-down-notice';
 import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
-import { CourtLiveCard, type FixActions, type ReopenState } from '@/ui/courts/court-live-card';
+import { createClock } from '@/ui/courts/clock';
+import {
+  CourtLiveCard,
+  type FixActions,
+  type ReopenState,
+  type ScorerControl,
+} from '@/ui/courts/court-live-card';
 import { deriveCourts } from '@/ui/courts/derive-courts';
 import { createLiveBoard } from '@/ui/courts/live-board';
 import { overlayPendingScores } from '@/ui/courts/overlay-pending-scores';
@@ -17,6 +23,7 @@ import {
   REFRESH_SETTLE_MS,
 } from '@/ui/courts/refresh-scheduler';
 import { shouldRetry } from '@/ui/courts/save-retry-policy';
+import { scorerViewOf } from '@/ui/courts/scorer-view';
 import { sendRequest } from '@/ui/courts/send-request';
 import {
   activeMatchId,
@@ -48,7 +55,21 @@ type Props = {
   emptyReason: CourtsEmptyReason | null;
   /** 読む上限を超えて、コートや消化数が出しきれていないかもしれない。 */
   truncated: boolean;
+  /**
+   * 選手として入った人の participants.id。担当が自分かの判断に使う。観戦者・未入場は null。
+   * （試合の担当は参加者の id で届くので、入場している人の id ではなくこちらで比べる）
+   */
+  myParticipantId: string | null;
+  /** 参加者の id → 担当として出す名前（「愛知南のたろう」）。担当の変化は id だけで届くので、名前はここから引く。 */
+  scorerLabels: Record<string, string>;
 };
+
+/**
+ * 他の人が担当の試合がある間、時計を進める間隔。5 分で外れる担当を、開いたままの画面で
+ * 「入力する人がいません」に切り替えるのに使う。細かくしても見た目の差は無い（外れる判断は 5 分刻みでなく、
+ * 見る側が気づければよい）ので、通信も描き直しも少ない 10 秒にする。
+ */
+const SCORER_CLOCK_TICK_MS = 10_000;
 
 /**
  * コートのカードが 0 枚のときの案内。
@@ -154,9 +175,16 @@ export function CourtsPage({
   canInput,
   emptyReason,
   truncated,
+  myParticipantId,
+  scorerLabels,
 }: Props) {
   const router = useRouter();
-  const { sync, finish, statusByMatchId } = useScoreSync();
+  const { sync, finish, claimScorer, releaseScorer, dismissScorerRejection, statusByMatchId } =
+    useScoreSync();
+  // 5 分で外れる担当を見分けるための「いま」。描画の最中に Date.now() を読まないよう、外部ストアにして
+  // 一定の間隔と、知らせが届いたときに進める（clock.ts）
+  const [clock] = useState(createClock);
+  const now = useSyncExternalStore(clock.subscribe, clock.get, clock.get);
 
   // 開いたときの様子は、サーバーから読んだ試合に、アプリの中で預かっている「手元の点」を
   // 重ねたもの（別の画面から戻ったとき、押した点が消えて見えないように。overlay-pending-scores.ts）。
@@ -166,6 +194,20 @@ export function CourtsPage({
   const board = useSyncExternalStore(liveBoard.subscribe, liveBoard.get, liveBoard.get);
   // 終了の確認画面は試合ごとにここで覚える。開いている試合が終わったら閉じる
   const { finishSheetOf } = useFinishSheets(board);
+
+  // 担当を取る・やめる操作を始めたときの、その試合の担当（参加者の id）。操作が受け付けられたとき、
+  // その間に別の人が取っていたら（その知らせが先に届いていたら）、古い結果で上書きしないための目印
+  const [scorerAtOpStart] = useState(() => new Map<string, string | null>());
+
+  // 他の人が担当の試合がある間だけ、時計を進める（5 分で外れた担当を、開いたままの画面で切り替える）
+  const hasOtherScorer = board.some(
+    (match) => match.scorerParticipantId !== null && match.scorerParticipantId !== myParticipantId
+  );
+  useEffect(() => {
+    if (!hasOtherScorer) return;
+    const timer = setInterval(() => clock.tick(), SCORER_CLOCK_TICK_MS);
+    return () => clearInterval(timer);
+  }, [hasOtherScorer, clock]);
 
   // 読み直しは、依頼をまとめて連続しないようにする。読み直しの間に届いた変化も覚えておく。
   const [refreshScheduler] = useState(() =>
@@ -227,8 +269,19 @@ export function CourtsPage({
       // 入れない（applyChange に渡さない）。
       if (!appScoreSyncStore.noteRemoteMatch(change)) return;
       forgetReopenFailure(change.matchId);
+      // 担当の変化が届いた。5 分で外れるかを見る「いま」を新しくしてから当てる
+      clock.tick();
     }
-    if (applyChange(change)) refreshScheduler.request();
+    let needsRefresh = applyChange(change);
+    // 画面を読み込んだあとに入った参加者が担当になった。名前の表に無いので、読み直して名前を引く
+    if (
+      change.kind === 'match' &&
+      change.scorerParticipantId !== null &&
+      !(change.scorerParticipantId in scorerLabels)
+    ) {
+      needsRefresh = true;
+    }
+    if (needsRefresh) refreshScheduler.request();
   }
 
   /**
@@ -258,6 +311,46 @@ export function CourtsPage({
       finishedAt: status === 'done' ? new Date().toISOString() : null,
       maxGameCount: target.maxGameCount,
       ending: endingOfRetiredSide(status === 'done' ? retiredSide : null),
+      // 終了の取り消し（直す）は、押した人がその試合の担当になる。終了では担当は変わらない
+      ...(status === 'live' && myParticipantId
+        ? { scorerParticipantId: myParticipantId, scorerLastScoredAt: new Date().toISOString() }
+        : {
+            scorerParticipantId: target.scorerParticipantId,
+            scorerLastScoredAt: target.scorerLastScoredAt,
+          }),
+    });
+  }
+
+  /**
+   * 担当を取る・やめる操作が受け付けられたら、その結果を手元の一覧に当てる（購読が止まっていても、
+   * 押した本人の画面は変わる）。断られたら読み直して、本当の担当を出す。
+   * 操作を送っている間に別の人が取っていたら（その知らせが先に届いていたら）、古い結果では上書きしない。
+   */
+  function applyOwnScorerResult(event: {
+    matchId: string;
+    kind: 'claim' | 'release';
+    result: string;
+  }) {
+    const startedFrom = scorerAtOpStart.get(event.matchId);
+    scorerAtOpStart.delete(event.matchId);
+    // 受け付けられなかった／この画面が知らない操作（別の画面から始めて戻ってきた）は、読み直して本当の担当を出す
+    if (event.result !== 'accepted' || startedFrom === undefined) {
+      refreshScheduler.request();
+      return;
+    }
+    const target = liveBoard.get().find((match) => match.matchId === event.matchId);
+    if (!target || target.scorerParticipantId !== startedFrom) return;
+    applyChange({
+      kind: 'match',
+      matchId: target.matchId,
+      status: target.status,
+      courtNumber: target.courtNumber,
+      orderInCourt: target.orderInCourt,
+      finishedAt: target.finishedAt,
+      maxGameCount: target.maxGameCount,
+      ending: target.ending,
+      scorerParticipantId: event.kind === 'claim' ? myParticipantId : null,
+      scorerLastScoredAt: event.kind === 'claim' ? new Date().toISOString() : null,
     });
   }
 
@@ -282,10 +375,41 @@ export function CourtsPage({
     []
   );
 
+  const handleScorerOp = useEffectEvent(applyOwnScorerResult);
+  useEffect(() => appScoreSyncStore.subscribeScorerOp((event) => handleScorerOp(event)), []);
+
   const courts = useMemo(() => deriveCourts(board), [board]);
+
+  /** 試合の入力担当の見せ方と操作。今の試合も、直し中の試合も、試合の id で引く。 */
+  function scorerControlOf(matchId: string): ScorerControl {
+    const match = board.find((m) => m.matchId === matchId);
+    return {
+      view: scorerViewOf({
+        scorerParticipantId: match?.scorerParticipantId ?? null,
+        scorerLastScoredAt: match?.scorerLastScoredAt ?? null,
+        myParticipantId,
+        labels: scorerLabels,
+        now,
+        scorerOp: statusByMatchId[matchId]?.scorerOp,
+      }),
+      onClaim: () => startScorerOp(matchId, () => claimScorer(matchId, false)),
+      onTakeOver: () => startScorerOp(matchId, () => claimScorer(matchId, true)),
+      onRelease: () => startScorerOp(matchId, () => releaseScorer(matchId)),
+      onDismissRejection: () => dismissScorerRejection(matchId),
+    };
+  }
+
+  /** 操作を始める。そのときの担当を覚えておいて、受け付けられたときの上書きの判断に使う。 */
+  function startScorerOp(matchId: string, start: () => void) {
+    const target = liveBoard.get().find((match) => match.matchId === matchId);
+    scorerAtOpStart.set(matchId, target?.scorerParticipantId ?? null);
+    start();
+  }
 
   /** 1 つの試合の 1 ゲームの得点を 1 点だけ動かし、その点数を保存の入口に送る。 */
   function changeScoreOfMatch(matchId: string, gameNumber: number, side: 'A' | 'B', delta: 1 | -1) {
+    // 点を入れられるのは担当（自分）だけ。担当でない画面は ＋ − を出さないが、古い画面から届いた押下でも送らない
+    if (scorerControlOf(matchId).view.kind !== 'mine') return;
     const latestBoard = liveBoard.get();
     const target = latestBoard.find((match) => match.matchId === matchId);
     if (!target) return;
@@ -451,6 +575,7 @@ export function CourtsPage({
               }
               onFinishMatch={(retiredSide) => matchId && finish(matchId, retiredSide)}
               finishSheetOf={finishSheetOf}
+              scorerOf={scorerControlOf}
               fix={fixActions}
             />
           );

@@ -18,6 +18,8 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
+    scorerParticipantId: null,
+    scorerLastScoredAt: null,
     reopened: false,
     classLabel: { name: '1部', colorNumber: 1 },
     roundLabel: '予選 1回戦',
@@ -51,6 +53,8 @@ function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> 
     finishedAt: null,
     maxGameCount: 3,
     ending: 'normal',
+    scorerParticipantId: null,
+    scorerLastScoredAt: null,
     ...overrides,
   };
 }
@@ -279,5 +283,68 @@ describe('棄権の印（ending）を当てる', () => {
       NO_PENDING
     );
     expect(onlyEndingChanged.board[0].ending).toBe('retired_side_a');
+  });
+});
+
+describe('届いた担当の変化を当てる（docs/specs/2026-10-14-match-scorer.md）', () => {
+  test('担当と、最後に点を入れた時刻が試合に当たる', () => {
+    const result = applyLiveChange(
+      [match()],
+      matchChange({
+        scorerParticipantId: 'p-jiro',
+        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+      }),
+      NO_PENDING
+    );
+
+    expect(result.board[0]).toMatchObject({
+      scorerParticipantId: 'p-jiro',
+      scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+    });
+    expect(result.needsRefresh).toBe(false);
+  });
+
+  test('担当が外れた（空になった）知らせも当たる', () => {
+    const board = [
+      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+    ];
+
+    const result = applyLiveChange(board, matchChange(), NO_PENDING);
+
+    expect(result.board[0]).toMatchObject({ scorerParticipantId: null, scorerLastScoredAt: null });
+  });
+
+  test('担当も時刻も同じなら、一覧は同じ参照のまま（描き直さない）', () => {
+    const board = [
+      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+    ];
+
+    const result = applyLiveChange(
+      board,
+      matchChange({
+        scorerParticipantId: 'p-jiro',
+        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+      }),
+      NO_PENDING
+    );
+
+    expect(result.board).toBe(board);
+  });
+
+  test('点を入れるたびに更新される「最後に点を入れた時刻」だけの変化も当たる', () => {
+    const board = [
+      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+    ];
+
+    const result = applyLiveChange(
+      board,
+      matchChange({
+        scorerParticipantId: 'p-jiro',
+        scorerLastScoredAt: '2027-01-22T10:00:30+00:00',
+      }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].scorerLastScoredAt).toBe('2027-01-22T10:00:30+00:00');
   });
 });

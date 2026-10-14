@@ -24,6 +24,8 @@ function row(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow {
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
+    scorerParticipantId: null,
+    scorerLastScoredAt: null,
     divisionId: 'div-1',
     stageId: 'stage-1',
     roundName: '予選 1回戦',

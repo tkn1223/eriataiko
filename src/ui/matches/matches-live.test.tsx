@@ -379,6 +379,8 @@ describe('結果LIVE と進行表を行き来しても、購読はアプリ全�
         canInput={false}
         emptyReason={null}
         truncated={false}
+        myParticipantId={null}
+        scorerLabels={{}}
       />
     );
   }

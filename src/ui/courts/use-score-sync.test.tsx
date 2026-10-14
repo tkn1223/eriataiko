@@ -356,6 +356,9 @@ describe('useScoreSync', () => {
         finishing: false,
         finishRetrying: false,
         finishRejectedMessage: null,
+        scorerOp: null,
+        scorerOpMessage: null,
+        scorerRejection: null,
         started: true,
         pendingScores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 1 }],
       });
@@ -472,6 +475,9 @@ describe('useScoreSync', () => {
         finishing: false,
         finishRetrying: false,
         finishRejectedMessage: null,
+        scorerOp: null,
+        scorerOpMessage: null,
+        scorerRejection: null,
         started: true,
         pendingScores: [],
       });
@@ -1357,5 +1363,440 @@ describe('useScoreSync', () => {
 
       expect(shouldApply(LIVE)).toBe(true);
     });
+  });
+});
+
+/**
+ * 得点入力の担当（docs/specs/2026-10-14-match-scorer.md）。
+ * 担当を取る・やめる操作は、点と同じ預かり場所を通す（電波が細くて失敗しても入力は止めず、裏で送り直す）。
+ */
+describe('担当でないと断られた点（⑧）', () => {
+  const NOT_SCORER = {
+    error: '愛知北のじろうさんが担当しています。',
+    code: 'not-scorer',
+  };
+
+  test('断られると、理由と送れなかった点が知らせとして残る。ふつうの「保存できませんでした」の理由とは別', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection).toEqual({
+        message: '愛知北のじろうさんが担当しています。',
+        games: [{ gameNumber: 1, sideAScore: 12, sideBScore: 10 }],
+      })
+    );
+    expect(result.current.statusByMatchId['m']?.rejectedMessage).toBeNull();
+    expect(result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+  });
+
+  test('送り直さない（送り直しても、いまの担当の点を上書きしようとするだけ）', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('いくつかのゲームの点が断られたら、全部ゲーム番号順に並ぶ', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => {
+      result.current.sync({ matchId: 'm', gameNumber: 2, sideAScore: 3, sideBScore: 5 });
+      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 21, sideBScore: 15 });
+    });
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection?.games).toEqual([
+        { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
+        { gameNumber: 2, sideAScore: 3, sideBScore: 5 },
+      ])
+    );
+  });
+
+  test('断られた点は「手元の点」として残らない（サーバーのいまの担当の点を優先して出すため）', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection).not.toBeNull()
+    );
+    expect(result.current.statusByMatchId['m']?.pendingScores).toEqual([]);
+  });
+
+  test('断られた点があっても、閉じる・更新しようとしたときの確認は出ない（もう送らない点なので）', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection).not.toBeNull()
+    );
+
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test('断られた理由を試合の id ごとに通知する（画面が読み直して、サーバーの点に戻すため）', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const rejected: string[] = [];
+    const unsubscribe = appScoreSyncStore.subscribeScoreRejected((matchId) =>
+      rejected.push(matchId)
+    );
+
+    act(() =>
+      appScoreSyncStore.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 })
+    );
+
+    await waitFor(() => expect(rejected).toEqual(['m']));
+    unsubscribe();
+  });
+
+  test('「閉じる」で知らせが消える。ほかの試合の知らせは残る', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => {
+      result.current.sync({ matchId: 'm1', gameNumber: 1, sideAScore: 12, sideBScore: 10 });
+      result.current.sync({ matchId: 'm2', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+    });
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m2']?.scorerRejection).not.toBeNull()
+    );
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m1']?.scorerRejection).not.toBeNull()
+    );
+
+    act(() => appScoreSyncStore.dismissScorerRejection('m1'));
+
+    expect(result.current.statusByMatchId['m1']).toBeUndefined();
+    expect(result.current.statusByMatchId['m2']?.scorerRejection).not.toBeNull();
+  });
+
+  test('もう一度点を押せば、知らせは消えて、新しい値を改めて送る（引き継いだあとなど）', async () => {
+    let scorer = false;
+    vi.mocked(fetch).mockImplementation(async () =>
+      scorer ? jsonResponse(200, { ok: true }) : jsonResponse(409, NOT_SCORER)
+    );
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection).not.toBeNull()
+    );
+
+    scorer = true;
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 13, sideBScore: 10 }));
+
+    expect(result.current.statusByMatchId['m']?.scorerRejection).toBeNull();
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  });
+
+  test('code の無い 409（終了した試合など）は、今までどおり rejectedMessage に出て、知らせにはならない', async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      jsonResponse(409, { error: '終了した試合です。' })
+    );
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 }));
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.rejectedMessage).toBe('終了した試合です。')
+    );
+    expect(result.current.statusByMatchId['m']?.scorerRejection).toBeNull();
+  });
+
+  test('点が断られたまま「試合を終了する」を押すと、終了は送らず、理由を出す', async () => {
+    vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 }));
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerRejection).not.toBeNull()
+    );
+
+    act(() => result.current.finish('m'));
+
+    expect(result.current.statusByMatchId['m']?.finishRejectedMessage).toContain(
+      '点が保存できていない'
+    );
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).not.toContain(
+      '/api/matches/m/result'
+    );
+  });
+
+  test('終了が担当でないと断られたら、その理由が終了の案内に出る', async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      jsonResponse(409, {
+        error: '愛知北のじろうさんが担当しています。終了するには、先に引き継いでください。',
+        code: 'not-scorer',
+      })
+    );
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.finish('m'));
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.finishRejectedMessage).toBe(
+        '愛知北のじろうさんが担当しています。終了するには、先に引き継いでください。'
+      )
+    );
+  });
+});
+
+describe('担当を取る・やめる', () => {
+  test('担当を取ると POST /scorer を送る。引き継がないときは本文なし', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true, outcome: 'claimed' }));
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/api/matches/m/scorer');
+    expect(init?.method).toBe('POST');
+    expect(init?.body).toBeUndefined();
+  });
+
+  test('引き継ぐときは本文で takeOver: true を送る', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true, outcome: 'took-over' }));
+
+    act(() => appScoreSyncStore.claimScorer('m', true));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(vi.mocked(fetch).mock.calls[0][1]?.body as string)).toEqual({
+      takeOver: true,
+    });
+  });
+
+  test('送っている間は「取る操作の途中」が見え、受け付けられると消えて、受け付けられたと知らせる', async () => {
+    let resolveClaim!: (response: Response) => void;
+    vi.mocked(fetch).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveClaim = resolve;
+        })
+    );
+    const events: unknown[] = [];
+    const unsubscribe = appScoreSyncStore.subscribeScorerOp((event) => events.push(event));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    expect(result.current.statusByMatchId['m']?.scorerOp).toEqual({
+      kind: 'claim',
+      retrying: false,
+    });
+
+    await act(async () => {
+      resolveClaim(jsonResponse(200, { ok: true }));
+    });
+
+    expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
+    expect(events).toEqual([{ matchId: 'm', kind: 'claim', result: 'accepted' }]);
+    unsubscribe();
+  });
+
+  test('つながらないときは送り直し、その間も「取る操作の途中」が見える。つながれば受け付けられる', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch)
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current.statusByMatchId['m']?.scorerOp).toEqual({
+      kind: 'claim',
+      retrying: true,
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
+  });
+
+  test('担当を取る操作が失敗していても、点は押せて、そのまま送られる（⑤）', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      if (String(input).endsWith('/scorer')) throw new Error('network down');
+      return jsonResponse(200, { ok: true });
+    });
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const urls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+    expect(urls).toContain('/api/matches/m/scores');
+    // 点は保存できているので「保存できていません」は出ない。取る操作の送り直しだけが続く
+    expect(result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+    expect(result.current.statusByMatchId['m']?.scorerOp?.retrying).toBe(true);
+  });
+
+  test('ほかの人が入力中で断られたら、送り直さず、理由は出さない（担当の表示が理由を語るため）。断られたと知らせる', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockImplementation(async () =>
+      jsonResponse(409, { error: '愛知北のじろうさんが入力しています。', code: 'scorer-active' })
+    );
+    const events: unknown[] = [];
+    appScoreSyncStore.subscribeScorerOp((event) => events.push(event));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
+    expect(result.current.statusByMatchId['m']?.scorerOpMessage ?? null).toBeNull();
+    expect(events).toEqual([{ matchId: 'm', kind: 'claim', result: 'rejected' }]);
+  });
+
+  test('参加者でないなど、理由の印が無い断られ方は、日本語の理由を出す', async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      jsonResponse(403, { error: 'この大会の参加者として登録されていません。' })
+    );
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerOpMessage).toBe(
+        'この大会の参加者として登録されていません。'
+      )
+    );
+    expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
+  });
+
+  test('次の操作を始めると、前の断られた理由は消える', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse(403, { error: '参加者ではありません。' }))
+      .mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    await waitFor(() =>
+      expect(result.current.statusByMatchId['m']?.scorerOpMessage).toBe('参加者ではありません。')
+    );
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+
+    expect(result.current.statusByMatchId['m']?.scorerOpMessage ?? null).toBeNull();
+  });
+
+  test('担当をやめると DELETE /scorer を送る', async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true, outcome: 'released' }));
+
+    act(() => appScoreSyncStore.releaseScorer('m'));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe('/api/matches/m/scorer');
+    expect(init?.method).toBe('DELETE');
+  });
+
+  test('送れていない点があるうちは、やめる操作は送らない（やめたあとに点が届くと、また担当になってしまうため）', async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockImplementation(async (input) =>
+      String(input).endsWith('/scores') && fetchMock.mock.calls.length === 1
+        ? Promise.reject(new Error('network down'))
+        : jsonResponse(200, { ok: true })
+    );
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => appScoreSyncStore.releaseScorer('m'));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // 点が送れていない間は、やめる操作を送っていない。でも画面ではやめた扱い
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['/api/matches/m/scores']);
+    expect(result.current.statusByMatchId['m']?.scorerOp).toEqual({
+      kind: 'release',
+      retrying: false,
+    });
+
+    // 点が届いたら、そのあとにやめる操作を送る
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/matches/m/scores',
+      '/api/matches/m/scores',
+      '/api/matches/m/scorer',
+    ]);
+  });
+
+  test('点が断られたときも、待たせていたやめる操作は送る（待ち続けない）', async () => {
+    vi.mocked(fetch).mockImplementation(async (input) =>
+      String(input).endsWith('/scores')
+        ? jsonResponse(409, { error: '愛知北のじろうさんが担当しています。', code: 'not-scorer' })
+        : jsonResponse(200, { ok: true })
+    );
+    const { result } = renderHook(() => useScoreSync());
+    // 点の返事が来る前に、やめる操作を頼む
+    act(() => {
+      result.current.sync({ matchId: 'm', gameNumber: 1, sideAScore: 1, sideBScore: 0 });
+      result.current.releaseScorer('m');
+    });
+
+    await waitFor(() =>
+      expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url))).toContain(
+        '/api/matches/m/scorer'
+      )
+    );
+  });
+
+  test('取る操作のあとにやめる操作を頼むと、やめる操作だけが残る（最後の頼みが勝つ）', async () => {
+    let resolveClaim!: (response: Response) => void;
+    vi.mocked(fetch)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveClaim = resolve;
+          })
+      )
+      .mockResolvedValue(jsonResponse(200, { ok: true }));
+    const events: unknown[] = [];
+    appScoreSyncStore.subscribeScorerOp((event) => events.push(event));
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.claimScorer('m', false));
+    act(() => appScoreSyncStore.releaseScorer('m'));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    // 古い取る操作の返事が今ごろ来ても、やめる操作の状態を壊さない
+    await act(async () => {
+      resolveClaim(jsonResponse(200, { ok: true }));
+    });
+
+    expect(events).toEqual([{ matchId: 'm', kind: 'release', result: 'accepted' }]);
+    expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
   });
 });

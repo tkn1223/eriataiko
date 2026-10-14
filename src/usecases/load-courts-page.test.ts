@@ -20,6 +20,7 @@ const EMPTY_DATA: CourtsViewInput = {
   ],
   matches: [],
   previousMatches: [],
+  participants: [],
   truncated: false,
 };
 

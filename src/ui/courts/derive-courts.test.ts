@@ -15,6 +15,8 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
+    scorerParticipantId: null,
+    scorerLastScoredAt: null,
     reopened: false,
     classLabel: { name: '1部', colorNumber: 1 },
     roundLabel: '予選 1回戦',

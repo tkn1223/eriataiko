@@ -1063,17 +1063,30 @@ export async function addLiveMatchLater(
 // 入力の担当（docs/specs/2026-10-14-match-scorer.md）の確認用
 // ---------------------------------------------------------------------
 
-/** DB に保存された試合の担当（参加者の id と、最後に点を入れた時刻）を読む。 */
-export async function findMatchScorer(
-  matchId: string
-): Promise<{ participantId: string | null; lastScoredAt: string | null }> {
+/**
+ * DB に保存された試合の担当を読む。`lastScoredAt` は担当の「最後に点を入れた時刻」で、担当になった時刻と
+ * その試合の点の保存時刻（`game_scores.updated_at`）の遅いほう（`src/domain/scorer.ts` の `lastScoredAtOf`）。
+ */
+export async function findMatchScorer(matchId: string): Promise<{
+  participantId: string | null;
+  claimedAt: string | null;
+  lastScoredAt: string | null;
+}> {
   const { data, error } = await admin
     .from('matches')
-    .select('scorer_participant_id, scorer_last_scored_at')
+    .select('scorer_participant_id, scorer_claimed_at, game_scores(updated_at)')
     .eq('id', matchId)
+    .order('updated_at', { referencedTable: 'game_scores', ascending: false })
+    .limit(1, { referencedTable: 'game_scores' })
     .single();
   if (error) throw new Error(`担当を読めませんでした: ${error.message}`);
-  return { participantId: data.scorer_participant_id, lastScoredAt: data.scorer_last_scored_at };
+  const claimedAt = data.scorer_claimed_at;
+  const lastSavedAt = data.game_scores[0]?.updated_at ?? null;
+  const lastScoredAt =
+    claimedAt && lastSavedAt && Date.parse(lastSavedAt) > Date.parse(claimedAt)
+      ? lastSavedAt
+      : claimedAt;
+  return { participantId: data.scorer_participant_id, claimedAt, lastScoredAt };
 }
 
 /** seed.sql のチーム名・名前から、その人の participants.id を引く。 */
@@ -1092,7 +1105,7 @@ export async function findParticipantId(teamName: string, playerName: string): P
 
 /**
  * 画面を使わずに、データベースで試合の担当を決める（「ほかの人が入力している」を再現する）。
- * `minutesAgo` 分前に最後の点を入れた担当にする（既定は「いま」）。
+ * `minutesAgo` 分前に担当になり、最後の点もそのときに入れた担当にする（既定は「いま」）。
  */
 export async function setMatchScorerDirectly(
   matchId: string,
@@ -1101,28 +1114,32 @@ export async function setMatchScorerDirectly(
 ): Promise<void> {
   const { error } = await admin
     .from('matches')
-    .update({
-      scorer_participant_id: participantId,
-      scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
-    })
+    .update({ scorer_participant_id: participantId })
     .eq('id', matchId);
   if (error) throw new Error(`担当を書き換えられませんでした: ${error.message}`);
+  await shiftMatchScorerTime(matchId, minutesAgo);
 }
 
-/** 画面を使わずに、担当の「最後に点を入れた時刻」だけをずらす（「5 分たった」を作る）。 */
+/**
+ * 画面を使わずに、担当の「最後に点を入れた時刻」をずらす（「5 分たった」を作る）。
+ * 最後に点を入れた時刻は、担当になった時刻（matches）とその試合の点の保存時刻（game_scores）の
+ * 遅いほうなので、両方を同じ時刻にする。
+ */
 export async function shiftMatchScorerTime(matchId: string, minutesAgo: number): Promise<void> {
-  const { error } = await admin
-    .from('matches')
-    .update({ scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString() })
-    .eq('id', matchId);
-  if (error) throw new Error(`担当の時刻を書き換えられませんでした: ${error.message}`);
+  const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  const claimed = await admin.from('matches').update({ scorer_claimed_at: at }).eq('id', matchId);
+  if (claimed.error) {
+    throw new Error(`担当の時刻を書き換えられませんでした: ${claimed.error.message}`);
+  }
+  const saved = await admin.from('game_scores').update({ updated_at: at }).eq('match_id', matchId);
+  if (saved.error) throw new Error(`点の時刻を書き換えられませんでした: ${saved.error.message}`);
 }
 
 /** 画面を使わずに、データベースで試合の担当を外す。 */
 export async function clearMatchScorerDirectly(matchId: string): Promise<void> {
   const { error } = await admin
     .from('matches')
-    .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+    .update({ scorer_participant_id: null, scorer_claimed_at: null })
     .eq('id', matchId);
   if (error) throw new Error(`担当を外せませんでした: ${error.message}`);
 }

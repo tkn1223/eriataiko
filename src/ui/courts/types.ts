@@ -188,8 +188,15 @@ export type CourtMatch = {
   finishedAt: string | null;
   /** いまの入力担当（`matches.scorer_participant_id`）。いなければ null。 */
   scorerParticipantId: string | null;
-  /** 担当が最後に点を入れた（担当になった）時刻（ISO 8601）。5 分たつと担当は外れた扱いになる。 */
-  scorerLastScoredAt: string | null;
+  /** 担当になった時刻（`matches.scorer_claimed_at`、ISO 8601）。 */
+  scorerClaimedAt: string | null;
+  /**
+   * ゲーム番号 → そのゲームの点が最後に保存された時刻（`game_scores.updated_at`、ISO 8601）。
+   * 担当になった時刻とこの一番新しいものの遅いほうから 5 分たつと、担当は外れた扱いになる（`scorer-view.ts`）。
+   * ゲームごとに持つのは、届く知らせがゲーム 1 つぶんの行だから（一番新しい値だけを持つと、
+   * 届いた行で置き換えられない）。
+   */
+  scoreSavedAtByGame: Record<number, string>;
   /**
    * 終了を取り消して直している試合か。この画面で取り消した、または取り消されたのを見た試合だけ true。
    * 取り消しても表には痕が残らない（live に戻り、finished_at が空になるだけ）ので、

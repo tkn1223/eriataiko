@@ -72,7 +72,7 @@ function toMatchChange(row: unknown): LiveChange | null {
   const orderInCourt = nullableNumber(row.order_in_court);
   // 担当の列が無い古い形の通知は、担当なしとして扱う
   const scorerParticipantId = nullableText(row.scorer_participant_id);
-  const scorerLastScoredAt = nullableText(row.scorer_last_scored_at);
+  const scorerClaimedAt = nullableText(row.scorer_claimed_at);
   if (
     typeof id !== 'string' ||
     typeof status !== 'string' ||
@@ -80,7 +80,7 @@ function toMatchChange(row: unknown): LiveChange | null {
     courtNumber === undefined ||
     orderInCourt === undefined ||
     scorerParticipantId === undefined ||
-    scorerLastScoredAt === undefined ||
+    scorerClaimedAt === undefined ||
     typeof maxGameCount !== 'number' ||
     !(finishedAt === null || typeof finishedAt === 'string')
   ) {
@@ -96,7 +96,7 @@ function toMatchChange(row: unknown): LiveChange | null {
     maxGameCount,
     ending,
     scorerParticipantId,
-    scorerLastScoredAt,
+    scorerClaimedAt,
   };
 }
 
@@ -105,15 +105,18 @@ function toScoreChange(row: unknown): LiveChange | null {
   if (!isRecord(row)) return null;
   const { match_id: matchId, game_number: gameNumber } = row;
   const { side_a_score: sideAScore, side_b_score: sideBScore } = row;
+  // 時刻の無い古い形の通知は、点だけ当てる（担当の時刻は次の読み直しで追いつく）
+  const savedAt = nullableText(row.updated_at);
   if (
     typeof matchId !== 'string' ||
     typeof gameNumber !== 'number' ||
     typeof sideAScore !== 'number' ||
-    typeof sideBScore !== 'number'
+    typeof sideBScore !== 'number' ||
+    savedAt === undefined
   ) {
     return null;
   }
-  return { kind: 'score', matchId, gameNumber, sideAScore, sideBScore };
+  return { kind: 'score', matchId, gameNumber, sideAScore, sideBScore, savedAt };
 }
 
 export type LiveHub = {

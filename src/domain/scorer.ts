@@ -6,6 +6,7 @@
  *
  * - 担当は**試合**に付く（コートではない）
  * - 最後に点を入れてから 5 分たつと、ほかの人の担当は外れた（空いている）扱いになる
+ *   （「最後に点を入れた時刻」は、担当になった時刻とその試合の点が最後に保存された時刻の遅いほう。`lastScoredAtOf`）
  * - 空いている／外れた担当は、誰でも確認なしで取れる。ほかの人が担当中（5 分以内）なら、
  *   「引き継ぐ」と明示したときだけ取れる
  * - **自分が担当の試合は、5 分たっていても自分のまま。** 5 分は「ほかの人が取ってよい」目安で、
@@ -22,9 +23,27 @@ export const SCORER_EXPIRY_MS = 5 * 60 * 1000;
  */
 export type ScorerSlot = {
   holderId: string | null;
-  /** 担当が最後に点を入れた（または担当になった）時刻。 */
+  /** 担当が最後に点を入れた（または担当になった）時刻。`lastScoredAtOf` で求める。 */
   lastScoredAt: Date | null;
 };
+
+/**
+ * 担当が最後に点を入れた時刻。担当になった時刻（`matches.scorer_claimed_at`）と、その試合の点が
+ * 最後に保存された時刻（`game_scores.updated_at` の一番新しいもの）の遅いほう。担当がいなければ null。
+ *
+ * 点を入れるたびに matches へ時刻を書かないのは、全員の画面への知らせが 1 点あたり 2 通に増えるため
+ * （game_scores の 1 通で足りる）。担当でない人の点は保存しないので、点が保存された時刻は担当の時刻と見てよい。
+ * 担当になる前に保存された点（前の担当の点）は、担当になった時刻より古いので結果に効かない。
+ */
+export function lastScoredAtOf(input: {
+  claimedAt: Date | null;
+  lastScoreSavedAt: Date | null;
+}): Date | null {
+  const { claimedAt, lastScoreSavedAt } = input;
+  if (claimedAt === null) return null;
+  if (lastScoreSavedAt === null) return claimedAt;
+  return lastScoreSavedAt.getTime() > claimedAt.getTime() ? lastScoreSavedAt : claimedAt;
+}
 
 /** 自分から見た担当の立場。 */
 export type ScorerStanding =

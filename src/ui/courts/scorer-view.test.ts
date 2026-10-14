@@ -16,7 +16,8 @@ const LABELS = { 'p-me': '愛知南のたろう', 'p-jiro': '愛知北のじろ�
 function view(overrides: Partial<Parameters<typeof scorerViewOf>[0]> = {}) {
   return scorerViewOf({
     scorerParticipantId: null,
-    scorerLastScoredAt: null,
+    scorerClaimedAt: null,
+    scoreSavedAtByGame: {},
     myParticipantId: 'p-me',
     labels: LABELS,
     now: NOW,
@@ -30,29 +31,56 @@ describe('scorerViewOf', () => {
   });
 
   test('自分が担当なら「自分」。5 分以上たっていても自分のまま', () => {
-    expect(view({ scorerParticipantId: 'p-me', scorerLastScoredAt: minutesAgo(1) })).toEqual({
+    expect(view({ scorerParticipantId: 'p-me', scorerClaimedAt: minutesAgo(1) })).toEqual({
       kind: 'mine',
     });
-    expect(view({ scorerParticipantId: 'p-me', scorerLastScoredAt: minutesAgo(30) })).toEqual({
+    expect(view({ scorerParticipantId: 'p-me', scorerClaimedAt: minutesAgo(30) })).toEqual({
       kind: 'mine',
     });
   });
 
   test('ほかの人が 5 分以内に点を入れていれば「ほかの人」。名前はチーム名つき', () => {
-    expect(view({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: minutesAgo(4) })).toEqual({
+    expect(view({ scorerParticipantId: 'p-jiro', scorerClaimedAt: minutesAgo(4) })).toEqual({
       kind: 'other',
       name: '愛知北のじろう',
     });
   });
 
   test('ほかの人の担当が 5 分たったら「いない」になる', () => {
-    expect(view({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: minutesAgo(5) })).toEqual({
+    expect(view({ scorerParticipantId: 'p-jiro', scorerClaimedAt: minutesAgo(5) })).toEqual({
       kind: 'vacant',
     });
   });
 
+  test('担当になってから 5 分たっていても、その試合の点が 5 分以内に保存されていれば「ほかの人」', () => {
+    expect(
+      view({
+        scorerParticipantId: 'p-jiro',
+        scorerClaimedAt: minutesAgo(10),
+        scoreSavedAtByGame: { 1: minutesAgo(9), 2: minutesAgo(4) },
+      })
+    ).toEqual({ kind: 'other', name: '愛知北のじろう' });
+    expect(
+      view({
+        scorerParticipantId: 'p-jiro',
+        scorerClaimedAt: minutesAgo(10),
+        scoreSavedAtByGame: { 1: minutesAgo(9), 2: minutesAgo(6) },
+      })
+    ).toEqual({ kind: 'vacant' });
+  });
+
+  test('担当になる前の点（5 分以上前）があっても、担当になったばかりなら「ほかの人」', () => {
+    expect(
+      view({
+        scorerParticipantId: 'p-jiro',
+        scorerClaimedAt: minutesAgo(1),
+        scoreSavedAtByGame: { 1: minutesAgo(20) },
+      })
+    ).toEqual({ kind: 'other', name: '愛知北のじろう' });
+  });
+
   test('名前の表に無い担当（読み込んだあとに入った参加者）は「ほかの人」と出す', () => {
-    expect(view({ scorerParticipantId: 'p-new', scorerLastScoredAt: minutesAgo(1) })).toEqual({
+    expect(view({ scorerParticipantId: 'p-new', scorerClaimedAt: minutesAgo(1) })).toEqual({
       kind: 'other',
       name: UNKNOWN_SCORER_NAME,
     });
@@ -63,7 +91,7 @@ describe('scorerViewOf', () => {
       view({
         myParticipantId: null,
         scorerParticipantId: 'p-jiro',
-        scorerLastScoredAt: minutesAgo(1),
+        scorerClaimedAt: minutesAgo(1),
       })
     ).toEqual({ kind: 'other', name: '愛知北のじろう' });
     expect(view({ myParticipantId: null })).toEqual({ kind: 'vacant' });
@@ -73,7 +101,7 @@ describe('scorerViewOf', () => {
     expect(
       view({
         scorerParticipantId: 'p-jiro',
-        scorerLastScoredAt: minutesAgo(1),
+        scorerClaimedAt: minutesAgo(1),
         scorerOp: { kind: 'claim', retrying: true },
       })
     ).toEqual({ kind: 'mine' });
@@ -83,14 +111,14 @@ describe('scorerViewOf', () => {
     expect(
       view({
         scorerParticipantId: 'p-me',
-        scorerLastScoredAt: minutesAgo(1),
+        scorerClaimedAt: minutesAgo(1),
         scorerOp: { kind: 'release', retrying: false },
       })
     ).toEqual({ kind: 'vacant' });
   });
 
   test('時刻が読めない担当は、いない扱い', () => {
-    expect(view({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: 'ふしぎな時刻' })).toEqual({
+    expect(view({ scorerParticipantId: 'p-jiro', scorerClaimedAt: 'ふしぎな時刻' })).toEqual({
       kind: 'vacant',
     });
   });

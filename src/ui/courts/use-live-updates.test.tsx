@@ -116,12 +116,12 @@ describe('createLiveHub', () => {
         maxGameCount: 3,
         ending: 'normal',
         scorerParticipantId: null,
-        scorerLastScoredAt: null,
+        scorerClaimedAt: null,
       },
     });
   });
 
-  test('担当（参加者の id）と、最後に点を入れた時刻も状態の変化として渡される', () => {
+  test('担当（参加者の id）と、担当になった時刻も状態の変化として渡される', () => {
     const fake = createFakeClient();
     const { events } = collect(createLiveHub(() => fake.client));
 
@@ -130,7 +130,7 @@ describe('createLiveHub', () => {
       status: 'live',
       finished_at: null,
       scorer_participant_id: 'p-taro',
-      scorer_last_scored_at: '2027-01-22T10:00:00+00:00',
+      scorer_claimed_at: '2027-01-22T10:00:00+00:00',
     });
 
     expect(events).toContainEqual({
@@ -138,7 +138,7 @@ describe('createLiveHub', () => {
       change: expect.objectContaining({
         kind: 'match',
         scorerParticipantId: 'p-taro',
-        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+        scorerClaimedAt: '2027-01-22T10:00:00+00:00',
       }),
     });
   });
@@ -150,12 +150,12 @@ describe('createLiveHub', () => {
     fake.deliver('matches', 'UPDATE', {
       ...MATCH_ROW,
       scorer_participant_id: null,
-      scorer_last_scored_at: null,
+      scorer_claimed_at: null,
     });
 
     expect(events).toContainEqual({
       type: 'change',
-      change: expect.objectContaining({ scorerParticipantId: null, scorerLastScoredAt: null }),
+      change: expect.objectContaining({ scorerParticipantId: null, scorerClaimedAt: null }),
     });
   });
 
@@ -192,11 +192,36 @@ describe('createLiveHub', () => {
       game_number: 2,
       side_a_score: 5,
       side_b_score: 7,
+      updated_at: '2027-01-22T10:00:00.123+00:00',
     });
 
     expect(events).toContainEqual({
       type: 'change',
-      change: { kind: 'score', matchId: 'm-1', gameNumber: 2, sideAScore: 5, sideBScore: 7 },
+      change: {
+        kind: 'score',
+        matchId: 'm-1',
+        gameNumber: 2,
+        sideAScore: 5,
+        sideBScore: 7,
+        savedAt: '2027-01-22T10:00:00.123+00:00',
+      },
+    });
+  });
+
+  test('保存時刻の無い古い形の得点の行は、時刻なし（null）の点の変化として渡される', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.deliver('game_scores', 'UPDATE', {
+      match_id: 'm-1',
+      game_number: 1,
+      side_a_score: 1,
+      side_b_score: 0,
+    });
+
+    expect(events).toContainEqual({
+      type: 'change',
+      change: expect.objectContaining({ kind: 'score', savedAt: null }),
     });
   });
 

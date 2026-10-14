@@ -49,7 +49,7 @@ function claimRequest(body?: unknown) {
 async function scorerOf(matchId: string) {
   const { data } = await admin
     .from('matches')
-    .select('scorer_participant_id, scorer_last_scored_at')
+    .select('scorer_participant_id, scorer_claimed_at')
     .eq('id', matchId)
     .single();
   return data!;
@@ -66,12 +66,26 @@ async function logsOf(matchId: string) {
   return data ?? [];
 }
 
-/** 担当の時刻をずらす（「5 分たった」を作る）。 */
+/**
+ * 担当の時刻をずらす（「5 分たった」を作る）。最後に点を入れた時刻は、担当になった時刻と
+ * 点の保存時刻の遅いほうなので、点があれば点の時刻もずらす。
+ */
 async function setLastScoredAt(matchId: string, minutesAgo: number) {
-  await admin
-    .from('matches')
-    .update({ scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString() })
-    .eq('id', matchId);
+  const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  await admin.from('matches').update({ scorer_claimed_at: at }).eq('id', matchId);
+  await admin.from('game_scores').update({ updated_at: at }).eq('match_id', matchId);
+}
+
+/** 点を 1 つ、`minutesAgo` 分前に保存されたものとして置く。 */
+async function putScoreSavedAt(matchId: string, minutesAgo: number) {
+  const { error } = await admin.from('game_scores').insert({
+    match_id: matchId,
+    game_number: 1,
+    side_a_score: 3,
+    side_b_score: 2,
+    updated_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+  });
+  expect(error).toBeNull();
 }
 
 describe('入場の確かめ', () => {
@@ -101,7 +115,7 @@ describe('入場の確かめ', () => {
       .from('matches')
       .update({
         scorer_participant_id: fixture.people.minamiTaro.participantId,
-        scorer_last_scored_at: new Date().toISOString(),
+        scorer_claimed_at: new Date().toISOString(),
       })
       .eq('id', matchId);
     enterAs({ role: 'viewer' });
@@ -126,7 +140,7 @@ describe('担当を取る', () => {
     expect(await response.json()).toEqual({ ok: true, outcome: 'claimed' });
     const scorer = await scorerOf(matchId);
     expect(scorer.scorer_participant_id).toBe(fixture.people.minamiTaro.participantId);
-    expect(scorer.scorer_last_scored_at).not.toBeNull();
+    expect(scorer.scorer_claimed_at).not.toBeNull();
     expect(await logsOf(matchId)).toEqual([
       expect.objectContaining({
         player_name: fixture.people.minamiTaro.session.playerName,
@@ -239,6 +253,33 @@ describe('担当を取る', () => {
     expect(response.status).toBe(409);
   });
 
+  test('担当になってから 5 分たっていても、担当の点が 5 分以内に保存されていれば、まだ取れない', async () => {
+    const matchId = await fixture.makeMatch();
+    enterAs(fixture.people.kitaTaro.session);
+    await POST(claimRequest(), contextOf(matchId));
+    await setLastScoredAt(matchId, 10);
+    await putScoreSavedAt(matchId, 2);
+    enterAs(fixture.people.minamiTaro.session);
+
+    const response = await POST(claimRequest(), contextOf(matchId));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('scorer-active');
+  });
+
+  test('担当になったばかりなら、その試合の点が 5 分以上前（前の担当の点）でも、まだ取れない', async () => {
+    const matchId = await fixture.makeMatch();
+    await putScoreSavedAt(matchId, 8);
+    enterAs(fixture.people.kitaTaro.session);
+    await POST(claimRequest(), contextOf(matchId));
+    enterAs(fixture.people.minamiTaro.session);
+
+    const response = await POST(claimRequest(), contextOf(matchId));
+
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe('scorer-active');
+  });
+
   test('終了した試合では取れない（409）', async () => {
     enterAs(fixture.people.minamiTaro.session);
     const matchId = await fixture.makeMatch('done');
@@ -303,7 +344,7 @@ describe('担当をやめる', () => {
     expect(await response.json()).toEqual({ ok: true, outcome: 'released' });
     expect(await scorerOf(matchId)).toEqual({
       scorer_participant_id: null,
-      scorer_last_scored_at: null,
+      scorer_claimed_at: null,
     });
     expect((await logsOf(matchId)).at(-1)).toEqual(
       expect.objectContaining({ action: 'scorer.release' })

@@ -195,19 +195,38 @@ export function CourtsPage({
   // 終了の確認画面は試合ごとにここで覚える。開いている試合が終わったら閉じる
   const { finishSheetOf } = useFinishSheets(board);
 
+  // 点を押した人を預かり場所に覚えさせる。送れていない点が残ったまま別の人として入り直したとき、
+  // 前の人の点を入り直した人の名前で送らないため（use-score-sync.ts の「押した人と送る人」、仕様 ⑪）
+  useEffect(() => appScoreSyncStore.setEntrant(myParticipantId), [myParticipantId]);
+
   // 担当を取る・やめる操作を始めたときの、その試合の担当（参加者の id）。操作が受け付けられたとき、
   // その間に別の人が取っていたら（その知らせが先に届いていたら）、古い結果で上書きしないための目印
   const [scorerAtOpStart] = useState(() => new Map<string, string | null>());
 
-  // 他の人が担当の試合がある間だけ、時計を進める（5 分で外れた担当を、開いたままの画面で切り替える）
-  const hasOtherScorer = board.some(
-    (match) => match.scorerParticipantId !== null && match.scorerParticipantId !== myParticipantId
+  /** 試合の担当を、この画面の人から見てどう見せるか（scorer-view.ts）。 */
+  function scorerViewOfMatch(match: CourtMatch | undefined) {
+    return scorerViewOf({
+      scorerParticipantId: match?.scorerParticipantId ?? null,
+      scorerClaimedAt: match?.scorerClaimedAt ?? null,
+      scoreSavedAtByGame: match?.scoreSavedAtByGame ?? {},
+      myParticipantId,
+      labels: scorerLabels,
+      now,
+      scorerOp: match ? statusByMatchId[match.matchId]?.scorerOp : null,
+    });
+  }
+
+  // 終わっていない試合に、いま「ほかの人が入力中」と見せている担当がある間だけ、時計を進める
+  // （5 分で外れた担当を、開いたままの画面で切り替える）。終わった試合にも担当の欄は残るので、
+  // 欄だけで決めると 1 日じゅう 10 秒ごとに描き直すことになる。外れたあとは、次の知らせまで変わらない
+  const hasActiveOtherScorer = board.some(
+    (match) => match.status !== 'done' && scorerViewOfMatch(match).kind === 'other'
   );
   useEffect(() => {
-    if (!hasOtherScorer) return;
+    if (!hasActiveOtherScorer) return;
     const timer = setInterval(() => clock.tick(), SCORER_CLOCK_TICK_MS);
     return () => clearInterval(timer);
-  }, [hasOtherScorer, clock]);
+  }, [hasActiveOtherScorer, clock]);
 
   // 読み直しは、依頼をまとめて連続しないようにする。読み直しの間に届いた変化も覚えておく。
   const [refreshScheduler] = useState(() =>
@@ -262,8 +281,11 @@ export function CourtsPage({
 
   function handleLiveChange(change: LiveChange) {
     // 自分が送った点の戻りなら、戻り待ちを消す（そのあとの当てる判断に効く。use-score-sync.ts）
-    if (change.kind === 'score') appScoreSyncStore.noteRemoteScore(change);
-    else {
+    if (change.kind === 'score') {
+      appScoreSyncStore.noteRemoteScore(change);
+      // 点が保存された時刻（担当が 5 分で外れるかの元）が届いた。見比べる「いま」も新しくする
+      clock.tick();
+    } else {
       // 自分が送った終了・取り消しより古い知らせは当てない。当てると画面が一瞬前の状態に戻り、
       // 枠が作り直されて開いていた確認画面が閉じる。当てなかった知らせは読み直しの当て直しにも
       // 入れない（applyChange に渡さない）。
@@ -313,10 +335,10 @@ export function CourtsPage({
       ending: endingOfRetiredSide(status === 'done' ? retiredSide : null),
       // 終了の取り消し（直す）は、押した人がその試合の担当になる。終了では担当は変わらない
       ...(status === 'live' && myParticipantId
-        ? { scorerParticipantId: myParticipantId, scorerLastScoredAt: new Date().toISOString() }
+        ? { scorerParticipantId: myParticipantId, scorerClaimedAt: new Date().toISOString() }
         : {
             scorerParticipantId: target.scorerParticipantId,
-            scorerLastScoredAt: target.scorerLastScoredAt,
+            scorerClaimedAt: target.scorerClaimedAt,
           }),
     });
   }
@@ -350,7 +372,7 @@ export function CourtsPage({
       maxGameCount: target.maxGameCount,
       ending: target.ending,
       scorerParticipantId: event.kind === 'claim' ? myParticipantId : null,
-      scorerLastScoredAt: event.kind === 'claim' ? new Date().toISOString() : null,
+      scorerClaimedAt: event.kind === 'claim' ? new Date().toISOString() : null,
     });
   }
 
@@ -382,16 +404,8 @@ export function CourtsPage({
 
   /** 試合の入力担当の見せ方と操作。今の試合も、直し中の試合も、試合の id で引く。 */
   function scorerControlOf(matchId: string): ScorerControl {
-    const match = board.find((m) => m.matchId === matchId);
     return {
-      view: scorerViewOf({
-        scorerParticipantId: match?.scorerParticipantId ?? null,
-        scorerLastScoredAt: match?.scorerLastScoredAt ?? null,
-        myParticipantId,
-        labels: scorerLabels,
-        now,
-        scorerOp: statusByMatchId[matchId]?.scorerOp,
-      }),
+      view: scorerViewOfMatch(board.find((m) => m.matchId === matchId)),
       onClaim: () => startScorerOp(matchId, () => claimScorer(matchId, false)),
       onTakeOver: () => startScorerOp(matchId, () => claimScorer(matchId, true)),
       onRelease: () => startScorerOp(matchId, () => releaseScorer(matchId)),

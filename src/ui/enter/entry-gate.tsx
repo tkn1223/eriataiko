@@ -11,6 +11,7 @@ import {
 } from '@/domain/class-labels';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
 import type { Session } from '@/server/session';
+import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 
 /** 入場画面の一覧に出す 1 人。いまの大会に参加している人だけが来る。 */
 export type Entrant = {
@@ -150,15 +151,29 @@ export function EntryGate({
   // チーム選びを出さないときも、置き去りにしない。
   const onFirstScreen = bucket === null || !teamStepShown;
 
-  async function call(method: 'POST' | 'DELETE', body?: unknown) {
+  /**
+   * 入場・観戦・退場を送る。`nextParticipantId` は、うまくいったときの入場者（観戦・退場は null）。
+   *
+   * 結果LIVE で送れていない点が残っていると、預かり場所はそれを送り直し続けている。入場の返事と一緒に
+   * Cookie が替わるので、その間は送るのを待たせ、替わったあとは「押した人と違う」点を送らないように、
+   * 入り直しの始まりと終わりを預かり場所に知らせる（use-score-sync.ts、仕様 ⑪）。
+   */
+  async function call(
+    method: 'POST' | 'DELETE',
+    body?: unknown,
+    nextParticipantId: string | null = null
+  ) {
     setError(null);
     setBusy(true);
+    appScoreSyncStore.beginEntrantChange();
     try {
       const res = await fetch('/api/session', {
         method,
         headers: body ? { 'content-type': 'application/json' } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
+      if (res.ok) appScoreSyncStore.endEntrantChange(nextParticipantId);
+      else appScoreSyncStore.cancelEntrantChange();
       const json = (await res.json()) as { error?: string };
       if (!res.ok) {
         setError(json.error ?? '通信に失敗しました。');
@@ -170,6 +185,8 @@ export function EntryGate({
     } catch {
       setError('ネットワークに繋がりませんでした。電波を確認してください。');
     } finally {
+      // 返事が届かなかった（Cookie は替わっていない）。もう終わっていれば何もしない
+      appScoreSyncStore.cancelEntrantChange();
       setBusy(false);
     }
   }
@@ -178,7 +195,11 @@ export function EntryGate({
   function choose(entrant: Entrant) {
     setError(null);
     if (!passcodeRequired) {
-      void call('POST', { as: 'player', playerId: entrant.playerId, passcode: '' });
+      void call(
+        'POST',
+        { as: 'player', playerId: entrant.playerId, passcode: '' },
+        entrant.participantId
+      );
       return;
     }
     setPasscode('');
@@ -264,7 +285,11 @@ export function EntryGate({
           autoFocus
           onKeyDown={(event) => {
             if (event.key === 'Enter' && chosen && !working) {
-              void call('POST', { as: 'player', playerId: chosen.playerId, passcode });
+              void call(
+                'POST',
+                { as: 'player', playerId: chosen.playerId, passcode },
+                chosen.participantId
+              );
             }
           }}
           // 16px より小さいと iPhone が勝手に画面を拡大する。
@@ -283,7 +308,12 @@ export function EntryGate({
           type="button"
           disabled={working}
           onClick={() =>
-            chosen && call('POST', { as: 'player', playerId: chosen.playerId, passcode })
+            chosen &&
+            call(
+              'POST',
+              { as: 'player', playerId: chosen.playerId, passcode },
+              chosen.participantId
+            )
           }
           className="bg-ink mt-4 min-h-12 w-full rounded-xl text-[15px] font-extrabold text-white disabled:opacity-50"
         >

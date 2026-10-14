@@ -1162,4 +1162,121 @@ describe('useScoreSync', () => {
       );
     });
   });
+
+  // 試合の状態（終了・取り消し）にも、点と同じ戻り待ちがある。自分が送った状態が購読で戻ってくるまで、
+  // それより古い知らせを画面に当てない（docs/specs/2026-10-14-courts-stale-result.md）。
+  describe('試合の状態の戻り待ち（終了・取り消しが購読で戻ってくるまで）', () => {
+    const DONE = 'done';
+    const LIVE = 'live';
+
+    /** 購読で届いた試合の変化を知らせて、「このまま当ててよいか」を受け取る。 */
+    function shouldApply(status: 'done' | 'live' | 'waiting', matchId = 'm') {
+      return appScoreSyncStore.noteRemoteMatch({ matchId, status });
+    }
+
+    /** 送って、受け付けられたところまで進める。 */
+    function sendAndAccept(status: 'done' | 'live', matchId = 'm') {
+      appScoreSyncStore.expectMatchEcho(matchId, status).accepted();
+    }
+
+    test('終了 → 取り消し と受け付けられたあと、古い「終了」の知らせは当てない。「取り消し」が戻ったら当てる', () => {
+      sendAndAccept(DONE);
+      sendAndAccept(LIVE);
+
+      expect(shouldApply(DONE)).toBe(false);
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+
+    test('自分の送った状態が戻ったあとは、どの知らせも当てる（待ちは残らない）', () => {
+      sendAndAccept(DONE);
+      expect(shouldApply(DONE)).toBe(true);
+
+      expect(shouldApply(LIVE)).toBe(true);
+      expect(shouldApply(DONE)).toBe(true);
+    });
+
+    test('自分の最後の状態が戻る前に届いた別の状態（それより前に書かれた古い知らせ）は、当てない', () => {
+      sendAndAccept(DONE);
+
+      expect(shouldApply(LIVE)).toBe(false);
+      // 自分の状態が戻れば、待ちは終わる
+      expect(shouldApply(DONE)).toBe(true);
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+
+    test('送っている最中に、ほかの人の同じ状態の知らせが先に届いたら、その中身を当てる（終わり方は見ない）', () => {
+      appScoreSyncStore.expectMatchEcho('m', DONE); // 棄権つきの終了を送っている最中
+
+      // ほかの人が、棄権なしで先に終了していた。記録どおりの中身を画面に当てる
+      expect(appScoreSyncStore.noteRemoteMatch({ matchId: 'm', status: 'done' })).toBe(true);
+    });
+
+    test('自分が何も送っていない試合は、いつでも当てる。別の試合の待ちは影響しない', () => {
+      sendAndAccept(DONE, 'other');
+
+      expect(shouldApply(LIVE, 'm')).toBe(true);
+      expect(shouldApply(LIVE, 'other')).toBe(false);
+    });
+
+    test('返事より先に知らせが届いたら、そこで待ちは終わる（返事が来たあとに待ち続けない）', () => {
+      const ticket = appScoreSyncStore.expectMatchEcho('m', LIVE);
+
+      expect(shouldApply(LIVE)).toBe(true);
+      ticket.accepted();
+
+      expect(shouldApply(DONE)).toBe(true);
+    });
+
+    test('送れなかった状態は待たない', () => {
+      appScoreSyncStore.expectMatchEcho('m', DONE).failed();
+
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+
+    test('戻ってこないまま待ちきったら（10 秒）、待つのをやめる', async () => {
+      vi.useFakeTimers();
+      sendAndAccept(DONE);
+
+      await vi.advanceTimersByTimeAsync(ECHO_WAIT_MS - 1);
+      expect(shouldApply(LIVE)).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+
+    test('つながったとき（forgetAwaitingEchoes）は待つのをやめる。送っている最中の状態は待ち続ける', () => {
+      sendAndAccept(DONE);
+      appScoreSyncStore.expectMatchEcho('m', LIVE); // まだ返事が来ていない
+      appScoreSyncStore.forgetAwaitingEchoes();
+
+      // 受け付け済みの DONE の知らせは、もう待たない。送っている最中の LIVE は戻りを待つ
+      expect(shouldApply(DONE)).toBe(false);
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+
+    test('試合の終了は、受け付けられたあと、その終了の知らせが戻るまで古い状態を当てない', async () => {
+      vi.mocked(fetch).mockImplementation(async () => jsonResponse(200, { ok: true }));
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m', 'A'));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+      await act(async () => {});
+
+      expect(shouldApply(LIVE)).toBe(false);
+      expect(shouldApply(DONE)).toBe(true);
+    });
+
+    test('終了が断られたときは、待たない', async () => {
+      vi.mocked(fetch).mockImplementation(async () =>
+        jsonResponse(409, { error: '終了した試合です。' })
+      );
+      const { result } = renderHook(() => useScoreSync());
+
+      act(() => result.current.finish('m', 'A'));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1));
+      await act(async () => {});
+
+      expect(shouldApply(LIVE)).toBe(true);
+    });
+  });
 });

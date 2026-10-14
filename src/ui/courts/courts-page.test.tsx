@@ -1601,7 +1601,19 @@ describe('CourtsPage', () => {
         )
       );
 
-      // 別の人が同じ試合を終了した
+      // 自分の取り消しの知らせが戻り（知らせは書いた順に届く）、そのあと別の人が同じ試合を終了した
+      act(() =>
+        liveMock.handlers!.onChange({
+          kind: 'match',
+          matchId: 'match-prev',
+          status: 'live',
+          courtNumber: 1,
+          orderInCourt: 1,
+          finishedAt: null,
+          maxGameCount: 1,
+          ending: 'normal',
+        })
+      );
       act(() =>
         liveMock.handlers!.onChange({
           kind: 'match',
@@ -1748,6 +1760,16 @@ describe('CourtsPage', () => {
 
       expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
       expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
+    });
+
+    test('つながり直したあとは、自分の終了・取り消しの戻りを待たずに、届いた変化を当てる', async () => {
+      renderPage();
+      await finishThenReopenOnCourt1();
+
+      act(() => liveMock.handlers!.onConnected());
+      act(() => liveMock.handlers!.onChange(doneEcho()));
+
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
     });
 
     test('今の試合の確認画面を開いている間に、ほかの人がその試合を終了したら、確認画面は閉じる。OK を押す先は無い', () => {

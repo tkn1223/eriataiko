@@ -19,7 +19,8 @@ function match(overrides: Partial<CourtMatch> = {}): CourtMatch {
     orderInCourt: 1,
     finishedAt: null,
     scorerParticipantId: null,
-    scorerLastScoredAt: null,
+    scorerClaimedAt: null,
+    scoreSavedAtByGame: {},
     reopened: false,
     classLabel: { name: '1部', colorNumber: 1 },
     roundLabel: '予選 1回戦',
@@ -39,6 +40,7 @@ function scoreChange(overrides: Partial<Extract<LiveChange, { kind: 'score' }>> 
     gameNumber: 1,
     sideAScore: 11,
     sideBScore: 8,
+    savedAt: null,
     ...overrides,
   };
 }
@@ -54,7 +56,7 @@ function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> 
     maxGameCount: 3,
     ending: 'normal',
     scorerParticipantId: null,
-    scorerLastScoredAt: null,
+    scorerClaimedAt: null,
     ...overrides,
   };
 }
@@ -287,43 +289,43 @@ describe('棄権の印（ending）を当てる', () => {
 });
 
 describe('届いた担当の変化を当てる（docs/specs/2026-10-14-match-scorer.md）', () => {
-  test('担当と、最後に点を入れた時刻が試合に当たる', () => {
+  test('担当と、担当になった時刻が試合に当たる', () => {
     const result = applyLiveChange(
       [match()],
       matchChange({
         scorerParticipantId: 'p-jiro',
-        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+        scorerClaimedAt: '2027-01-22T10:00:00+00:00',
       }),
       NO_PENDING
     );
 
     expect(result.board[0]).toMatchObject({
       scorerParticipantId: 'p-jiro',
-      scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+      scorerClaimedAt: '2027-01-22T10:00:00+00:00',
     });
     expect(result.needsRefresh).toBe(false);
   });
 
   test('担当が外れた（空になった）知らせも当たる', () => {
     const board = [
-      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+      match({ scorerParticipantId: 'p-jiro', scorerClaimedAt: '2027-01-22T10:00:00+00:00' }),
     ];
 
     const result = applyLiveChange(board, matchChange(), NO_PENDING);
 
-    expect(result.board[0]).toMatchObject({ scorerParticipantId: null, scorerLastScoredAt: null });
+    expect(result.board[0]).toMatchObject({ scorerParticipantId: null, scorerClaimedAt: null });
   });
 
   test('担当も時刻も同じなら、一覧は同じ参照のまま（描き直さない）', () => {
     const board = [
-      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+      match({ scorerParticipantId: 'p-jiro', scorerClaimedAt: '2027-01-22T10:00:00+00:00' }),
     ];
 
     const result = applyLiveChange(
       board,
       matchChange({
         scorerParticipantId: 'p-jiro',
-        scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+        scorerClaimedAt: '2027-01-22T10:00:00+00:00',
       }),
       NO_PENDING
     );
@@ -331,20 +333,79 @@ describe('届いた担当の変化を当てる（docs/specs/2026-10-14-match-sco
     expect(result.board).toBe(board);
   });
 
-  test('点を入れるたびに更新される「最後に点を入れた時刻」だけの変化も当たる', () => {
+  test('担当になった時刻だけの変化（自分のまま取り直した）も当たる', () => {
     const board = [
-      match({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: '2027-01-22T10:00:00+00:00' }),
+      match({ scorerParticipantId: 'p-jiro', scorerClaimedAt: '2027-01-22T10:00:00+00:00' }),
     ];
 
     const result = applyLiveChange(
       board,
       matchChange({
         scorerParticipantId: 'p-jiro',
-        scorerLastScoredAt: '2027-01-22T10:00:30+00:00',
+        scorerClaimedAt: '2027-01-22T10:00:30+00:00',
       }),
       NO_PENDING
     );
 
-    expect(result.board[0].scorerLastScoredAt).toBe('2027-01-22T10:00:30+00:00');
+    expect(result.board[0].scorerClaimedAt).toBe('2027-01-22T10:00:30+00:00');
+  });
+});
+
+describe('届いた点の保存時刻を当てる（担当の「最後に点を入れた時刻」の元）', () => {
+  const SAVED_AT = '2027-01-22T10:01:00.5+00:00';
+
+  test('点と一緒に、そのゲームの保存時刻が当たる', () => {
+    const result = applyLiveChange(
+      [match({ scoreSavedAtByGame: { 1: '2027-01-22T10:00:00+00:00' } })],
+      scoreChange({ sideAScore: 12, savedAt: SAVED_AT }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].scoreSavedAtByGame).toEqual({ 1: SAVED_AT });
+    expect(result.board[0].scores).toContainEqual({ gameNumber: 1, sideAScore: 12, sideBScore: 8 });
+  });
+
+  test('ほかのゲームの保存時刻は残す', () => {
+    const result = applyLiveChange(
+      [match({ scoreSavedAtByGame: { 1: '2027-01-22T10:00:00+00:00' } })],
+      scoreChange({ gameNumber: 2, sideAScore: 1, sideBScore: 0, savedAt: SAVED_AT }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].scoreSavedAtByGame).toEqual({
+      1: '2027-01-22T10:00:00+00:00',
+      2: SAVED_AT,
+    });
+  });
+
+  test('点数が同じでも、保存時刻が新しければ時刻だけ当たる（同じ点を送り直した）', () => {
+    const result = applyLiveChange(
+      [match()],
+      scoreChange({ sideAScore: 10, sideBScore: 8, savedAt: SAVED_AT }),
+      NO_PENDING
+    );
+
+    expect(result.board[0].scoreSavedAtByGame).toEqual({ 1: SAVED_AT });
+    expect(result.board[0].scores).toEqual([{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }]);
+  });
+
+  test('手元の点を優先して点数を当てないときも、保存時刻は当たる', () => {
+    const result = applyLiveChange([match()], scoreChange({ savedAt: SAVED_AT }), {
+      'm-1': { pendingScores: [{ gameNumber: 1, sideAScore: 13, sideBScore: 8 }] },
+    });
+
+    expect(result.board[0].scoreSavedAtByGame).toEqual({ 1: SAVED_AT });
+    expect(result.board[0].scores).toEqual([{ gameNumber: 1, sideAScore: 10, sideBScore: 8 }]);
+  });
+
+  test('点数も保存時刻も同じなら、一覧は同じ参照のまま。時刻の無い古い形の知らせは時刻を変えない', () => {
+    const board = [match({ scoreSavedAtByGame: { 1: SAVED_AT } })];
+
+    expect(
+      applyLiveChange(board, scoreChange({ sideAScore: 10, savedAt: SAVED_AT }), NO_PENDING).board
+    ).toBe(board);
+    expect(
+      applyLiveChange(board, scoreChange({ sideAScore: 10, savedAt: null }), NO_PENDING).board
+    ).toBe(board);
   });
 });

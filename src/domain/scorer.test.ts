@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   SCORER_EXPIRY_MS,
   decideClaim,
+  lastScoredAtOf,
   scorerLabel,
   scorerStanding,
   type ScorerSlot,
@@ -55,6 +56,27 @@ describe('担当の立場（自分か・空いているか・ほかの人か）'
   test('自分の時計が少し進んでいて時刻が未来でも、ほかの人の担当は外れない', () => {
     const future = new Date(NOW.getTime() + 3_000);
     expect(scorerStanding({ holderId: SOMEONE, lastScoredAt: future }, ME, NOW)).toBe('other');
+  });
+});
+
+describe('最後に点を入れた時刻（担当になった時刻と、点が最後に保存された時刻の遅いほう）', () => {
+  test('担当になってから点が保存されていれば、点が保存された時刻', () => {
+    expect(lastScoredAtOf({ claimedAt: minutesAgo(10), lastScoreSavedAt: minutesAgo(2) })).toEqual(
+      minutesAgo(2)
+    );
+  });
+
+  test('点が担当になる前（前の担当の点）か 1 点も無ければ、担当になった時刻', () => {
+    expect(lastScoredAtOf({ claimedAt: minutesAgo(1), lastScoreSavedAt: minutesAgo(8) })).toEqual(
+      minutesAgo(1)
+    );
+    expect(lastScoredAtOf({ claimedAt: minutesAgo(1), lastScoreSavedAt: null })).toEqual(
+      minutesAgo(1)
+    );
+  });
+
+  test('担当になった時刻が無い（担当がいない）なら、点があっても null', () => {
+    expect(lastScoredAtOf({ claimedAt: null, lastScoreSavedAt: minutesAgo(1) })).toBeNull();
   });
 });
 

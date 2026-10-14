@@ -30,8 +30,8 @@ export type LiveChange =
       ending: string;
       /** `matches.scorer_participant_id`。いまの入力担当（参加者）。いなければ null。 */
       scorerParticipantId: string | null;
-      /** `matches.scorer_last_scored_at`。担当が最後に点を入れた（担当になった）時刻。 */
-      scorerLastScoredAt: string | null;
+      /** `matches.scorer_claimed_at`。担当になった時刻。 */
+      scorerClaimedAt: string | null;
     }
   /** `game_scores` の INSERT / UPDATE。ある試合のあるゲームの点が変わった。 */
   | {
@@ -40,6 +40,8 @@ export type LiveChange =
       gameNumber: number;
       sideAScore: number;
       sideBScore: number;
+      /** `game_scores.updated_at`。点が保存された時刻（担当の「最後に点を入れた時刻」に使う）。無い古い形は null。 */
+      savedAt: string | null;
     };
 
 export type LiveChangeResult = {
@@ -57,16 +59,29 @@ function applyScore(
   change: Extract<LiveChange, { kind: 'score' }>,
   pendingByMatchId: PendingByMatchId
 ): LiveChangeResult {
-  const target = board.find((match) => match.matchId === change.matchId);
-  if (!target) return { board, needsRefresh: true };
+  const found = board.find((match) => match.matchId === change.matchId);
+  if (!found) return { board, needsRefresh: true };
+
+  // 点が保存された時刻（担当が 5 分で外れるかの元）は、点数を当てない場合も当てる。
+  // 同じ点数のまま時刻だけ新しくなることもある（同じ点を送り直した）
+  const savedAtChanged =
+    change.savedAt !== null && found.scoreSavedAtByGame[change.gameNumber] !== change.savedAt;
+  const target: CourtMatch = savedAtChanged
+    ? {
+        ...found,
+        scoreSavedAtByGame: { ...found.scoreSavedAtByGame, [change.gameNumber]: change.savedAt! },
+      }
+    : found;
+  const unchangedScores = {
+    board: savedAtChanged ? board.map((match) => (match === found ? target : match)) : board,
+    needsRefresh: false,
+  };
 
   // 手元で押して、まだサーバーに届いていない・届いたが購読でまだ戻ってきていない点は、
   // 届いた点より優先する。届いたのは自分の少し前の点や、他の人の古い点かもしれない。
   // 上書きすると押した点が消えて見え、そこで押すと 1 点ぶん数えそこねる。
   const pending = pendingByMatchId[change.matchId]?.pendingScores ?? [];
-  if (pending.some((score) => score.gameNumber === change.gameNumber)) {
-    return { board, needsRefresh: false };
-  }
+  if (pending.some((score) => score.gameNumber === change.gameNumber)) return unchangedScores;
 
   const existing = target.scores.find((score) => score.gameNumber === change.gameNumber);
   if (
@@ -74,7 +89,7 @@ function applyScore(
     existing.sideAScore === change.sideAScore &&
     existing.sideBScore === change.sideBScore
   ) {
-    return { board, needsRefresh: false };
+    return unchangedScores;
   }
 
   const updated: GameScore = {
@@ -88,7 +103,7 @@ function applyScore(
   ].sort((a, b) => a.gameNumber - b.gameNumber);
 
   return {
-    board: board.map((match) => (match === target ? { ...match, scores } : match)),
+    board: board.map((match) => (match === found ? { ...target, scores } : match)),
     needsRefresh: false,
   };
 }
@@ -112,7 +127,7 @@ function applyMatch(
     target.maxGameCount === change.maxGameCount &&
     target.ending === change.ending &&
     target.scorerParticipantId === change.scorerParticipantId &&
-    target.scorerLastScoredAt === change.scorerLastScoredAt &&
+    target.scorerClaimedAt === change.scorerClaimedAt &&
     target.reopened === reopened;
   if (unchanged) return { board, needsRefresh: false };
 
@@ -125,7 +140,7 @@ function applyMatch(
     maxGameCount: change.maxGameCount,
     ending: change.ending,
     scorerParticipantId: change.scorerParticipantId,
-    scorerLastScoredAt: change.scorerLastScoredAt,
+    scorerClaimedAt: change.scorerClaimedAt,
     reopened,
   };
   return {

@@ -12,7 +12,7 @@ export type ReopenMatchRepository = Pick<ScorerWriteRepository, 'findParticipant
   findMatch(matchId: string): Promise<MatchForReopening | null>;
   /**
    * `matches` を live に戻し、finished_at を空にして、ending（棄権の印）も普通に戻す。
-   * 同じ書き込みで、`scorerParticipantId` を担当にして最後に点を入れた時刻を `now` にする
+   * 同じ書き込みで、`scorerParticipantId` を担当にして担当になった時刻を `now` にする
    * （前の担当が誰でも。直している間はほかの人とぶつからないように）。
    */
   reopen(input: { matchId: string; scorerParticipantId: string; now: Date }): Promise<void>;

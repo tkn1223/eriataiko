@@ -1,7 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { appScoreSyncStore, ECHO_WAIT_MS, useScoreSync } from '@/ui/courts/use-score-sync';
+import {
+  appScoreSyncStore,
+  ECHO_WAIT_MS,
+  ENTRANT_CHANGED_MESSAGE,
+  useScoreSync,
+} from '@/ui/courts/use-score-sync';
 
 /**
  * `use-score-sync.ts` のテスト。DOM（window の beforeunload・タイマー）が要るので
@@ -1193,6 +1198,18 @@ describe('useScoreSync', () => {
       expect(shouldApply(LIVE)).toBe(true);
     });
 
+    // 担当を取った知らせ（status は live のまま）が遅れて、「終了 → 取り消し」を送ったあとに届くことがある。
+    // それを「取り消し」の戻りと取り違えると待ちが終わり、そのあと届く古い「終了」を当てて、直し中の枠と
+    // 開いていた確認画面が消えていた（docs/specs/2026-10-14-match-scorer.md の作りの結果）
+    test('終了 → 取り消し を待っている間に届いた、それより前の live の知らせ（担当を取ったなど）は、取り消しの戻りと取り違えない', () => {
+      sendAndAccept(DONE);
+      sendAndAccept(LIVE);
+
+      expect(shouldApply(LIVE)).toBe(false); // 担当を取ったときの知らせ（終了より前に書かれた）
+      expect(shouldApply(DONE)).toBe(false); // 自分の終了の戻り
+      expect(shouldApply(LIVE)).toBe(true); // 自分の取り消しの戻り
+    });
+
     test('自分の送った状態が戻ったあとは、どの知らせも当てる（待ちは残らない）', () => {
       sendAndAccept(DONE);
       expect(shouldApply(DONE)).toBe(true);
@@ -1798,5 +1815,153 @@ describe('担当を取る・やめる', () => {
 
     expect(events).toEqual([{ matchId: 'm', kind: 'release', result: 'accepted' }]);
     expect(result.current.statusByMatchId['m']?.scorerOp ?? null).toBeNull();
+  });
+});
+
+/**
+ * 送れていない点が残ったまま別の人として入り直したとき（仕様 ⑪）。入場（Cookie）は送るときのものが使われるので、
+ * 押した人と送るときの入場者が違えば送らず、⑧ と同じ知らせにする。
+ */
+describe('押した人と送る人が違えば送らない（⑪）', () => {
+  const scoreCalls = () =>
+    vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/scores'));
+
+  /** たろう（p-taro）として点を押し、つながらずに送り直し待ちにする。 */
+  async function pressAsTaroAndFail() {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockRejectedValueOnce(new Error('network down'));
+    appScoreSyncStore.setEntrant('p-taro');
+    act(() =>
+      appScoreSyncStore.sync({ matchId: 'm', gameNumber: 1, sideAScore: 12, sideBScore: 10 })
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(scoreCalls()).toHaveLength(1);
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true }));
+  }
+
+  test('別の人として入り直すと、送り直しを待っていた点は送らず、⑧ と同じ知らせ（送れなかった点つき）が出る', async () => {
+    await pressAsTaroAndFail();
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => {
+      appScoreSyncStore.beginEntrantChange();
+      appScoreSyncStore.endEntrantChange('p-jiro');
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(scoreCalls()).toHaveLength(0);
+    expect(result.current.statusByMatchId['m']?.scorerRejection).toEqual({
+      message: ENTRANT_CHANGED_MESSAGE,
+      games: [{ gameNumber: 1, sideAScore: 12, sideBScore: 10 }],
+    });
+    expect(result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
+    expect(result.current.statusByMatchId['m']?.pendingScores).toEqual([]);
+  });
+
+  test('観戦者として入り直しても送らない', async () => {
+    await pressAsTaroAndFail();
+
+    act(() => {
+      appScoreSyncStore.beginEntrantChange();
+      appScoreSyncStore.endEntrantChange(null);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(scoreCalls()).toHaveLength(0);
+  });
+
+  test('入り直しの最中（入場の返事待ち）は送らずに待ち、入り直せなかったら同じ人のまま送る', async () => {
+    await pressAsTaroAndFail();
+
+    act(() => appScoreSyncStore.beginEntrantChange());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(scoreCalls()).toHaveLength(0);
+
+    act(() => appScoreSyncStore.cancelEntrantChange());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scoreCalls()).toHaveLength(1);
+  });
+
+  test('同じ人のままなら、いつもどおり送り直す（画面を開き直して同じ人が知らされても）', async () => {
+    await pressAsTaroAndFail();
+
+    appScoreSyncStore.setEntrant('p-taro');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(scoreCalls()).toHaveLength(1);
+  });
+
+  test('結果LIVE を開いた画面が別の人を知らせても、待たずにその場で送らないと決める', async () => {
+    await pressAsTaroAndFail();
+    const { result } = renderHook(() => useScoreSync());
+
+    act(() => appScoreSyncStore.setEntrant('p-jiro'));
+
+    expect(result.current.statusByMatchId['m']?.scorerRejection?.message).toBe(
+      ENTRANT_CHANGED_MESSAGE
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(scoreCalls()).toHaveLength(0);
+  });
+
+  test('入り直した人が同じゲームを押し直せば、その人の点として送る', async () => {
+    await pressAsTaroAndFail();
+    act(() => appScoreSyncStore.setEntrant('p-jiro'));
+
+    act(() =>
+      appScoreSyncStore.sync({ matchId: 'm', gameNumber: 1, sideAScore: 11, sideBScore: 10 })
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scoreCalls()).toHaveLength(1);
+  });
+
+  test('前の人が頼んだ担当を取る操作と試合の終了も、入り直したあとは送らない', async () => {
+    vi.useFakeTimers();
+    vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+    const events: unknown[] = [];
+    appScoreSyncStore.subscribeScorerOp((event) => events.push(event));
+    const { result } = renderHook(() => useScoreSync());
+    appScoreSyncStore.setEntrant('p-taro');
+    act(() => {
+      appScoreSyncStore.claimScorer('m-claim', false);
+      appScoreSyncStore.finish('m-finish');
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(200, { ok: true }));
+
+    act(() => appScoreSyncStore.setEntrant('p-jiro'));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(events).toEqual([{ matchId: 'm-claim', kind: 'claim', result: 'rejected' }]);
+    expect(result.current.statusByMatchId['m-claim']?.scorerOp ?? null).toBeNull();
+    expect(result.current.statusByMatchId['m-finish']?.finishing).toBe(false);
+    expect(result.current.statusByMatchId['m-finish']?.finishRejectedMessage).toContain(
+      '別の人として入り直したため'
+    );
   });
 });

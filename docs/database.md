@@ -214,10 +214,10 @@ players  人（大会をまたぐ。番号で見分ける）── participants 
 | 入口 | 触る表 | 中身 |
 | --- | --- | --- |
 | `POST /api/session` | `write_logs`（入場の記録だけ） | 名前を選んで入場する |
-| `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき・担当の時刻を更新するとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない）。担当でない人の点は 409 で断る |
+| `POST /api/matches/[matchId]/scores` | `game_scores`（`matches` も、`waiting` → `live` になるとき・担当がいない試合で送った人が担当になるとき） | 得点を保存する。今の点数をそのまま送る方式（「1 点足して」ではない）。担当でない人の点は 409 で断る。`game_scores.updated_at` は担当の「最後に点を入れた時刻」も兼ねる |
 | `POST /api/matches/[matchId]/result` | `matches` | 試合を終了する（1 点も入っていなければ 400 で止める。担当でなければ 409） |
 | `DELETE /api/matches/[matchId]/result` | `matches` | 終了を取り消す（`done` を `live` に戻す）。誰でも押せて、押した人がその試合の担当になる |
-| `POST /api/matches/[matchId]/scorer` | `matches`（`scorer_participant_id` / `scorer_last_scored_at`） | 入力の担当を取る。空いている／最後に点を入れてから 5 分たった担当は確認なしで取れ、ほかの人が担当中なら `{ "takeOver": true }` のときだけ取れる |
+| `POST /api/matches/[matchId]/scorer` | `matches`（`scorer_participant_id` / `scorer_claimed_at`） | 入力の担当を取る。空いている／最後に点を入れてから 5 分たった担当は確認なしで取れ、ほかの人が担当中なら `{ "takeOver": true }` のときだけ取れる（最後に点を入れた時刻＝`scorer_claimed_at` とその試合の `game_scores.updated_at` の新しいほう） |
 | `DELETE /api/matches/[matchId]/scorer` | `matches`（同上） | 入力の担当をやめる（自分が担当のときだけ） |
 
 どれも `AGENTS.md` の順（`requirePlayer()` → 入力検証 → 書き込み → `logWrite()`）を守っています。

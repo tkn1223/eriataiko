@@ -22,7 +22,10 @@ export type MatchScorer = {
   playerId: string;
   /** 断る理由に載せる名前（「愛知南のたろう」。「さん」は付けない）。 */
   label: string;
-  /** `matches.scorer_last_scored_at`。 */
+  /**
+   * 担当が最後に点を入れた時刻。`matches.scorer_claimed_at`（担当になった時刻）と、その試合の
+   * `game_scores.updated_at` の一番新しいものの遅いほう（`lastScoredAtOf`）。
+   */
   lastScoredAt: Date;
 };
 
@@ -34,7 +37,7 @@ export type ScorerWriteRepository = {
    */
   findParticipantOfPlayer(input: { matchId: string; playerId: string }): Promise<string | null>;
   /**
-   * 担当を `participantId` にし、最後に点を入れた時刻を `now` にする。
+   * 担当を `participantId` にし、担当になった時刻（`matches.scorer_claimed_at`）を `now` にする。
    * **いまの担当が `expectedHolderParticipantId`（空なら「担当なし」）のままのときだけ**書く。
    * 読んでから書くまでの間に別の人が取っていたら書かずに false を返す（同時に取った 2 人の後勝ちで、
    * 先に取った人の点が黙って断られるのを防ぐ）。
@@ -91,7 +94,8 @@ export function notParticipantError(): ApiError {
 /**
  * 点を保存してよい状態にする。担当の欄を整えてから、呼び出し側が点を書く。
  *
- * - 自分が担当: 最後に点を入れた時刻を更新する
+ * - 自分が担当: そのまま通す。担当の欄は書かない（「最後に点を入れた時刻」は、このあと点を書くときに
+ *   新しくなる `game_scores.updated_at` で表す。matches も書くと全員への知らせが 1 点あたり 2 通になる）
  * - 担当がいない（外れた）: 送ってきた人を担当にする。担当を取る操作が電波で失敗していても、
  *   点は止めない（仕様 ⑤）ための道
  * - ほかの人が担当中: 断る（いまの担当の点を上書きしない。仕様 ⑧）
@@ -109,16 +113,10 @@ export async function secureScorerForScoring(
     throw otherIsScoringError(input.scorer!, '');
   }
 
-  if (standing === 'mine') {
-    const renewed = await deps.setScorer({
-      matchId: input.matchId,
-      participantId: input.scorer!.participantId,
-      expectedHolderParticipantId: input.scorer!.participantId,
-      now: input.now,
-    });
-    if (!renewed) throw scorerChangedError();
-    return { claimed: false };
-  }
+  // 読んでから点を書くまでの数十ミリ秒に引き継がれると、その 1 点は通る（担当の欄を書かないので
+  // 確かめようがない）。前は担当の欄を書き直して確かめていたが、それでも「書き直してから点を書くまで」の
+  // すき間は残っていた。1 点のために知らせを 2 通にするほどの差は無いので、確かめない
+  if (standing === 'mine') return { claimed: false };
 
   const participantId = await deps.findParticipantOfPlayer({
     matchId: input.matchId,

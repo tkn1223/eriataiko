@@ -151,6 +151,17 @@ describe('CourtCard', () => {
     expect(screen.getByText('現在3試合目')).toBeInTheDocument();
   });
 
+  test('取り消された試合が 1 つだけ進行中でも「現在」と出す（直し中の印で出たり消えたりしない）', () => {
+    renderCard({
+      matches: [
+        makeMatch({ matchId: 'm2', orderInCourt: 2, status: 'live', reopened: true }),
+        makeMatch({ matchId: 'm3', orderInCourt: 3, status: 'waiting' }),
+      ],
+    });
+
+    expect(screen.getByText('現在2試合目')).toBeInTheDocument();
+  });
+
   test('進行中の試合が無いコートには「現在◯試合目」が出ない', () => {
     renderCard({
       matches: [makeMatch({ matchId: 'm1', orderInCourt: 1, status: 'waiting' })],

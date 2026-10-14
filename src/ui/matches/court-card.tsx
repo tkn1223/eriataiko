@@ -20,8 +20,12 @@ type Props = {
  * コートが決まっていないカードには「現在◯試合目」を出さない（どのコートの何試合目かが決まっていない）。
  */
 function headingTextOf(matches: BoardMatch[], hasCourt: boolean) {
-  // 進行中が 2 つあるとき（終了を取り消して直している）は、順番が後のほうを「現在」にする。
-  // 結果LIVE の「今の試合」と同じ決まり（derive-courts.ts）
+  // 進行中が 2 つあるとき（終了を取り消して直している）は、順番が後のほうを「現在」にする
+  // （結果LIVE の「今の試合」と同じ。derive-courts.ts）。
+  // ただし結果LIVE と違い、取り消された試合が 1 つだけ進行中のときも、その試合を「現在」と出す。
+  // 結果LIVE はその試合を「直し中」に分けるが、その印（reopened）は画面の中だけのもので、
+  // 進行表は読み直しで印を引き継がない（直す操作が無いので要らない）。印を見て分けると、
+  // 読み直しの前後で「現在」が出たり消えたりする。
   const liveOrders = matches.flatMap((match) =>
     match.status === 'live' && match.orderInCourt !== null ? [match.orderInCourt] : []
   );

@@ -225,6 +225,8 @@ export type Database = {
           max_game_count: number;
           order_in_court: number | null;
           order_in_matchup: number;
+          scorer_last_scored_at: string | null;
+          scorer_participant_id: string | null;
           started_at: string | null;
           status: string;
         };
@@ -239,6 +241,8 @@ export type Database = {
           max_game_count?: number;
           order_in_court?: number | null;
           order_in_matchup?: number;
+          scorer_last_scored_at?: string | null;
+          scorer_participant_id?: string | null;
           started_at?: string | null;
           status?: string;
         };
@@ -253,6 +257,8 @@ export type Database = {
           max_game_count?: number;
           order_in_court?: number | null;
           order_in_matchup?: number;
+          scorer_last_scored_at?: string | null;
+          scorer_participant_id?: string | null;
           started_at?: string | null;
           status?: string;
         };
@@ -269,6 +275,13 @@ export type Database = {
             columns: ['matchup_id'];
             isOneToOne: false;
             referencedRelation: 'matchups';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'matches_scorer_participant_id_fkey';
+            columns: ['scorer_participant_id'];
+            isOneToOne: false;
+            referencedRelation: 'participants';
             referencedColumns: ['id'];
           },
         ];

@@ -1670,4 +1670,98 @@ describe('CourtsPage', () => {
       expect(screen.queryByText('全部終わりました')).not.toBeInTheDocument();
     });
   });
+
+  // 自分が送った終了・取り消しの知らせは、返事より遅れて届くことがある（弱い電波）。
+  // 終了 → 直す、と進んだあとで最初の「終了」の知らせが届くと、画面が一瞬「1 つ前」に戻り、
+  // 開いていた確認画面が閉じていた（docs/specs/2026-10-14-courts-stale-result.md）。
+  describe('遅れて届いた古い知らせ・開いている間に終わった試合', () => {
+    const FINISHED_AT = '2026-10-14T01:00:00+00:00';
+
+    function matchChange(overrides: Partial<Extract<LiveChange, { kind: 'match' }>> = {}) {
+      const change: LiveChange = {
+        kind: 'match',
+        matchId: 'match-1',
+        status: 'done',
+        courtNumber: 1,
+        orderInCourt: 1,
+        finishedAt: FINISHED_AT,
+        maxGameCount: 1,
+        ending: 'normal',
+        ...overrides,
+      };
+      return change;
+    }
+
+    const doneEcho = () => matchChange();
+    const liveEcho = () => matchChange({ status: 'live', finishedAt: null });
+
+    /** コート 1 の今の試合を終了し、すぐ「直す」で取り消して、「直し中」まで進める。 */
+    async function finishThenReopenOnCourt1() {
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      await waitFor(() => expect(screen.getByTestId('previous-match-1')).toBeInTheDocument());
+
+      fireEvent.click(
+        within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '直す' })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      await waitFor(() => expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument());
+    }
+
+    test('直し中の確認画面を開いている間に、古い「終了」の知らせが遅れて届いても、確認画面は閉じず、選んだ棄権も残る', async () => {
+      renderPage();
+      await finishThenReopenOnCourt1();
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      const dialog = screen.getByRole('dialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: '田中・木村が棄権' }));
+
+      act(() => liveMock.handlers!.onChange(doneEcho()));
+
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('dialog')).getByRole('button', { name: '田中・木村が棄権' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    test('古い「終了」の知らせが届いても、画面は一瞬も「1つ前」に戻らない', async () => {
+      renderPage();
+      await finishThenReopenOnCourt1();
+
+      act(() => liveMock.handlers!.onChange(doneEcho()));
+
+      expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument();
+    });
+
+    test('自分の送った状態（直し中）が戻ってきたあとは、ほかの人の変化が普通に当たる', async () => {
+      renderPage();
+      await finishThenReopenOnCourt1();
+      act(() => liveMock.handlers!.onChange(doneEcho()));
+      act(() => liveMock.handlers!.onChange(liveEcho()));
+      expect(screen.getByTestId('fixing-match-1')).toBeInTheDocument();
+
+      // ほかの人が、直し終わって終了した
+      act(() =>
+        liveMock.handlers!.onChange(matchChange({ finishedAt: '2026-10-14T02:00:00+00:00' }))
+      );
+
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+      expect(screen.queryByTestId('fixing-match-1')).not.toBeInTheDocument();
+    });
+
+    test('今の試合の確認画面を開いている間に、ほかの人がその試合を終了したら、確認画面は閉じる。OK を押す先は無い', () => {
+      renderPage();
+      const card = screen.getByTestId('court-card-1');
+      fireEvent.click(within(card).getByRole('button', { name: '試合を終了する' }));
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+      act(() => liveMock.handlers!.onChange(doneEcho()));
+
+      // 次の試合（川口・浜田 vs 小林・西村）の中身で開いたままにならない
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByTestId('previous-match-1')).toBeInTheDocument();
+      expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    });
+  });
 });

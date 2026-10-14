@@ -40,6 +40,8 @@ describe('/matches の画面', () => {
       const source = readSource(path);
       expect(source).not.toMatch(/\.from\(\s*['"`]|\.rpc\(/);
       expect(source).not.toMatch(/\bfetch\(/);
+      // 結果LIVE の書き込みの道具（点・終了・取り消しを入口へ送る）も使わない
+      expect(source).not.toMatch(/@\/ui\/courts\/(use-score-sync|send-request)['"]/);
     }
   );
 

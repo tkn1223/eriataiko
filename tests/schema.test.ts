@@ -567,32 +567,32 @@ describe('試合のルールと結果', () => {
 });
 
 describe('試合の入力担当', () => {
-  test('新しい試合には担当がいない（担当も最後に点を入れた時刻も空）', async () => {
+  test('新しい試合には担当がいない（担当も担当になった時刻も空）', async () => {
     const matchId = await makeMatch();
     const { data } = await admin
       .from('matches')
-      .select('scorer_participant_id, scorer_last_scored_at')
+      .select('scorer_participant_id, scorer_claimed_at')
       .eq('id', matchId)
       .single();
-    expect(data).toEqual({ scorer_participant_id: null, scorer_last_scored_at: null });
+    expect(data).toEqual({ scorer_participant_id: null, scorer_claimed_at: null });
   });
 
-  test('参加者を担当にして、最後に点を入れた時刻と一緒に記録できる', async () => {
+  test('参加者を担当にして、担当になった時刻と一緒に記録できる', async () => {
     const matchId = await makeMatch();
     const scoredAt = '2027-01-22T10:00:00+00:00';
     const { error } = await admin
       .from('matches')
-      .update({ scorer_participant_id: ids.participantIds[0], scorer_last_scored_at: scoredAt })
+      .update({ scorer_participant_id: ids.participantIds[0], scorer_claimed_at: scoredAt })
       .eq('id', matchId);
     expect(error).toBeNull();
 
     const { data } = await admin
       .from('matches')
-      .select('scorer_participant_id, scorer_last_scored_at')
+      .select('scorer_participant_id, scorer_claimed_at')
       .eq('id', matchId)
       .single();
     expect(data!.scorer_participant_id).toBe(ids.participantIds[0]);
-    expect(new Date(data!.scorer_last_scored_at!).toISOString()).toBe('2027-01-22T10:00:00.000Z');
+    expect(new Date(data!.scorer_claimed_at!).toISOString()).toBe('2027-01-22T10:00:00.000Z');
   });
 
   test('参加者でない id は担当にできない', async () => {

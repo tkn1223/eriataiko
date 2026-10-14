@@ -18,7 +18,7 @@ import { releaseScorer } from '@/usecases/release-scorer';
 /**
  * 担当を取る。本文 `{ takeOver?: boolean }`（本文が空なら引き継がない）。
  * 空いている／5 分たった担当は確認なしで取れる。ほかの人が担当中なら、`takeOver: true` のときだけ取れる
- * （そうでなければ 409・code `scorer-active`）。もう自分が担当なら時刻を更新するだけで成功を返す。
+ * （そうでなければ 409・code `scorer-active`）。もう自分が担当なら担当になった時刻を新しくするだけで成功を返す。
  * 詳しい分岐は `src/usecases/claim-scorer.ts` を参照。
  */
 export async function POST(

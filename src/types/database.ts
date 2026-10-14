@@ -225,7 +225,7 @@ export type Database = {
           max_game_count: number;
           order_in_court: number | null;
           order_in_matchup: number;
-          scorer_last_scored_at: string | null;
+          scorer_claimed_at: string | null;
           scorer_participant_id: string | null;
           started_at: string | null;
           status: string;
@@ -241,7 +241,7 @@ export type Database = {
           max_game_count?: number;
           order_in_court?: number | null;
           order_in_matchup?: number;
-          scorer_last_scored_at?: string | null;
+          scorer_claimed_at?: string | null;
           scorer_participant_id?: string | null;
           started_at?: string | null;
           status?: string;
@@ -257,7 +257,7 @@ export type Database = {
           max_game_count?: number;
           order_in_court?: number | null;
           order_in_matchup?: number;
-          scorer_last_scored_at?: string | null;
+          scorer_claimed_at?: string | null;
           scorer_participant_id?: string | null;
           started_at?: string | null;
           status?: string;

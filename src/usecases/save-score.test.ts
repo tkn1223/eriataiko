@@ -261,18 +261,14 @@ describe('担当の確かめ', () => {
     expect(deps.saveGameScore).not.toHaveBeenCalled();
   });
 
-  test('担当の人の点は保存され、最後に点を入れた時刻が更新される', async () => {
+  test('担当の人の点は保存される。担当の欄は書かない（最後に点を入れた時刻は点の保存時刻で表す）', async () => {
     const deps = fakeRepository();
 
     const result = await saveScore(deps, input);
 
-    expect(deps.saveGameScore).toHaveBeenCalledTimes(1);
-    expect(deps.setScorer).toHaveBeenCalledWith({
-      matchId: 'match-1',
-      participantId: 'participant-me',
-      expectedHolderParticipantId: 'participant-me',
-      now: NOW,
-    });
+    expect(deps.saveGameScore).toHaveBeenCalledWith(expect.objectContaining({ now: NOW }));
+    // matches を書くと、全員の画面への知らせが 1 点あたり 2 通になる
+    expect(deps.setScorer).not.toHaveBeenCalled();
     expect(deps.findParticipantOfPlayer).not.toHaveBeenCalled();
     expect(result).toEqual({ scorerClaimed: false });
   });

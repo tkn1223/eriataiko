@@ -57,7 +57,8 @@ afterEach(() => {
  */
 const MINE = {
   scorerParticipantId: 'p-me',
-  scorerLastScoredAt: '2026-10-14T01:00:00+00:00',
+  scorerClaimedAt: '2026-10-14T01:00:00+00:00',
+  scoreSavedAtByGame: {},
 } as const;
 
 function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
@@ -750,6 +751,34 @@ describe('CourtsPage', () => {
       expect(within(card).getByRole('status')).toHaveTextContent('保存できていません');
     });
 
+    // 送れていない点が残ったまま別の人として入り直した場合（docs/specs/2026-10-14-match-scorer.md の ⑪）
+    test('送れていない点が残ったまま別の人として開き直すと、その点は送らず、カードに ⑧ と同じ知らせが出る', async () => {
+      vi.mocked(fetch).mockRejectedValue(new Error('network down'));
+      const first = renderPage();
+      fireEvent.click(
+        within(screen.getByTestId('court-card-1')).getByRole('button', { name: PLUS_COURT_1 })
+      );
+      await waitFor(() =>
+        expect(within(screen.getByTestId('court-card-1')).getByRole('status')).toBeInTheDocument()
+      );
+      first.unmount();
+      vi.mocked(fetch).mockReset();
+      vi.mocked(fetch).mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+
+      renderPage({ myParticipantId: 'p-jiro' });
+      const card = screen.getByTestId('court-card-1');
+
+      const notice = within(card).getByRole('alert');
+      expect(notice).toHaveTextContent(
+        '別の人として入り直したため、前の人が押した点は送っていません。'
+      );
+      expect(notice).toHaveTextContent('送れなかった点：第1ゲーム 21-');
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(
+        vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/scores'))
+      ).toEqual([]);
+    });
+
     // 選手として押した点が送れないまま、観戦者として入り直して結果LIVE を開いた場合。
     // 観戦者は点を入れないので、預かっている数字も案内も混ぜない。
     test('選手として押した点が送れていないまま観戦者で開いても、数字も「保存できていません」も混ざらない', async () => {
@@ -991,7 +1020,7 @@ describe('CourtsPage', () => {
     }
 
     function score(matchId: string, sideAScore: number, sideBScore: number): LiveChange {
-      return { kind: 'score', matchId, gameNumber: 1, sideAScore, sideBScore };
+      return { kind: 'score', matchId, gameNumber: 1, sideAScore, sideBScore, savedAt: null };
     }
 
     test('他の人が入れた点が届くと、開き直さなくても数字が変わる。画面は読み直さない', async () => {
@@ -1225,7 +1254,14 @@ describe('CourtsPage', () => {
 
     test('読み直していないときに届いた変化は、あとの読み直しで当て直さない（読み直した一覧のほうが新しい）', async () => {
       const view = renderPage({ canInput: false });
-      deliver({ kind: 'score', matchId: 'match-2', gameNumber: 1, sideAScore: 15, sideBScore: 11 });
+      deliver({
+        kind: 'score',
+        matchId: 'match-2',
+        gameNumber: 1,
+        sideAScore: 15,
+        sideBScore: 11,
+        savedAt: null,
+      });
 
       act(() => liveMock.handlers!.onConnected());
       await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1), { timeout: 2000 });
@@ -1258,7 +1294,14 @@ describe('CourtsPage', () => {
       await act(async () => {}); // 22 の返事（保存できた）を受け取る
 
       // 21 の知らせが、22 の返事より遅れて届く
-      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 19 });
+      deliver({
+        kind: 'score',
+        matchId: 'match-1',
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+        savedAt: null,
+      });
       expect(within(card).getByText('22')).toBeInTheDocument();
 
       // そこで押しても、22 の次（23）を送る（21 の次の 22 をもう一度送らない）
@@ -1278,8 +1321,22 @@ describe('CourtsPage', () => {
       await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
       await act(async () => {});
 
-      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 19 });
-      deliver({ kind: 'score', matchId: 'match-1', gameNumber: 1, sideAScore: 21, sideBScore: 20 });
+      deliver({
+        kind: 'score',
+        matchId: 'match-1',
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 19,
+        savedAt: null,
+      });
+      deliver({
+        kind: 'score',
+        matchId: 'match-1',
+        gameNumber: 1,
+        sideAScore: 21,
+        sideBScore: 20,
+        savedAt: null,
+      });
 
       expect(within(card).getAllByText('20')).toHaveLength(1);
       expect(within(card).getByText('21')).toBeInTheDocument();
@@ -1360,7 +1417,8 @@ describe('CourtsPage', () => {
         orderInCourt: 1,
         finishedAt: FINISHED_AT,
         scorerParticipantId: null,
-        scorerLastScoredAt: null,
+        scorerClaimedAt: null,
+        scoreSavedAtByGame: {},
         ending: 'normal',
         reopened: false,
         classLabel: { name: '3部', colorNumber: 3 },
@@ -1434,7 +1492,7 @@ describe('CourtsPage', () => {
       renderPage({
         board: [
           ...boardFromCourts(buildCourts()),
-          previousMatch({ scorerParticipantId: 'p-jiro', scorerLastScoredAt: FINISHED_AT }),
+          previousMatch({ scorerParticipantId: 'p-jiro', scorerClaimedAt: FINISHED_AT }),
         ],
       });
 
@@ -1830,8 +1888,9 @@ describe('CourtsPage', () => {
       fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
       fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }));
       await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalledTimes(3));
-      // 届いた「取り消し」の知らせ（自分の 1 つ前の状態の戻り）と、自分のどの状態とも違う知らせ。
-      // どちらも当てない。後のほうは、ほかの人の変化だったかもしれない
+      // 届いた「終了」「取り消し」の知らせ（自分の前の状態の戻り。書かれた順に届く）と、自分のどの状態とも
+      // 違う知らせ。どれも当てない。最後のは、ほかの人の変化だったかもしれない
+      act(() => liveMock.handlers!.onChange(doneEcho()));
       act(() => liveMock.handlers!.onChange(liveEcho()));
       act(() => liveMock.handlers!.onChange(matchChange({ status: 'waiting', finishedAt: null })));
       expect(refresh).not.toHaveBeenCalled();
@@ -1889,7 +1948,7 @@ describe('CourtsPage', () => {
         return {
           ...match,
           scorerParticipantId: scorer.id,
-          scorerLastScoredAt: scorer.id === null ? null : minutesAgoIso(scorer.minutesAgo ?? 0),
+          scorerClaimedAt: scorer.id === null ? null : minutesAgoIso(scorer.minutesAgo ?? 0),
         };
       });
     }
@@ -1916,7 +1975,7 @@ describe('CourtsPage', () => {
         maxGameCount: 1,
         ending: 'normal',
         scorerParticipantId,
-        scorerLastScoredAt: scorerParticipantId ? minutesAgoIso(minutesAgo) : null,
+        scorerClaimedAt: scorerParticipantId ? minutesAgoIso(minutesAgo) : null,
       };
     }
 
@@ -2109,6 +2168,68 @@ describe('CourtsPage', () => {
 
           expect(within(card).getByText('⚠ 入力する人がいません')).toBeInTheDocument();
           expect(within(card).getByRole('button', { name: '得点を入力する' })).toBeInTheDocument();
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test('時計を進める（10 秒ごとに描き直す）のは、終わっていない試合にほかの人が入力中のときだけ', () => {
+        vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+        try {
+          // 終わった試合にも担当の欄は残る。それだけでは時計を進めない
+          const [first, ...rest] = boardWithScorers({});
+          const finishedByOther: CourtMatch = {
+            ...first,
+            matchId: 'match-finished',
+            status: 'done',
+            finishedAt: minutesAgoIso(1),
+            scorerParticipantId: 'p-jiro',
+            scorerClaimedAt: minutesAgoIso(1),
+          };
+          const view = renderPage({ board: [first, ...rest, finishedByOther] });
+          expect(vi.getTimerCount()).toBe(0);
+          view.unmount();
+
+          // 5 分たって外れた担当も、次の知らせまで見た目は変わらないので進めない
+          const expired = renderPage({
+            board: boardWithScorers({ 'match-1': { id: 'p-jiro', minutesAgo: 6 } }),
+          });
+          expect(vi.getTimerCount()).toBe(0);
+          expired.unmount();
+
+          renderPage({ board: boardWithScorers({ 'match-1': { id: 'p-jiro', minutesAgo: 1 } }) });
+          expect(vi.getTimerCount()).toBe(1);
+        } finally {
+          vi.useRealTimers();
+        }
+      });
+
+      test('ほかの人の担当の点が届くと（担当の欄は変わらなくても）、そこから 5 分は外れない', () => {
+        vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+        try {
+          renderPage({
+            board: boardWithScorers({ 'match-1': { id: 'p-jiro', minutesAgo: 4.8 } }),
+          });
+          const card = screen.getByTestId('court-card-1');
+
+          // 点を入れても matches は書かれない。届くのは点の行（保存時刻つき）だけ
+          deliver({
+            kind: 'score',
+            matchId: 'match-1',
+            gameNumber: 1,
+            sideAScore: 13,
+            sideBScore: 9,
+            savedAt: new Date().toISOString(),
+          });
+          act(() => {
+            vi.advanceTimersByTime(30_000);
+          });
+          expect(within(card).getByText('愛知北のじろうさんが入力しています')).toBeInTheDocument();
+
+          act(() => {
+            vi.advanceTimersByTime(5 * 60_000);
+          });
+          expect(within(card).getByText('⚠ 入力する人がいません')).toBeInTheDocument();
         } finally {
           vi.useRealTimers();
         }

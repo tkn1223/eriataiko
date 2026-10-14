@@ -203,7 +203,7 @@ export function selectMatchRows(supabase: SupabaseReadClient, competitionId: str
     .from('matches')
     .select(
       `id, status, ending, max_game_count, court_number, order_in_court, finished_at,
-      scorer_participant_id, scorer_last_scored_at, division_id,
+      scorer_participant_id, scorer_claimed_at, division_id,
       divisions!inner(competition_id),
       matchups!inner(
         stage_id, round_name, side_a_slot_label, side_b_slot_label,
@@ -211,7 +211,7 @@ export function selectMatchRows(supabase: SupabaseReadClient, competitionId: str
         side_b_team:teams!matchups_side_b_team_id_fkey(team_number)
       ),
       match_players(side, participant_id, order_in_pair, participants!inner(players!inner(name))),
-      game_scores(game_number, side_a_score, side_b_score)`
+      game_scores(game_number, side_a_score, side_b_score, updated_at)`
     )
     .eq('divisions.competition_id', competitionId)
     .limit(MAX_PLAYERS_PER_MATCH, { referencedTable: 'match_players' })
@@ -237,7 +237,10 @@ export function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
     orderInCourt: match.order_in_court,
     finishedAt: match.finished_at,
     scorerParticipantId: match.scorer_participant_id,
-    scorerLastScoredAt: match.scorer_last_scored_at,
+    scorerClaimedAt: match.scorer_claimed_at,
+    scoreSavedAtByGame: Object.fromEntries(
+      match.game_scores.map((row) => [row.game_number, row.updated_at])
+    ),
     divisionId: match.division_id,
     stageId: match.matchups.stage_id,
     roundName: match.matchups.round_name,

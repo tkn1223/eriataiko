@@ -53,20 +53,23 @@ async function makeScoredMatch(status: 'live' | 'done' = 'live') {
   return matchId;
 }
 
+/**
+ * `minutesAgo` 分前に担当になり、最後の点もその時刻に入れた担当にする（最後に点を入れた時刻は、
+ * 担当になった時刻と点の保存時刻の遅いほうなので、両方ずらす）。
+ */
 async function setScorer(matchId: string, participantId: string, minutesAgo: number) {
+  const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
   await admin
     .from('matches')
-    .update({
-      scorer_participant_id: participantId,
-      scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
-    })
+    .update({ scorer_participant_id: participantId, scorer_claimed_at: at })
     .eq('id', matchId);
+  await admin.from('game_scores').update({ updated_at: at }).eq('match_id', matchId);
 }
 
 async function matchRow(matchId: string) {
   const { data } = await admin
     .from('matches')
-    .select('status, scorer_participant_id, scorer_last_scored_at')
+    .select('status, scorer_participant_id, scorer_claimed_at')
     .eq('id', matchId)
     .single();
   return data!;
@@ -141,7 +144,7 @@ describe('終了の取り消し（直す）は誰でも押せて、押した人�
     const row = await matchRow(matchId);
     expect(row.status).toBe('live');
     expect(row.scorer_participant_id).toBe(fixture.people.minamiTaro.participantId);
-    expect(Date.now() - new Date(row.scorer_last_scored_at!).getTime()).toBeLessThan(60_000);
+    expect(Date.now() - new Date(row.scorer_claimed_at!).getTime()).toBeLessThan(60_000);
   });
 
   test('担当がいない終了済みの試合も、直した人が担当になる', async () => {

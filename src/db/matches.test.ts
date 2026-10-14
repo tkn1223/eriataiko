@@ -292,22 +292,20 @@ describe('無い試合 ID を渡したとき', () => {
 async function readScorerColumns() {
   const { data, error } = await admin
     .from('matches')
-    .select('scorer_participant_id, scorer_last_scored_at')
+    .select('scorer_participant_id, scorer_claimed_at')
     .eq('id', matchId)
     .single();
   expect(error, `担当の読み出しに失敗: ${error?.message}`).toBeNull();
   return {
     participantId: data!.scorer_participant_id,
-    lastScoredAt: data!.scorer_last_scored_at
-      ? new Date(data!.scorer_last_scored_at).toISOString()
-      : null,
+    claimedAt: data!.scorer_claimed_at ? new Date(data!.scorer_claimed_at).toISOString() : null,
   };
 }
 
 async function resetScorer() {
   await admin
     .from('matches')
-    .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+    .update({ scorer_participant_id: null, scorer_claimed_at: null })
     .eq('id', matchId);
 }
 
@@ -337,6 +335,33 @@ describe('入力担当を読む・書く', () => {
       label: `${tag}南のたろう`,
       lastScoredAt: at,
     });
+  });
+
+  test('最後に点を入れた時刻は、担当になった時刻と、その試合の点が最後に保存された時刻の遅いほう', async () => {
+    await resetScorer();
+    await matchesDb.setScorer({
+      matchId,
+      participantId: taroParticipantId,
+      expectedHolderParticipantId: null,
+      now: at,
+    });
+    const scoredAt = new Date(at.getTime() + 120_000);
+    const GAME = 3;
+    try {
+      await matchesDb.saveGameScore({
+        matchId,
+        gameNumber: GAME,
+        sideAScore: 1,
+        sideBScore: 0,
+        now: scoredAt,
+      });
+
+      expect((await matchesDb.findMatch(matchId))?.scorer?.lastScoredAt).toEqual(scoredAt);
+      // 点を入れても、担当の欄（matches）は書かない
+      expect((await readScorerColumns()).claimedAt).toBe(at.toISOString());
+    } finally {
+      await admin.from('game_scores').delete().eq('match_id', matchId).eq('game_number', GAME);
+    }
   });
 
   test('チームの無い担当は名前だけで読める', async () => {
@@ -392,7 +417,7 @@ describe('入力担当を読む・書く', () => {
     expect(taken).toBe(true);
     expect(await readScorerColumns()).toEqual({
       participantId: jiroParticipantId,
-      lastScoredAt: at.toISOString(),
+      claimedAt: at.toISOString(),
     });
   });
 
@@ -417,7 +442,7 @@ describe('入力担当を読む・書く', () => {
     expect(both.filter(Boolean)).toHaveLength(1);
   });
 
-  test('最後に点を入れた時刻だけを更新できる（担当は自分のまま）', async () => {
+  test('自分が担当のまま書き直すと、担当になった時刻だけが新しくなる', async () => {
     await resetScorer();
     await matchesDb.setScorer({
       matchId,
@@ -437,7 +462,7 @@ describe('入力担当を読む・書く', () => {
     expect(renewed).toBe(true);
     expect(await readScorerColumns()).toEqual({
       participantId: taroParticipantId,
-      lastScoredAt: later.toISOString(),
+      claimedAt: later.toISOString(),
     });
   });
 
@@ -458,7 +483,7 @@ describe('入力担当を読む・書く', () => {
     expect(
       await matchesDb.clearScorer({ matchId, expectedHolderParticipantId: taroParticipantId })
     ).toBe(true);
-    expect(await readScorerColumns()).toEqual({ participantId: null, lastScoredAt: null });
+    expect(await readScorerColumns()).toEqual({ participantId: null, claimedAt: null });
   });
 
   test('終了の取り消しで、押した人が担当になり、時刻が入る', async () => {
@@ -476,7 +501,7 @@ describe('入力担当を読む・書く', () => {
 
     expect(await readScorerColumns()).toEqual({
       participantId: jiroParticipantId,
-      lastScoredAt: reopenedAt.toISOString(),
+      claimedAt: reopenedAt.toISOString(),
     });
   });
 });

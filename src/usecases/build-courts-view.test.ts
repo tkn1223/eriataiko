@@ -50,7 +50,8 @@ function match(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow 
     orderInCourt: 1,
     finishedAt: null,
     scorerParticipantId: null,
-    scorerLastScoredAt: null,
+    scorerClaimedAt: null,
+    scoreSavedAtByGame: {},
     divisionId: 'div-1',
     stageId: 'stage-league',
     roundName: '予選 1回戦',
@@ -648,14 +649,15 @@ describe('上限を超えて読み切れなかったとき', () => {
 });
 
 describe('入力担当（docs/specs/2026-10-14-match-scorer.md）', () => {
-  test('試合の担当の参加者と最後に点を入れた時刻が、画面が持つ試合に入る', () => {
+  test('試合の担当の参加者・担当になった時刻・ゲームごとの点の保存時刻が、画面が持つ試合に入る', () => {
     const view = buildCourtsView(
       baseInput({
         matches: [
           match({
             matchId: 'm-scored',
             scorerParticipantId: 'p-a1',
-            scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+            scorerClaimedAt: '2027-01-22T10:00:00+00:00',
+            scoreSavedAtByGame: { 1: '2027-01-22T10:02:00+00:00' },
           }),
           match({ matchId: 'm-free', courtNumber: 2 }),
         ],
@@ -664,11 +666,12 @@ describe('入力担当（docs/specs/2026-10-14-match-scorer.md）', () => {
 
     expect(view.board.find((m) => m.matchId === 'm-scored')).toMatchObject({
       scorerParticipantId: 'p-a1',
-      scorerLastScoredAt: '2027-01-22T10:00:00+00:00',
+      scorerClaimedAt: '2027-01-22T10:00:00+00:00',
+      scoreSavedAtByGame: { 1: '2027-01-22T10:02:00+00:00' },
     });
     expect(view.board.find((m) => m.matchId === 'm-free')).toMatchObject({
       scorerParticipantId: null,
-      scorerLastScoredAt: null,
+      scorerClaimedAt: null,
     });
   });
 
@@ -682,7 +685,7 @@ describe('入力担当（docs/specs/2026-10-14-match-scorer.md）', () => {
             status: 'done',
             finishedAt: '2027-01-22T09:00:00+00:00',
             scorerParticipantId: 'p-a1',
-            scorerLastScoredAt: '2027-01-22T08:59:00+00:00',
+            scorerClaimedAt: '2027-01-22T08:59:00+00:00',
           }),
         ],
       })

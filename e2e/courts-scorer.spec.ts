@@ -13,6 +13,7 @@ import {
   setMatchScorerDirectly,
   shiftMatchScorerTime,
 } from './helpers/courts-scenario';
+import { loadTestEnv } from '../tests/load-env.mjs';
 
 /**
  * 得点入力の担当（docs/specs/2026-10-14-match-scorer.md）の画面確認。
@@ -147,7 +148,7 @@ test.describe('取る', () => {
     await expect
       .poll(async () => (await findMatchScorer(matchIds.live)).participantId)
       .toBe(participantId);
-    expect((await findMatchScorer(matchIds.live)).lastScoredAt).not.toBeNull();
+    expect((await findMatchScorer(matchIds.live)).claimedAt).not.toBeNull();
     await expect.poll(() => findScorerLogActions(matchIds.live)).toEqual(['scorer.claim']);
 
     // 担当は試合に付く。ほかのコートの試合は担当がいないまま
@@ -381,6 +382,10 @@ test.describe('5 分たった担当', () => {
     const mine = await openCourtsAs(browser, MINAMI);
     const card = courtCard(mine.page, LIVE_COURT);
     await takeScorer(card);
+    // 画面は取る操作の返事を待たずに担当として見せるので、DB に書かれてから時刻をずらす
+    await expect
+      .poll(async () => (await findMatchScorer(matchIds.live)).participantId)
+      .not.toBeNull();
     await shiftMatchScorerTime(matchIds.live, 30);
 
     await plusButton(card, LIVE_A).click();
@@ -388,9 +393,10 @@ test.describe('5 分たった担当', () => {
     await expect
       .poll(() => findSavedGameScore(matchIds.live, 1))
       .toEqual({ sideAScore: 6, sideBScore: 3 });
-    // 点を入れたので、時刻も新しくなっている
-    const { lastScoredAt } = await findMatchScorer(matchIds.live);
+    // 点を入れたので、最後に点を入れた時刻（点の保存時刻）が新しくなっている。担当になった時刻はそのまま
+    const { claimedAt, lastScoredAt } = await findMatchScorer(matchIds.live);
     expect(Date.now() - new Date(lastScoredAt!).getTime()).toBeLessThan(60_000);
+    expect(Date.now() - new Date(claimedAt!).getTime()).toBeGreaterThan(29 * 60_000);
 
     await mine.context.close();
   });
@@ -492,7 +498,53 @@ test.describe('直す', () => {
 });
 
 test.describe('送れていない点があるまま、別の人として入り直したとき（⑪）', () => {
-  test('入り直した人が担当でなければ断られ、「◯◯さんが担当しています」と送れなかった点が出る。入り直した人の名前では保存されない', async ({
+  /**
+   * 結果LIVE を開いたまま、マイページ →「別の人として入り直す」→ 入場画面で退場して別の人で入る →
+   * 「大会の画面へ」で戻る（画面を読み込み直さないので、送れていない点はこの端末に残っている）。
+   */
+  async function reenterThroughEntryScreen(page: Page, who: { team: string; name: string }) {
+    await page.getByRole('link', { name: /myページ/ }).click();
+    await page.getByRole('link', { name: '別の人として入り直す' }).click();
+    await page.getByRole('button', { name: '退場する' }).click();
+    await page.getByRole('button', { name: new RegExp(who.team) }).click();
+    await page.getByRole('button', { name: new RegExp(who.name) }).click();
+    await page.getByPlaceholder('当日配布された合言葉').fill(loadTestEnv().TOURNAMENT_PASSCODE);
+    await page.getByRole('button', { name: '入場する' }).click();
+    await page.getByRole('link', { name: '大会の画面へ' }).click();
+    await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+  }
+
+  test('担当が空いていても、前の人が押した点は入り直した人の名前で送らない。カードに知らせと送れなかった点が出る', async ({
+    browser,
+  }) => {
+    const mine = await openCourtsAs(browser, MINAMI);
+    const card = courtCard(mine.page, LIVE_COURT);
+    await takeScorer(card);
+    await expect
+      .poll(async () => (await findMatchScorer(matchIds.live)).participantId)
+      .not.toBeNull();
+
+    // 電波が無く、押した点が送れない。そのあいだに担当が空く（入口は空いていれば送った人を担当にする）
+    await mine.page.route('**/api/matches/*/scores', (route) => route.abort());
+    await plusButton(card, LIVE_A).click();
+    await expect(card.getByRole('status')).toContainText('保存できていません');
+    await clearMatchScorerDirectly(matchIds.live);
+
+    await reenterThroughEntryScreen(mine.page, KITA);
+    await mine.page.unroute('**/api/matches/*/scores');
+
+    const backCard = courtCard(mine.page, LIVE_COURT);
+    await expect(backCard.getByRole('alert')).toContainText('別の人として入り直したため');
+    await expect(backCard.getByRole('alert')).toContainText('送れなかった点：第1ゲーム 6-3');
+    // 送り直しの間隔（最大 10 秒）を越えて待っても、北のたろうの名前で保存されず、担当にもならない
+    await mine.page.waitForTimeout(11_000);
+    expect(await findSavedGameScore(matchIds.live, 1)).toEqual({ sideAScore: 5, sideBScore: 3 });
+    expect((await findMatchScorer(matchIds.live)).participantId).toBeNull();
+
+    await mine.context.close();
+  });
+
+  test('入場の画面を通らずに入り直した（別のタブなど）ときも、入り直した人が担当でなければ入口が断り、「◯◯さんが担当しています」と送れなかった点が出る', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
@@ -507,7 +559,8 @@ test.describe('送れていない点があるまま、別の人として入り�
     await plusButton(card, LIVE_A).click();
     await expect(card.getByRole('status')).toContainText('保存できていません');
 
-    // 同じ端末で、別の人として入り直す（画面は閉じていない。送れていない点はこの端末に残っている）
+    // 同じ端末の入場（Cookie）だけを別の人に替える。この画面の預かり場所は入り直したことを知らないので、
+    // 送り直した点は入口の担当の確かめで断られる
     await enterAsPlayer(mine.page, KITA.team, KITA.name);
     await mine.page.unroute('**/api/matches/*/scores');
 

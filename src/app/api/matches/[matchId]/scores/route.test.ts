@@ -45,14 +45,17 @@ function scoreRequest(sideAScore: number, sideBScore: number, gameNumber = 1) {
   });
 }
 
+/**
+ * `minutesAgo` 分前に担当になり、最後の点もその時刻に入れた担当にする（最後に点を入れた時刻は、
+ * 担当になった時刻と点の保存時刻の遅いほうなので、両方ずらす）。
+ */
 async function setScorer(matchId: string, participantId: string, minutesAgo: number) {
+  const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
   await admin
     .from('matches')
-    .update({
-      scorer_participant_id: participantId,
-      scorer_last_scored_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
-    })
+    .update({ scorer_participant_id: participantId, scorer_claimed_at: at })
     .eq('id', matchId);
+  await admin.from('game_scores').update({ updated_at: at }).eq('match_id', matchId);
 }
 
 async function savedScore(matchId: string, gameNumber = 1) {
@@ -65,10 +68,20 @@ async function savedScore(matchId: string, gameNumber = 1) {
   return data;
 }
 
+async function savedScoreAt(matchId: string, gameNumber = 1) {
+  const { data } = await admin
+    .from('game_scores')
+    .select('updated_at')
+    .eq('match_id', matchId)
+    .eq('game_number', gameNumber)
+    .single();
+  return data!.updated_at;
+}
+
 async function matchRow(matchId: string) {
   const { data } = await admin
     .from('matches')
-    .select('status, scorer_participant_id, scorer_last_scored_at')
+    .select('status, scorer_participant_id, scorer_claimed_at')
     .eq('id', matchId)
     .single();
   return data!;
@@ -138,18 +151,20 @@ describe('担当の確かめ', () => {
     expect(await savedScore(matchId)).toEqual({ side_a_score: 5, side_b_score: 4 });
   });
 
-  test('担当の人の点は保存され、最後に点を入れた時刻が新しくなる', async () => {
+  test('担当の人の点は保存され、最後に点を入れた時刻（点の保存時刻）が新しくなる。matches は書かない', async () => {
     const matchId = await fixture.makeMatch();
     await setScorer(matchId, fixture.people.minamiTaro.participantId, 3);
-    const before = new Date((await matchRow(matchId)).scorer_last_scored_at!).getTime();
+    const before = await matchRow(matchId);
     enterAs(fixture.people.minamiTaro.session);
 
     const response = await POST(scoreRequest(12, 10), contextOf(matchId));
 
     expect(response.status).toBe(200);
     expect(await savedScore(matchId)).toEqual({ side_a_score: 12, side_b_score: 10 });
+    expect(Date.now() - new Date(await savedScoreAt(matchId)).getTime()).toBeLessThan(60_000);
+    // 担当の欄（matches）はそのまま。書くと全員への知らせが 1 点あたり 2 通になる
     const after = await matchRow(matchId);
-    expect(new Date(after.scorer_last_scored_at!).getTime()).toBeGreaterThan(before + 60_000);
+    expect(after.scorer_claimed_at).toBe(before.scorer_claimed_at);
     expect(after.scorer_participant_id).toBe(fixture.people.minamiTaro.participantId);
     // 取り直したわけではないので、担当の記録は増えない
     expect(await actionsOf(matchId)).toEqual(['score.save']);

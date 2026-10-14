@@ -3,7 +3,7 @@ import 'server-only';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/db/admin';
 import type { GameScore } from '@/domain/scoring';
-import { scorerLabel } from '@/domain/scorer';
+import { lastScoredAtOf, scorerLabel } from '@/domain/scorer';
 import type { ClaimScorerRepository } from '@/usecases/claim-scorer';
 import type { FinishMatchRepository } from '@/usecases/finish-match';
 import type { MatchScorer } from '@/usecases/match-scorer';
@@ -40,19 +40,27 @@ export const matchesDb: SaveScoreRepository &
     const { data, error } = await getSupabaseAdminClient()
       .from('matches')
       .select(
-        `id, status, max_game_count, scorer_last_scored_at,
+        `id, status, max_game_count, scorer_claimed_at,
         scorer:participants!matches_scorer_participant_id_fkey(
           id, player_id, players!inner(name), teams(name)
-        )`
+        ),
+        game_scores(updated_at)`
       )
       .eq('id', matchId)
+      // 「最後に点を入れた時刻」に使うのは、その試合の点が最後に保存された時刻だけ（`lastScoredAtOf`）
+      .order('updated_at', { referencedTable: 'game_scores', ascending: false })
+      .limit(1, { referencedTable: 'game_scores' })
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
 
     // 担当の参加者がいても時刻が無い行は作らない（入口は必ず一緒に書く）。万一あれば担当なし扱い
+    const lastScoredAt = lastScoredAtOf({
+      claimedAt: data.scorer_claimed_at ? new Date(data.scorer_claimed_at) : null,
+      lastScoreSavedAt: data.game_scores[0] ? new Date(data.game_scores[0].updated_at) : null,
+    });
     const scorer: MatchScorer | null =
-      data.scorer && data.scorer_last_scored_at
+      data.scorer && lastScoredAt
         ? {
             participantId: data.scorer.id,
             playerId: data.scorer.player_id,
@@ -60,7 +68,7 @@ export const matchesDb: SaveScoreRepository &
               teamName: data.scorer.teams?.name ?? null,
               playerName: data.scorer.players.name,
             }),
-            lastScoredAt: new Date(data.scorer_last_scored_at),
+            lastScoredAt,
           }
         : null;
 
@@ -96,7 +104,7 @@ export const matchesDb: SaveScoreRepository &
       .from('matches')
       .update({
         scorer_participant_id: participantId,
-        scorer_last_scored_at: now.toISOString(),
+        scorer_claimed_at: now.toISOString(),
       })
       .eq('id', matchId);
     // 読んだときの担当のままのときだけ書く。条件に合う行が無ければ何も書かれず、返る行が 0 件になる
@@ -112,7 +120,7 @@ export const matchesDb: SaveScoreRepository &
   async clearScorer({ matchId, expectedHolderParticipantId }) {
     const { data, error } = await getSupabaseAdminClient()
       .from('matches')
-      .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+      .update({ scorer_participant_id: null, scorer_claimed_at: null })
       .eq('id', matchId)
       .eq('scorer_participant_id', expectedHolderParticipantId)
       .select('id');
@@ -125,7 +133,8 @@ export const matchesDb: SaveScoreRepository &
     const scores = {
       side_a_score: sideAScore,
       side_b_score: sideBScore,
-      // この DB に自動更新の仕掛けは無いので、書き換えるたびに自分で入れる
+      // この DB に自動更新の仕掛けは無いので、書き換えるたびに自分で入れる。
+      // 担当の「最後に点を入れた時刻」もこれで表す（`findMatch` の `lastScoredAtOf`）ので、同じ点でも必ず入れる
       updated_at: now.toISOString(),
     };
 
@@ -206,7 +215,7 @@ export const matchesDb: SaveScoreRepository &
         ending: 'normal',
         // 直す人が担当になる。状態と同じ書き込みにして、全員の画面に 1 回の変化で届ける
         scorer_participant_id: scorerParticipantId,
-        scorer_last_scored_at: now.toISOString(),
+        scorer_claimed_at: now.toISOString(),
       })
       .eq('id', matchId);
     if (error) throw error;

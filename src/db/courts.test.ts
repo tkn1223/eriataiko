@@ -345,7 +345,7 @@ describe('findCourtsData の入力担当', () => {
   afterAll(async () => {
     await admin
       .from('matches')
-      .update({ scorer_participant_id: null, scorer_last_scored_at: null })
+      .update({ scorer_participant_id: null, scorer_claimed_at: null })
       .eq('id', liveMatchId);
   });
 
@@ -354,20 +354,35 @@ describe('findCourtsData の入力担当', () => {
     const live = data.matches.find((m) => m.matchId === liveMatchId)!;
 
     expect(live.scorerParticipantId).toBeNull();
-    expect(live.scorerLastScoredAt).toBeNull();
+    expect(live.scorerClaimedAt).toBeNull();
   });
 
-  test('担当の参加者と、最後に点を入れた時刻が試合に付いて読める', async () => {
+  test('担当の参加者と、担当になった時刻が試合に付いて読める', async () => {
     await admin
       .from('matches')
-      .update({ scorer_participant_id: myParticipantId, scorer_last_scored_at: scoredAt })
+      .update({ scorer_participant_id: myParticipantId, scorer_claimed_at: scoredAt })
       .eq('id', liveMatchId);
 
     const data = await findCourtsData(competitionId, null);
     const live = data.matches.find((m) => m.matchId === liveMatchId)!;
 
     expect(live.scorerParticipantId).toBe(myParticipantId);
-    expect(new Date(live.scorerLastScoredAt!).toISOString()).toBe(scoredAt);
+    expect(new Date(live.scorerClaimedAt!).toISOString()).toBe(scoredAt);
+  });
+
+  test('ゲームごとの点の保存時刻（担当の「最後に点を入れた時刻」の元）が試合に付いて読める', async () => {
+    const savedAt = '2027-05-01T10:03:00.000Z';
+    await admin
+      .from('game_scores')
+      .update({ updated_at: savedAt })
+      .eq('match_id', liveMatchId)
+      .eq('game_number', 1);
+
+    const data = await findCourtsData(competitionId, null);
+    const live = data.matches.find((m) => m.matchId === liveMatchId)!;
+
+    expect(Object.keys(live.scoreSavedAtByGame)).toEqual(['1']);
+    expect(new Date(live.scoreSavedAtByGame[1]).toISOString()).toBe(savedAt);
   });
 
   test('最近終わった試合にも担当の列が付く（読み方を結果LIVEの2つの読み込みで揃えている）', async () => {
@@ -375,7 +390,8 @@ describe('findCourtsData の入力担当', () => {
 
     for (const row of [...data.matches, ...data.previousMatches]) {
       expect(row).toHaveProperty('scorerParticipantId');
-      expect(row).toHaveProperty('scorerLastScoredAt');
+      expect(row).toHaveProperty('scorerClaimedAt');
+      expect(row).toHaveProperty('scoreSavedAtByGame');
     }
   });
 

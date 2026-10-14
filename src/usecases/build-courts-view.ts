@@ -78,8 +78,13 @@ export type CourtsViewMatchRow = {
   finishedAt: string | null;
   /** `matches.scorer_participant_id`。いまの入力担当（参加者）。いなければ null。 */
   scorerParticipantId: string | null;
-  /** `matches.scorer_last_scored_at`（ISO 8601）。担当が最後に点を入れた（担当になった）時刻。 */
-  scorerLastScoredAt: string | null;
+  /** `matches.scorer_claimed_at`（ISO 8601）。担当になった時刻。 */
+  scorerClaimedAt: string | null;
+  /**
+   * ゲーム番号 → そのゲームの点が最後に保存された時刻（`game_scores.updated_at`、ISO 8601）。
+   * 担当の「最後に点を入れた時刻」を出すのに使う（`src/domain/scorer.ts` の `lastScoredAtOf`）。
+   */
+  scoreSavedAtByGame: Record<number, string>;
   divisionId: string;
   stageId: string;
   /** `matchups.round_name`。例: '予選 1回戦'。 */
@@ -172,7 +177,8 @@ export function toCourtMatch(
     orderInCourt: match.orderInCourt,
     finishedAt: match.finishedAt,
     scorerParticipantId: match.scorerParticipantId,
-    scorerLastScoredAt: match.scorerLastScoredAt,
+    scorerClaimedAt: match.scorerClaimedAt,
+    scoreSavedAtByGame: match.scoreSavedAtByGame,
     reopened: false,
     classLabel: classLabelOf(match, classLabelById),
     roundLabel: match.roundName,

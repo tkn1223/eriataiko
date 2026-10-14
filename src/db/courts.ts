@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from '@/db/server';
 import type {
   CourtsViewDivisionRow,
   CourtsViewMatchRow,
+  CourtsViewParticipantRow,
   CourtsViewPlayerRow,
   CourtsViewSideRow,
   CourtsViewStageRow,
@@ -32,6 +33,10 @@ import type {
  * `src/db/snapshot.ts` と同じく**上限より 1 件多く読み**、超えたら `truncated` で分かるようにする
  * （超えた 1 件は判定にだけ使い、渡さない）。
  * 埋め込んだ表の上限は、親の 1 行あたり（試合 1 つ・段 1 つあたり）に効く。
+ *
+ * `export` している読み方（`withinLimit` / `findDivisions` / `selectMatchRows` / `toViewMatchRow` /
+ * `findMyParticipantId`）は進行表（`src/db/matches-board.ts`）も使う。試合 1 行をどう読むかを
+ * 2 か所に持たないため（片方だけ直して、同じ試合が画面によって違って見えるのを防ぐ）。
  */
 const MAX_DIVISIONS = 20;
 const MAX_STAGES = 20;
@@ -64,6 +69,12 @@ const MAX_GAME_SCORES_PER_MATCH = 10;
  * 1 試合ぶんが名前・得点つきで重いので、大きくしすぎない。
  */
 export const MAX_PREVIOUS_CANDIDATES = 40;
+/**
+ * 担当の名前を引くための参加者の読み込み上限。100 人規模の大会の数倍の余裕を持たせる。
+ * 上限を超えても `truncated` は立てない（コートや試合数の欠けではないため）。名前が引けない担当は
+ * 画面が「ほかの人」と出し、読み直しで補う。
+ */
+export const MAX_PARTICIPANTS = 500;
 
 export type CourtsData = {
   /** 選手として入った人の participants.id。その大会に参加者情報が無ければ null。 */
@@ -75,14 +86,16 @@ export type CourtsData = {
   matches: CourtsViewMatchRow[];
   /** 最近終わった試合（終了の時刻が新しい順。コートごとの「1 つ前」を選ぶ元）。 */
   previousMatches: CourtsViewMatchRow[];
+  /** その大会の参加者（担当の名前を引く元）。 */
+  participants: CourtsViewParticipantRow[];
   /** どれかの読み込みが上限に達し、読み切れていない。 */
   truncated: boolean;
 };
 
-type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
+export type SupabaseReadClient = ReturnType<typeof createSupabaseServerClient>;
 
 /** 上限 + 1 件まで読んだ行から、上限を超えたかの判定と、上限までの行を取り出す。 */
-function withinLimit<Row>(rows: Row[], max: number): { rows: Row[]; overflowed: boolean } {
+export function withinLimit<Row>(rows: Row[], max: number): { rows: Row[]; overflowed: boolean } {
   return { rows: rows.slice(0, max), overflowed: rows.length > max };
 }
 
@@ -99,13 +112,15 @@ export async function findCourtsData(
 ): Promise<CourtsData> {
   const supabase = createSupabaseServerClient();
 
-  const [divisions, stages, matches, previousMatches, myParticipantId] = await Promise.all([
-    findDivisions(supabase, competitionId),
-    findStagesWithCounts(supabase, competitionId),
-    findCourtMatches(supabase, competitionId),
-    findRecentlyFinishedMatches(supabase, competitionId),
-    playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
-  ]);
+  const [divisions, stages, matches, previousMatches, participants, myParticipantId] =
+    await Promise.all([
+      findDivisions(supabase, competitionId),
+      findStagesWithCounts(supabase, competitionId),
+      findCourtMatches(supabase, competitionId),
+      findRecentlyFinishedMatches(supabase, competitionId),
+      findParticipants(supabase, competitionId),
+      playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
+    ]);
 
   return {
     myParticipantId,
@@ -113,12 +128,13 @@ export async function findCourtsData(
     stages: stages.rows,
     matches: matches.rows,
     previousMatches,
+    participants,
     truncated: divisions.overflowed || stages.overflowed || matches.overflowed,
   };
 }
 
 /** いまの大会の部すべて（並び順で色を付けるのと、部の名前を出すのに使う）。 */
-async function findDivisions(supabase: SupabaseReadClient, competitionId: string) {
+export async function findDivisions(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('divisions')
     .select('id, name, sort_order')
@@ -182,11 +198,12 @@ function sumCounts(countsPerMatchup: { count: number }[][]): number {
  * 部は必ず大会に属する（`matches.division_id` は not null）ので、ここを通せば 1 段で絞れる。
  * チームは matchups から 2 本（a 側・b 側）出ているので、外部キーの名前で向きを指定する。
  */
-function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
+export function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
   return supabase
     .from('matches')
     .select(
-      `id, status, ending, max_game_count, court_number, order_in_court, finished_at, division_id,
+      `id, status, ending, max_game_count, court_number, order_in_court, finished_at,
+      scorer_participant_id, scorer_claimed_at, division_id,
       divisions!inner(competition_id),
       matchups!inner(
         stage_id, round_name, side_a_slot_label, side_b_slot_label,
@@ -194,7 +211,7 @@ function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
         side_b_team:teams!matchups_side_b_team_id_fkey(team_number)
       ),
       match_players(side, participant_id, order_in_pair, participants!inner(players!inner(name))),
-      game_scores(game_number, side_a_score, side_b_score)`
+      game_scores(game_number, side_a_score, side_b_score, updated_at)`
     )
     .eq('divisions.competition_id', competitionId)
     .limit(MAX_PLAYERS_PER_MATCH, { referencedTable: 'match_players' })
@@ -203,7 +220,7 @@ function selectMatchRows(supabase: SupabaseReadClient, competitionId: string) {
 
 type MatchRow = NonNullable<Awaited<ReturnType<typeof selectMatchRows>>['data']>[number];
 
-function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
+export function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
   const players = match.match_players.map((row) => ({
     side: row.side,
     participantId: row.participant_id,
@@ -219,6 +236,11 @@ function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
     courtNumber: match.court_number,
     orderInCourt: match.order_in_court,
     finishedAt: match.finished_at,
+    scorerParticipantId: match.scorer_participant_id,
+    scorerClaimedAt: match.scorer_claimed_at,
+    scoreSavedAtByGame: Object.fromEntries(
+      match.game_scores.map((row) => [row.game_number, row.updated_at])
+    ),
     divisionId: match.division_id,
     stageId: match.matchups.stage_id,
     roundName: match.matchups.round_name,
@@ -279,6 +301,28 @@ async function findRecentlyFinishedMatches(supabase: SupabaseReadClient, competi
   return (data ?? []).map(toViewMatchRow);
 }
 
+/**
+ * その大会の参加者（担当の名前を引く元）。担当になれるのは参加者全員なので、試合に出る人だけでなく
+ * 大会の参加者を全部読む。名前とチーム名しか読まない小さな行。
+ */
+async function findParticipants(
+  supabase: SupabaseReadClient,
+  competitionId: string
+): Promise<CourtsViewParticipantRow[]> {
+  const { data, error } = await supabase
+    .from('participants')
+    .select('id, players!inner(name), teams(name)')
+    .eq('competition_id', competitionId)
+    .limit(MAX_PARTICIPANTS);
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    participantId: row.id,
+    playerName: row.players.name,
+    teamName: row.teams?.name ?? null,
+  }));
+}
+
 function toSideRow(
   teamNumber: number | null,
   slotLabel: string | null,
@@ -295,7 +339,7 @@ function toSideRow(
 }
 
 /** その大会でのその人の participants.id。参加者情報が無ければ null。 */
-async function findMyParticipantId(
+export async function findMyParticipantId(
   supabase: SupabaseReadClient,
   competitionId: string,
   playerId: string

@@ -3,7 +3,11 @@ import 'server-only';
 import { z } from 'zod';
 import { getSupabaseAdminClient } from '@/db/admin';
 import type { GameScore } from '@/domain/scoring';
+import { lastScoredAtOf, scorerLabel } from '@/domain/scorer';
+import type { ClaimScorerRepository } from '@/usecases/claim-scorer';
 import type { FinishMatchRepository } from '@/usecases/finish-match';
+import type { MatchScorer } from '@/usecases/match-scorer';
+import type { ReleaseScorerRepository } from '@/usecases/release-scorer';
 import type { ReopenMatchRepository } from '@/usecases/reopen-match';
 import type { SaveScoreRepository } from '@/usecases/save-score';
 
@@ -18,12 +22,16 @@ const UNIQUE_VIOLATION = '23505';
  * `getSupabaseAdminClient()` を使うので、呼び出しは Route Handler の中に限る
  * （AGENTS.md の「破ってはいけない 3 つ」の 2 番目）。
  *
- * 3 つの usecase（save-score / finish-match / reopen-match）が求める
- * インターフェースをまとめて満たす 1 つのオブジェクトにしている。
- * `findMatch` の戻り値は一番情報の多い形（max_game_count 込み）にそろえ、
+ * 5 つの usecase（save-score / finish-match / reopen-match / claim-scorer / release-scorer）が
+ * 求めるインターフェースをまとめて満たす 1 つのオブジェクトにしている。
+ * `findMatch` の戻り値は一番情報の多い形（max_game_count・いまの担当込み）にそろえ、
  * 各 usecase は自分が使う分だけを読む。
  */
-export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatchRepository = {
+export const matchesDb: SaveScoreRepository &
+  FinishMatchRepository &
+  ReopenMatchRepository &
+  ClaimScorerRepository &
+  ReleaseScorerRepository = {
   async findMatch(matchId) {
     // URL に uuid でない文字列が入ってくると Postgres が構文エラーを返し、
     // 「無い試合」なのに 500 になってしまう。存在しないのは同じなので null に寄せる。
@@ -31,13 +39,93 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
 
     const { data, error } = await getSupabaseAdminClient()
       .from('matches')
-      .select('id, status, max_game_count')
+      .select(
+        `id, status, max_game_count, scorer_claimed_at,
+        scorer:participants!matches_scorer_participant_id_fkey(
+          id, player_id, players!inner(name), teams(name)
+        ),
+        game_scores(updated_at)`
+      )
       .eq('id', matchId)
+      // 「最後に点を入れた時刻」に使うのは、その試合の点が最後に保存された時刻だけ（`lastScoredAtOf`）
+      .order('updated_at', { referencedTable: 'game_scores', ascending: false })
+      .limit(1, { referencedTable: 'game_scores' })
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
 
-    return { id: data.id, status: data.status, maxGameCount: data.max_game_count };
+    // 担当の参加者がいても時刻が無い行は作らない（入口は必ず一緒に書く）。万一あれば担当なし扱い
+    const lastScoredAt = lastScoredAtOf({
+      claimedAt: data.scorer_claimed_at ? new Date(data.scorer_claimed_at) : null,
+      lastScoreSavedAt: data.game_scores[0] ? new Date(data.game_scores[0].updated_at) : null,
+    });
+    const scorer: MatchScorer | null =
+      data.scorer && lastScoredAt
+        ? {
+            participantId: data.scorer.id,
+            playerId: data.scorer.player_id,
+            label: scorerLabel({
+              teamName: data.scorer.teams?.name ?? null,
+              playerName: data.scorer.players.name,
+            }),
+            lastScoredAt,
+          }
+        : null;
+
+    return { id: data.id, status: data.status, maxGameCount: data.max_game_count, scorer };
+  },
+
+  async findParticipantOfPlayer({ matchId, playerId }) {
+    if (!matchIdSchema.safeParse(matchId).success) return null;
+
+    const supabase = getSupabaseAdminClient();
+    // 試合は部を通して大会に属する（matches 自身は大会の id を持たない）
+    const { data: match, error: matchError } = await supabase
+      .from('matches')
+      .select('divisions!inner(competition_id)')
+      .eq('id', matchId)
+      .maybeSingle();
+    if (matchError) throw matchError;
+    if (!match) return null;
+
+    const { data, error } = await supabase
+      .from('participants')
+      .select('id')
+      .eq('competition_id', match.divisions.competition_id)
+      .eq('player_id', playerId)
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.id ?? null;
+  },
+
+  async setScorer({ matchId, participantId, expectedHolderParticipantId, now }) {
+    const update = getSupabaseAdminClient()
+      .from('matches')
+      .update({
+        scorer_participant_id: participantId,
+        scorer_claimed_at: now.toISOString(),
+      })
+      .eq('id', matchId);
+    // 読んだときの担当のままのときだけ書く。条件に合う行が無ければ何も書かれず、返る行が 0 件になる
+    const { data, error } = await (
+      expectedHolderParticipantId === null
+        ? update.is('scorer_participant_id', null)
+        : update.eq('scorer_participant_id', expectedHolderParticipantId)
+    ).select('id');
+    if (error) throw error;
+    return (data ?? []).length > 0;
+  },
+
+  async clearScorer({ matchId, expectedHolderParticipantId }) {
+    const { data, error } = await getSupabaseAdminClient()
+      .from('matches')
+      .update({ scorer_participant_id: null, scorer_claimed_at: null })
+      .eq('id', matchId)
+      .eq('scorer_participant_id', expectedHolderParticipantId)
+      .select('id');
+    if (error) throw error;
+    return (data ?? []).length > 0;
   },
 
   async saveGameScore({ matchId, gameNumber, sideAScore, sideBScore, now }) {
@@ -45,7 +133,8 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
     const scores = {
       side_a_score: sideAScore,
       side_b_score: sideBScore,
-      // この DB に自動更新の仕掛けは無いので、書き換えるたびに自分で入れる
+      // この DB に自動更新の仕掛けは無いので、書き換えるたびに自分で入れる。
+      // 担当の「最後に点を入れた時刻」もこれで表す（`findMatch` の `lastScoredAtOf`）ので、同じ点でも必ず入れる
       updated_at: now.toISOString(),
     };
 
@@ -117,10 +206,17 @@ export const matchesDb: SaveScoreRepository & FinishMatchRepository & ReopenMatc
     if (error) throw error;
   },
 
-  async reopen({ matchId }) {
+  async reopen({ matchId, scorerParticipantId, now }) {
     const { error } = await getSupabaseAdminClient()
       .from('matches')
-      .update({ status: 'live', finished_at: null, ending: 'normal' })
+      .update({
+        status: 'live',
+        finished_at: null,
+        ending: 'normal',
+        // 直す人が担当になる。状態と同じ書き込みにして、全員の画面に 1 回の変化で届ける
+        scorer_participant_id: scorerParticipantId,
+        scorer_claimed_at: now.toISOString(),
+      })
       .eq('id', matchId);
     if (error) throw error;
   },

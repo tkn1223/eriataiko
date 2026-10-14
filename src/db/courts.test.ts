@@ -338,6 +338,106 @@ describe('findCourtsData', () => {
   });
 });
 
+/** 入力担当（docs/specs/2026-10-14-match-scorer.md）。担当の列と、名前を引くための参加者の一覧。 */
+describe('findCourtsData の入力担当', () => {
+  const scoredAt = '2027-05-01T10:00:00.000Z';
+
+  afterAll(async () => {
+    await admin
+      .from('matches')
+      .update({ scorer_participant_id: null, scorer_claimed_at: null })
+      .eq('id', liveMatchId);
+  });
+
+  test('担当がいない試合は、担当も時刻も null', async () => {
+    const data = await findCourtsData(competitionId, myPlayerId);
+    const live = data.matches.find((m) => m.matchId === liveMatchId)!;
+
+    expect(live.scorerParticipantId).toBeNull();
+    expect(live.scorerClaimedAt).toBeNull();
+  });
+
+  test('担当の参加者と、担当になった時刻が試合に付いて読める', async () => {
+    await admin
+      .from('matches')
+      .update({ scorer_participant_id: myParticipantId, scorer_claimed_at: scoredAt })
+      .eq('id', liveMatchId);
+
+    const data = await findCourtsData(competitionId, null);
+    const live = data.matches.find((m) => m.matchId === liveMatchId)!;
+
+    expect(live.scorerParticipantId).toBe(myParticipantId);
+    expect(new Date(live.scorerClaimedAt!).toISOString()).toBe(scoredAt);
+  });
+
+  test('ゲームごとの点の保存時刻（担当の「最後に点を入れた時刻」の元）が試合に付いて読める', async () => {
+    const savedAt = '2027-05-01T10:03:00.000Z';
+    await admin
+      .from('game_scores')
+      .update({ updated_at: savedAt })
+      .eq('match_id', liveMatchId)
+      .eq('game_number', 1);
+
+    const data = await findCourtsData(competitionId, null);
+    const live = data.matches.find((m) => m.matchId === liveMatchId)!;
+
+    expect(Object.keys(live.scoreSavedAtByGame)).toEqual(['1']);
+    expect(new Date(live.scoreSavedAtByGame[1]).toISOString()).toBe(savedAt);
+  });
+
+  test('最近終わった試合にも担当の列が付く（読み方を結果LIVEの2つの読み込みで揃えている）', async () => {
+    const data = await findCourtsData(competitionId, null);
+
+    for (const row of [...data.matches, ...data.previousMatches]) {
+      expect(row).toHaveProperty('scorerParticipantId');
+      expect(row).toHaveProperty('scorerClaimedAt');
+      expect(row).toHaveProperty('scoreSavedAtByGame');
+    }
+  });
+
+  test('参加者の一覧に、参加者の id・名前・チーム名が入っている（担当の名前を引くため）', async () => {
+    const data = await findCourtsData(competitionId, null);
+
+    expect(data.participants).toContainEqual({
+      participantId: myParticipantId,
+      playerName: `${tag} 自分`,
+      teamName: `${tag} チームA`,
+    });
+    expect(data.participants).toHaveLength(3);
+  });
+
+  test('チームの無い参加者（入力だけの人）は teamName が null', async () => {
+    const noTeamPlayer = await admin
+      .from('players')
+      .insert({ player_number: 899928, name: `${tag} 入力だけ` })
+      .select('id')
+      .single();
+    const noTeam = await admin
+      .from('participants')
+      .insert({ competition_id: competitionId, player_id: noTeamPlayer.data!.id })
+      .select('id')
+      .single();
+
+    try {
+      const data = await findCourtsData(competitionId, null);
+      expect(data.participants).toContainEqual({
+        participantId: noTeam.data!.id,
+        playerName: `${tag} 入力だけ`,
+        teamName: null,
+      });
+    } finally {
+      await admin.from('players').delete().eq('id', noTeamPlayer.data!.id);
+    }
+  });
+
+  test('ほかの大会の参加者は混ざらない', async () => {
+    const data = await findCourtsData(competitionId, null);
+
+    // 手元の DB にはサンプルの大会の参加者もいる。指定した大会の 3 人だけが読めていること
+    expect(data.participants.every((p) => p.playerName.startsWith(tag))).toBe(true);
+  });
+});
+
 /**
  * 試合が多い大会。件数は数えるだけなので 100 件を超えても正しく、
  * コート用の読み込みは上限を超えたら「超えた」と分かる（黙って欠けさせない）。

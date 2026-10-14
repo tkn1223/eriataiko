@@ -20,10 +20,14 @@ import type {
   LiveMatch,
   LiveScore,
   NextMatch,
+  ScorerRejection,
   ScoreSyncStatus,
 } from '@/ui/courts/types';
 import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 import { ReopenConfirmSheet } from '@/ui/courts/reopen-confirm-sheet';
+import type { ScorerView } from '@/ui/courts/scorer-view';
+import { TakeOverConfirmSheet } from '@/ui/courts/take-over-confirm-sheet';
+import type { FinishSheetControl } from '@/ui/courts/use-finish-sheets';
 
 type Props = {
   court: Court;
@@ -42,10 +46,36 @@ type Props = {
   /** 確認画面で「OK」が押されたときに呼ばれる。実際に試合を終了する処理はページ側が持つ。 */
   onFinishMatch: (retiredSide: 'A' | 'B' | null) => void;
   /**
+   * 試合ごとの「終了の確認画面」の操作。開き閉じと選んだ棄権は、カードの中ではなくページが試合ごとに
+   * 覚える（カードは試合の状態が変わると作り直されるので、中で覚えると確認画面が閉じてしまう。
+   * また、コートに結びつけると、開いている間に試合が終わったとき次の試合の中身で開いたままになる）。
+   */
+  finishSheetOf: (matchId: string) => FinishSheetControl;
+  /**
+   * 試合ごとの入力担当の見せ方と操作（仕様 docs/specs/2026-10-14-match-scorer.md）。
+   * 今の試合も、直し中の試合も、試合の id で引く。決まり（5 分・引き継ぎ）はこの外で済んでいて、
+   * ここは渡された見せ方のとおりに出すだけ。
+   */
+  scorerOf: (matchId: string) => ScorerControl;
+  /**
    * 直し中の試合と、1 つ前の「直す」を動かすのに要るもの。今の試合ではなく、試合の id ごとに呼ぶ。
    * 渡さなければ、直し中と1つ前は見るだけ（押せるボタンは出ない）。
    */
   fix?: FixActions;
+};
+
+/** 1 つの試合の入力担当の見せ方と操作。 */
+export type ScorerControl = {
+  /** 自分が担当か、いないか、ほかの人か。 */
+  view: ScorerView;
+  /** 「得点を入力する」。担当を取る。 */
+  onClaim: () => void;
+  /** 「引き継ぐ」の確認で OK。ほかの人から担当を取る。 */
+  onTakeOver: () => void;
+  /** 「入力をやめる」。 */
+  onRelease: () => void;
+  /** 担当でないと断られた点の知らせの「閉じる」。 */
+  onDismissRejection: () => void;
 };
 
 /** 「取り消しています」の途中か、失敗したか（`courts-page.tsx` が持つ）。 */
@@ -58,6 +88,8 @@ export type FixActions = {
   onIncrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (matchId: string, gameNumber: number, side: 'A' | 'B') => void;
   onFinishMatch: (matchId: string, retiredSide: 'A' | 'B' | null) => void;
+  /** 「もう一度終了する」の確認画面の操作（ページが試合ごとに覚える）。 */
+  finishSheetOf: (matchId: string) => FinishSheetControl;
   /** 確認画面の「OK」で呼ばれる。終了を取り消す入口に送るのはページ側。 */
   onReopen: (matchId: string) => void;
 };
@@ -65,6 +97,8 @@ export type FixActions = {
 const REOPENING_MESSAGE = '取り消しています';
 const FINISHING_MESSAGE = '終了を送っています';
 const FINISHING_RETRYING_MESSAGE = '終了を送っています・送り直しています';
+const CLAIM_RETRYING_MESSAGE = '入力の担当を取れていません・送り直しています';
+const RELEASE_RETRYING_MESSAGE = '入力の担当をやめられていません・送り直しています';
 
 /**
  * 呼出待ちの次の試合を、進行中の試合と同じ形にして扱えるようにする。
@@ -186,7 +220,147 @@ function syncLines(syncStatus: ScoreSyncStatus | null, canInput: boolean): strin
         ? FINISHING_RETRYING_MESSAGE
         : FINISHING_MESSAGE
       : null,
+    // 担当を取る・やめる操作が電波で届いていない間。入力は止めない（＋ − は押せる）
+    syncStatus?.scorerOp?.retrying
+      ? syncStatus.scorerOp.kind === 'claim'
+        ? CLAIM_RETRYING_MESSAGE
+        : RELEASE_RETRYING_MESSAGE
+      : null,
+    syncStatus?.scorerOpMessage ?? null,
   ].filter((line): line is string => line !== null);
+}
+
+/** 送れなかった点の書き方（「第1ゲーム 12-10、第2ゲーム 3-5」）。 */
+function rejectedGamesText(games: GameScore[]): string {
+  return games.map((g) => `第${g.gameNumber}ゲーム ${g.sideAScore}-${g.sideBScore}`).join('、');
+}
+
+/**
+ * 送った点が担当でないと断られたときの知らせ（仕様 ⑧⑨）。そのコートのカードの中に、閉じるまで出す。
+ * 点数が食い違っていたときに口で伝えられるよう、送れなかった点を出す。
+ */
+function ScorerRejectionNotice({
+  rejection,
+  onDismiss,
+}: {
+  rejection: ScorerRejection;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="border-live flex flex-col gap-1.5 rounded-[10px] border-2 bg-red-50 px-3 py-2"
+    >
+      <p className="text-live text-[13px] font-extrabold break-words">{rejection.message}</p>
+      <p className="tabular text-[12px] font-bold break-words">
+        {`送れなかった点：${rejectedGamesText(rejection.games)}`}
+      </p>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="min-h-11 w-full rounded-[10px] border border-gray-300 bg-white py-[10px] text-[14px] font-bold"
+      >
+        閉じる
+      </button>
+    </div>
+  );
+}
+
+/** 担当がいない試合の目立つ印と、「得点を入力する」。観戦者には印だけ出す（押せない）。 */
+function VacantScorerBanner({ canInput, onClaim }: { canInput: boolean; onClaim: () => void }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="bg-accent-soft text-accent rounded-[10px] px-3 py-2 text-[13px] font-extrabold">
+        ⚠ 入力する人がいません
+      </p>
+      {canInput && (
+        <button
+          type="button"
+          onClick={onClaim}
+          className="bg-ink min-h-12 w-full rounded-[10px] py-[12px] text-[15px] font-bold text-white"
+        >
+          得点を入力する
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * ほかの人が入力している試合の、担当の名前（チーム名つき）と「引き継ぐ」。
+ * 観戦者には名前だけ出す。確認画面の開き閉じはここで持つ（担当が変わればこの部品ごと消え、閉じる）。
+ */
+function OtherScorerBanner({
+  name,
+  canInput,
+  onTakeOver,
+}: {
+  name: string;
+  canInput: boolean;
+  onTakeOver: () => void;
+}) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-[13px] font-extrabold break-words">{`${name}さんが入力しています`}</p>
+      {canInput && (
+        <>
+          <button
+            type="button"
+            onClick={() => setSheetOpen(true)}
+            className="min-h-11 w-full rounded-[10px] border border-gray-300 py-[10px] text-[14px] font-bold"
+          >
+            引き継ぐ
+          </button>
+          <TakeOverConfirmSheet
+            open={sheetOpen}
+            scorerName={name}
+            onOk={() => {
+              setSheetOpen(false);
+              onTakeOver();
+            }}
+            onClose={() => setSheetOpen(false)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * 試合の入力担当まわりの表示。
+ * - 担当でないと断られた点の知らせ（あれば。試合が終わっても閉じるまで残す）
+ * - `showStatus` のとき、担当の状況: いなければ印と「得点を入力する」、ほかの人なら名前と「引き継ぐ」
+ *   （自分が担当のときは何も出さない。＋ − と「入力をやめる」は呼び出し側が並べる）
+ */
+function ScorerSection({
+  scorer,
+  canInput,
+  rejection,
+  showStatus,
+}: {
+  scorer: ScorerControl;
+  canInput: boolean;
+  rejection: ScorerRejection | null;
+  showStatus: boolean;
+}) {
+  return (
+    <>
+      {canInput && rejection && (
+        <ScorerRejectionNotice rejection={rejection} onDismiss={scorer.onDismissRejection} />
+      )}
+      {showStatus && scorer.view.kind === 'vacant' && (
+        <VacantScorerBanner canInput={canInput} onClaim={scorer.onClaim} />
+      )}
+      {showStatus && scorer.view.kind === 'other' && (
+        <OtherScorerBanner
+          name={scorer.view.name}
+          canInput={canInput}
+          onTakeOver={scorer.onTakeOver}
+        />
+      )}
+    </>
+  );
 }
 
 /**
@@ -249,13 +423,10 @@ export function CourtLiveCard({
   onIncrement,
   onDecrement,
   onFinishMatch,
+  finishSheetOf,
+  scorerOf,
   fix,
 }: Props) {
-  // 「試合を終了する」を押したときの確認画面。誤タップの歯止めがこれ 1 つしか無いので、
-  // ここで開く・閉じるを持つ。
-  const [sheetOpen, setSheetOpen] = useState(false);
-  // 確認画面で選んだ棄権の側。開くたびに選び直す（前の試合の選択を持ち越さない）。
-  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -267,10 +438,16 @@ export function CourtLiveCard({
   const next = court.live ? court.next : null;
 
   if (!resolvedLive) {
-    return <IdleCourtCard court={court} canInput={canInput} fix={fix} />;
+    return <IdleCourtCard court={court} canInput={canInput} fix={fix} scorerOf={scorerOf} />;
   }
   // ここから先は必ず値がある（handleFinishClick などの入れ子の関数からも null を疑わなくてよい）。
   const live = resolvedLive;
+  // 「試合を終了する」の確認画面。誤タップの歯止めがこれ 1 つしか無い。試合ごとにページが覚える
+  const finishSheet = finishSheetOf(live.matchId);
+  const retiredSide = finishSheet.retiredSide;
+  // 点を入れられるのは、担当（自分）のときだけ。担当でなければ、点は数字で見せるだけ
+  const scorer = scorerOf(live.matchId);
+  const canScore = canInput && scorer.view.kind === 'mine';
 
   // 得点が渡ってこなかったときも試合そのものは出す。
   // ここで「予定なし」に化けると、進行中のコートが黙って消えてしまう。
@@ -314,12 +491,11 @@ export function CourtLiveCard({
       return;
     }
     setNotice(null);
-    setRetiredSide(null);
-    setSheetOpen(true);
+    finishSheet.onOpen();
   }
 
   function handleOk() {
-    setSheetOpen(false);
+    finishSheet.onClose();
     onFinishMatch(retiredSide);
   }
 
@@ -380,7 +556,7 @@ export function CourtLiveCard({
               teamA={live.teamA}
               teamB={live.teamB}
               score={frame}
-              canInput={canInput}
+              canInput={canScore}
               onIncrement={(side) => handleIncrement(frame.gameNumber, side)}
               onDecrement={(side) => handleDecrement(frame.gameNumber, side)}
             />
@@ -399,9 +575,16 @@ export function CourtLiveCard({
       {/* 送れていない点の案内は、試合を終了したあとも残す（仕様 2026-10-04 の決めたこと 4）。
           「終了を送っています」は終了の記録がサーバーに受け付けられるまで出す。
           ここで消すと、送れていない点があるのに「保存できた」ように見える。 */}
+      <ScorerSection
+        scorer={scorer}
+        canInput={canInput}
+        rejection={syncStatus?.scorerRejection ?? null}
+        showStatus={!finished}
+      />
+
       <StatusLines lines={statusLines} />
 
-      {!finished && canInput && (
+      {!finished && canScore && (
         <>
           {notice && (
             <p role="status" className="text-live text-[13px] font-bold">
@@ -409,30 +592,39 @@ export function CourtLiveCard({
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={handleFinishClick}
-            className="bg-ink min-h-11 w-full rounded-[10px] py-[10px] text-[14px] font-bold text-white"
-          >
-            試合を終了する
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleFinishClick}
+              className="bg-ink min-h-11 rounded-[10px] py-[10px] text-[14px] font-bold text-white"
+            >
+              試合を終了する
+            </button>
+            <button
+              type="button"
+              onClick={scorer.onRelease}
+              className="min-h-11 rounded-[10px] border border-gray-300 py-[10px] text-[14px] font-bold"
+            >
+              入力をやめる
+            </button>
+          </div>
 
           <FinishConfirmSheet
-            open={sheetOpen}
+            open={finishSheet.open}
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
             teamAName={teamAName}
             teamBName={teamBName}
             retiredSide={retiredSide}
-            onRetiredSideChange={setRetiredSide}
+            onRetiredSideChange={finishSheet.onRetiredSideChange}
             onOk={handleOk}
-            onClose={() => setSheetOpen(false)}
+            onClose={finishSheet.onClose}
           />
         </>
       )}
 
-      <FixingPanels court={court} canInput={canInput} fix={fix} />
+      <FixingPanels court={court} canInput={canInput} fix={fix} scorerOf={scorerOf} />
       {next && <NextRow next={next} />}
       <PreviousRow court={court} canInput={canInput} fix={fix} />
     </div>
@@ -586,10 +778,12 @@ function IdleCourtCard({
   court,
   canInput,
   fix,
+  scorerOf,
 }: {
   court: Court;
   canInput: boolean;
   fix: FixActions | undefined;
+  scorerOf: (matchId: string) => ScorerControl;
 }) {
   return (
     <div
@@ -605,7 +799,7 @@ function IdleCourtCard({
         </p>
       )}
 
-      <FixingPanels court={court} canInput={canInput} fix={fix} />
+      <FixingPanels court={court} canInput={canInput} fix={fix} scorerOf={scorerOf} />
       {court.next && <NextRow next={court.next} />}
       <PreviousRow court={court} canInput={canInput} fix={fix} />
     </div>
@@ -616,10 +810,12 @@ function FixingPanels({
   court,
   canInput,
   fix,
+  scorerOf,
 }: {
   court: Court;
   canInput: boolean;
   fix: FixActions | undefined;
+  scorerOf: (matchId: string) => ScorerControl;
 }) {
   return court.fixing.map((match) => (
     <FixingPanel
@@ -628,6 +824,7 @@ function FixingPanels({
       match={match}
       canInput={canInput}
       fix={fix}
+      scorer={scorerOf(match.matchId)}
     />
   ));
 }
@@ -642,19 +839,24 @@ function FixingPanel({
   match,
   canInput,
   fix,
+  scorer,
 }: {
   courtNumber: number;
   match: LiveMatch;
   canInput: boolean;
   fix: FixActions | undefined;
+  scorer: ScorerControl;
 }) {
-  const [sheetOpen, setSheetOpen] = useState(false);
-  const [retiredSide, setRetiredSide] = useState<'A' | 'B' | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // 確認画面の開き閉じと選んだ棄権はページが試合ごとに覚える（この枠が作り直されても閉じない）
+  const finishSheet = fix?.finishSheetOf(match.matchId);
+  const retiredSide = finishSheet?.retiredSide ?? null;
 
   const syncStatus = fix?.syncStatusOf(match.matchId) ?? null;
   // 終了を送っている間は、今の試合と同じく終わった見た目にする（記録されたら 1 つ前に移る）
   const finishing = syncStatus?.finishing ?? false;
+  // 直す人が担当になる（仕様 ⑩）。担当でなければ、直し中の枠も点は数字で見せるだけ
+  const canScore = canInput && fix !== undefined && scorer.view.kind === 'mine';
 
   const frames = Array.from({ length: match.maxGameCount }, (_, index) =>
     frameScore(match.scores, index + 1)
@@ -681,8 +883,7 @@ function FixingPanel({
       return;
     }
     setNotice(null);
-    setRetiredSide(null);
-    setSheetOpen(true);
+    finishSheet?.onOpen();
   }
 
   return (
@@ -715,7 +916,7 @@ function FixingPanel({
               teamA={match.teamA}
               teamB={match.teamB}
               score={frame}
-              canInput={canInput && fix !== undefined}
+              canInput={canScore}
               onIncrement={(side) => {
                 setNotice(null);
                 fix?.onIncrement(match.matchId, frame.gameNumber, side);
@@ -731,9 +932,16 @@ function FixingPanel({
 
       {finishing && <RetiredNote names={retiredNames} />}
 
+      <ScorerSection
+        scorer={scorer}
+        canInput={canInput && fix !== undefined}
+        rejection={syncStatus?.scorerRejection ?? null}
+        showStatus={!finishing}
+      />
+
       <StatusLines lines={syncLines(syncStatus, canInput)} />
 
-      {canInput && fix && !finishing && (
+      {canScore && !finishing && fix && (
         <>
           {notice && (
             <p role="status" className="text-live text-[13px] font-bold">
@@ -741,28 +949,37 @@ function FixingPanel({
             </p>
           )}
 
-          <button
-            type="button"
-            onClick={handleFinishClick}
-            className="bg-ink min-h-11 w-full rounded-[10px] py-[10px] text-[14px] font-bold text-white"
-          >
-            もう一度終了する
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleFinishClick}
+              className="bg-ink min-h-11 rounded-[10px] py-[10px] text-[14px] font-bold text-white"
+            >
+              もう一度終了する
+            </button>
+            <button
+              type="button"
+              onClick={scorer.onRelease}
+              className="min-h-11 rounded-[10px] border border-gray-300 py-[10px] text-[14px] font-bold"
+            >
+              入力をやめる
+            </button>
+          </div>
 
           <FinishConfirmSheet
-            open={sheetOpen}
+            open={finishSheet?.open ?? false}
             games={confirmGames}
             matchWinnerName={matchWinnerName}
             matchWinnerScoreText={matchWinnerScoreText}
             teamAName={teamAName}
             teamBName={teamBName}
             retiredSide={retiredSide}
-            onRetiredSideChange={setRetiredSide}
+            onRetiredSideChange={(side) => finishSheet?.onRetiredSideChange(side)}
             onOk={() => {
-              setSheetOpen(false);
+              finishSheet?.onClose();
               fix.onFinishMatch(match.matchId, retiredSide);
             }}
-            onClose={() => setSheetOpen(false)}
+            onClose={() => finishSheet?.onClose()}
           />
         </>
       )}

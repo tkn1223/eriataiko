@@ -806,9 +806,12 @@ export async function findMatchIdByCourtNumber(courtNumber: number): Promise<str
 export type ScenarioMatchSpec = {
   /** 戻り値で試合の id を引く名前。 */
   key: string;
-  courtNumber: number;
-  orderInCourt: number;
+  /** コートが決まっていない試合は null（進行表の「コート未定」を確かめるのに使う）。 */
+  courtNumber: number | null;
+  orderInCourt: number | null;
   status: 'waiting' | 'live' | 'done';
+  /** 棄権で終わった試合にする。省略は普通の終わり方。 */
+  ending?: 'normal' | 'retired_side_a' | 'retired_side_b';
   maxGameCount: number;
   roundName: string;
   /** 1 ゲームめから順の [A の点, B の点]。 */
@@ -889,6 +892,7 @@ export async function createMatchesScenario(
         max_game_count: spec.maxGameCount,
         court_number: spec.courtNumber,
         order_in_court: spec.orderInCourt,
+        ending: spec.ending ?? 'normal',
         finished_at:
           spec.status === 'done'
             ? new Date(now - (spec.finishedMinutesAgo ?? 10) * 60_000).toISOString()
@@ -1015,4 +1019,139 @@ export async function reopenMatchDirectly(matchId: string): Promise<void> {
     .update({ status: 'live', finished_at: null })
     .eq('id', matchId);
   if (error) throw new Error(`試合の終了を取り消せませんでした: ${error.message}`);
+}
+
+/**
+ * 画面を開いたあとに、試合を 1 つ足して進行中にする（「手元に無い試合の変化」を再現する）。
+ * 既にある試合と同じ対戦（matchup）の下に、同じコートの次の順番で作る。出場者は付けない。
+ * 購読が届けるのは試合の更新（UPDATE）だけなので、いったん作ってから進行中に更新する。
+ * 対戦ごと消えるので、`deleteMatchesScenario` で一緒に消える。
+ */
+export async function addLiveMatchLater(
+  siblingMatchId: string,
+  courtNumber: number,
+  orderInCourt: number
+): Promise<string> {
+  const sibling = await admin
+    .from('matches')
+    .select('matchup_id, division_id')
+    .eq('id', siblingMatchId)
+    .single();
+  if (sibling.error) throw new Error(`元の試合を読めませんでした: ${sibling.error.message}`);
+
+  const created = await admin
+    .from('matches')
+    .insert({
+      matchup_id: sibling.data.matchup_id,
+      division_id: sibling.data.division_id,
+      order_in_matchup: 2,
+      status: 'waiting',
+      max_game_count: 1,
+      court_number: courtNumber,
+      order_in_court: orderInCourt,
+    })
+    .select('id')
+    .single();
+  if (created.error) throw new Error(`試合を足せませんでした: ${created.error.message}`);
+
+  const started = await admin.from('matches').update({ status: 'live' }).eq('id', created.data.id);
+  if (started.error) throw new Error(`試合を進行中にできませんでした: ${started.error.message}`);
+  return created.data.id;
+}
+
+// ---------------------------------------------------------------------
+// 入力の担当（docs/specs/2026-10-14-match-scorer.md）の確認用
+// ---------------------------------------------------------------------
+
+/**
+ * DB に保存された試合の担当を読む。`lastScoredAt` は担当の「最後に点を入れた時刻」で、担当になった時刻と
+ * その試合の点の保存時刻（`game_scores.updated_at`）の遅いほう（`src/domain/scorer.ts` の `lastScoredAtOf`）。
+ */
+export async function findMatchScorer(matchId: string): Promise<{
+  participantId: string | null;
+  claimedAt: string | null;
+  lastScoredAt: string | null;
+}> {
+  const { data, error } = await admin
+    .from('matches')
+    .select('scorer_participant_id, scorer_claimed_at, game_scores(updated_at)')
+    .eq('id', matchId)
+    .order('updated_at', { referencedTable: 'game_scores', ascending: false })
+    .limit(1, { referencedTable: 'game_scores' })
+    .single();
+  if (error) throw new Error(`担当を読めませんでした: ${error.message}`);
+  const claimedAt = data.scorer_claimed_at;
+  const lastSavedAt = data.game_scores[0]?.updated_at ?? null;
+  const lastScoredAt =
+    claimedAt && lastSavedAt && Date.parse(lastSavedAt) > Date.parse(claimedAt)
+      ? lastSavedAt
+      : claimedAt;
+  return { participantId: data.scorer_participant_id, claimedAt, lastScoredAt };
+}
+
+/** seed.sql のチーム名・名前から、その人の participants.id を引く。 */
+export async function findParticipantId(teamName: string, playerName: string): Promise<string> {
+  const { data, error } = await admin
+    .from('participants')
+    .select('id, players!inner(name), teams!inner(name)')
+    .eq('competition_id', COMPETITION_ID)
+    .eq('players.name', playerName)
+    .eq('teams.name', teamName)
+    .limit(1)
+    .single();
+  if (error) throw new Error(`${teamName} の ${playerName} が見つかりません: ${error.message}`);
+  return data.id;
+}
+
+/**
+ * 画面を使わずに、データベースで試合の担当を決める（「ほかの人が入力している」を再現する）。
+ * `minutesAgo` 分前に担当になり、最後の点もそのときに入れた担当にする（既定は「いま」）。
+ */
+export async function setMatchScorerDirectly(
+  matchId: string,
+  participantId: string,
+  minutesAgo = 0
+): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ scorer_participant_id: participantId })
+    .eq('id', matchId);
+  if (error) throw new Error(`担当を書き換えられませんでした: ${error.message}`);
+  await shiftMatchScorerTime(matchId, minutesAgo);
+}
+
+/**
+ * 画面を使わずに、担当の「最後に点を入れた時刻」をずらす（「5 分たった」を作る）。
+ * 最後に点を入れた時刻は、担当になった時刻（matches）とその試合の点の保存時刻（game_scores）の
+ * 遅いほうなので、両方を同じ時刻にする。
+ */
+export async function shiftMatchScorerTime(matchId: string, minutesAgo: number): Promise<void> {
+  const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  const claimed = await admin.from('matches').update({ scorer_claimed_at: at }).eq('id', matchId);
+  if (claimed.error) {
+    throw new Error(`担当の時刻を書き換えられませんでした: ${claimed.error.message}`);
+  }
+  const saved = await admin.from('game_scores').update({ updated_at: at }).eq('match_id', matchId);
+  if (saved.error) throw new Error(`点の時刻を書き換えられませんでした: ${saved.error.message}`);
+}
+
+/** 画面を使わずに、データベースで試合の担当を外す。 */
+export async function clearMatchScorerDirectly(matchId: string): Promise<void> {
+  const { error } = await admin
+    .from('matches')
+    .update({ scorer_participant_id: null, scorer_claimed_at: null })
+    .eq('id', matchId);
+  if (error) throw new Error(`担当を外せませんでした: ${error.message}`);
+}
+
+/** 担当の記録（write_logs）のうち、その試合のものを古い順に読む。 */
+export async function findScorerLogActions(matchId: string): Promise<string[]> {
+  const { data, error } = await admin
+    .from('write_logs')
+    .select('action')
+    .like('action', 'scorer.%')
+    .eq('action_detail->>matchId', matchId)
+    .order('id', { ascending: true });
+  if (error) throw new Error(`記録を読めませんでした: ${error.message}`);
+  return (data ?? []).map((row) => row.action);
 }

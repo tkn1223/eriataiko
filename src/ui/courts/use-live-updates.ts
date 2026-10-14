@@ -13,11 +13,13 @@ import type { CourtMatchStatus } from '@/ui/courts/types';
  *
  * 接続は**アプリ全体で 1 本**（`appLiveHub`）。結果LIVE の画面が何回開き直されても、
  * 画面が 2 つの部品から呼んでも、Supabase との接続は 1 本で、使う人が全員いなくなったら止める。
+ * 使うのは結果LIVE（`courts-page.tsx`）と進行表（`src/ui/matches/use-live-matches.ts`）の 2 画面。
+ * どちらかを開いている間だけつなぐ。
  * 100 人が同時に見るので、1 人が何本も繋ぐと同時接続の枠（無料プランは 200）を食い潰す。
  *
  * 届いた行は `LiveChange` に直して渡すだけで、画面にどう当てるかは `apply-live-change.ts`。
  *
- * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md
+ * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md（進行表からも使う: docs/specs/2026-10-14-matches-real-data.md）
  */
 
 /** 接続の状態。'connecting' は開いた直後でまだつながっていない（案内は出さない）。 */
@@ -54,6 +56,12 @@ function nullableNumber(value: unknown): number | null | undefined {
   return typeof value === 'number' ? value : undefined;
 }
 
+/** 文字か null。列そのものが届いていない（undefined）古い形は null として扱い、それ以外の型は読み取れない（undefined）。 */
+function nullableText(value: unknown): string | null | undefined {
+  if (value === null || value === undefined) return null;
+  return typeof value === 'string' ? value : undefined;
+}
+
 /** `matches` の行を状態の変化に直す。読み取れない形なら null。 */
 function toMatchChange(row: unknown): LiveChange | null {
   if (!isRecord(row)) return null;
@@ -62,12 +70,17 @@ function toMatchChange(row: unknown): LiveChange | null {
   const ending = typeof row.ending === 'string' ? row.ending : 'normal';
   const courtNumber = nullableNumber(row.court_number);
   const orderInCourt = nullableNumber(row.order_in_court);
+  // 担当の列が無い古い形の通知は、担当なしとして扱う
+  const scorerParticipantId = nullableText(row.scorer_participant_id);
+  const scorerClaimedAt = nullableText(row.scorer_claimed_at);
   if (
     typeof id !== 'string' ||
     typeof status !== 'string' ||
     !MATCH_STATUSES.includes(status) ||
     courtNumber === undefined ||
     orderInCourt === undefined ||
+    scorerParticipantId === undefined ||
+    scorerClaimedAt === undefined ||
     typeof maxGameCount !== 'number' ||
     !(finishedAt === null || typeof finishedAt === 'string')
   ) {
@@ -82,6 +95,8 @@ function toMatchChange(row: unknown): LiveChange | null {
     finishedAt,
     maxGameCount,
     ending,
+    scorerParticipantId,
+    scorerClaimedAt,
   };
 }
 
@@ -90,15 +105,18 @@ function toScoreChange(row: unknown): LiveChange | null {
   if (!isRecord(row)) return null;
   const { match_id: matchId, game_number: gameNumber } = row;
   const { side_a_score: sideAScore, side_b_score: sideBScore } = row;
+  // 時刻の無い古い形の通知は、点だけ当てる（担当の時刻は次の読み直しで追いつく）
+  const savedAt = nullableText(row.updated_at);
   if (
     typeof matchId !== 'string' ||
     typeof gameNumber !== 'number' ||
     typeof sideAScore !== 'number' ||
-    typeof sideBScore !== 'number'
+    typeof sideBScore !== 'number' ||
+    savedAt === undefined
   ) {
     return null;
   }
-  return { kind: 'score', matchId, gameNumber, sideAScore, sideBScore };
+  return { kind: 'score', matchId, gameNumber, sideAScore, sideBScore, savedAt };
 }
 
 export type LiveHub = {
@@ -216,7 +234,7 @@ type Handlers = {
   onConnected: () => void;
 };
 
-/** 結果LIVE を開いている間だけ、変化を受け取る。離れたら止める。戻り値は接続の状態。 */
+/** 結果LIVE か進行表を開いている間だけ、変化を受け取る。離れたら止める。戻り値は接続の状態。 */
 export function useLiveUpdates(handlers: Handlers, hub: LiveHub = appLiveHub): LiveConnection {
   const [connection, setConnection] = useState<LiveConnection>('connecting');
 

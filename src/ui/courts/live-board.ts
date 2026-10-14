@@ -2,6 +2,7 @@ import type { CourtMatch } from '@/ui/courts/types';
 
 /**
  * 結果LIVE が持つ試合の一覧（`CourtMatch[]`）の置き場。画面の中だけの小さな外部ストア。
+ * 進行表（`src/ui/matches/use-live-matches.ts`）も同じものを使う。
  *
  * `useState` の更新関数の中で計算せず、ここに置くのは、
  * - 押したとき・他の人の変化が届いたときに「いまの最新」を同期で読んで次の値を作りたい

@@ -36,3 +36,11 @@ test('サーバー側で finish を呼んでも、何も預からず、送りも
   expect(appScoreSyncStore.getSnapshot()).toEqual({});
   expect(fetch).not.toHaveBeenCalled();
 });
+
+test('サーバー側で担当を取る・やめる操作を呼んでも、何も預からず、送りもしない', () => {
+  appScoreSyncStore.claimScorer('m', false);
+  appScoreSyncStore.releaseScorer('m');
+
+  expect(appScoreSyncStore.getSnapshot()).toEqual({});
+  expect(fetch).not.toHaveBeenCalled();
+});

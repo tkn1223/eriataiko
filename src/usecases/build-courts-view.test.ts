@@ -49,6 +49,9 @@ function match(overrides: Partial<CourtsViewMatchRow> = {}): CourtsViewMatchRow 
     courtNumber: 1,
     orderInCourt: 1,
     finishedAt: null,
+    scorerParticipantId: null,
+    scorerClaimedAt: null,
+    scoreSavedAtByGame: {},
     divisionId: 'div-1',
     stageId: 'stage-league',
     roundName: '予選 1回戦',
@@ -78,6 +81,7 @@ function baseInput(overrides: Partial<CourtsViewInput> = {}): CourtsViewInput {
     stages: STAGES,
     matches: [match()],
     previousMatches: [],
+    participants: [],
     truncated: false,
     ...overrides,
   };
@@ -641,5 +645,75 @@ describe('上限を超えて読み切れなかったとき', () => {
   test('読み込みが「上限を超えた」と伝えてきたら、その印をそのまま画面に渡す', () => {
     expect(buildCourtsView(baseInput({ truncated: true })).truncated).toBe(true);
     expect(buildCourtsView(baseInput({ truncated: false })).truncated).toBe(false);
+  });
+});
+
+describe('入力担当（docs/specs/2026-10-14-match-scorer.md）', () => {
+  test('試合の担当の参加者・担当になった時刻・ゲームごとの点の保存時刻が、画面が持つ試合に入る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({
+            matchId: 'm-scored',
+            scorerParticipantId: 'p-a1',
+            scorerClaimedAt: '2027-01-22T10:00:00+00:00',
+            scoreSavedAtByGame: { 1: '2027-01-22T10:02:00+00:00' },
+          }),
+          match({ matchId: 'm-free', courtNumber: 2 }),
+        ],
+      })
+    );
+
+    expect(view.board.find((m) => m.matchId === 'm-scored')).toMatchObject({
+      scorerParticipantId: 'p-a1',
+      scorerClaimedAt: '2027-01-22T10:00:00+00:00',
+      scoreSavedAtByGame: { 1: '2027-01-22T10:02:00+00:00' },
+    });
+    expect(view.board.find((m) => m.matchId === 'm-free')).toMatchObject({
+      scorerParticipantId: null,
+      scorerClaimedAt: null,
+    });
+  });
+
+  test('最近終わった試合（1 つ前）の担当も試合に入る', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [],
+        previousMatches: [
+          match({
+            matchId: 'm-done',
+            status: 'done',
+            finishedAt: '2027-01-22T09:00:00+00:00',
+            scorerParticipantId: 'p-a1',
+            scorerClaimedAt: '2027-01-22T08:59:00+00:00',
+          }),
+        ],
+      })
+    );
+
+    expect(view.board[0]).toMatchObject({ scorerParticipantId: 'p-a1' });
+  });
+
+  test('担当の名前は、参加者の id から「チーム名のニックネーム」で引ける（チームが無ければ名前だけ）', () => {
+    const view = buildCourtsView(
+      baseInput({
+        participants: [
+          { participantId: 'p-1', playerName: 'たろう', teamName: '愛知南' },
+          { participantId: 'p-2', playerName: 'たろう', teamName: '愛知北' },
+          { participantId: 'p-3', playerName: '本部', teamName: null },
+        ],
+      })
+    );
+
+    expect(view.scorerLabels).toEqual({
+      'p-1': '愛知南のたろう',
+      'p-2': '愛知北のたろう',
+      'p-3': '本部',
+    });
+  });
+
+  test('自分の参加者 id が画面に渡る（担当が自分かを画面で判断するため）。観戦者は null', () => {
+    expect(buildCourtsView(baseInput({ myParticipantId: 'p-me' })).myParticipantId).toBe('p-me');
+    expect(buildCourtsView(baseInput({ myParticipantId: null })).myParticipantId).toBeNull();
   });
 });

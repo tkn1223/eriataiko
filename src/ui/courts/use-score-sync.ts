@@ -48,6 +48,19 @@ import type { MatchSyncState } from '@/ui/courts/types';
  * 当てない（`noteRemoteScore` と `pendingScores`）。戻ってこないまま `ECHO_WAIT_MS` たったら諦める
  * （接続が途切れていた・開いた直後でまだ購読していなかった、など）。
  *
+ * **試合の状態（終了・取り消し）にも、同じ戻り待ちがある。** 終了 → すぐ「直す」と進んだあとで、
+ * 最初の「終了」の知らせが遅れて届くと、画面が一瞬「1 つ前」に戻って「直し中」の枠が作り直され、
+ * 開いていた確認画面が閉じていた。そこで、自分が送った状態（done か live）を順に覚え、
+ * 届いた知らせが自分の送った状態と一致したらそこまでを消す。自分の最後の状態が戻るまでに届いた
+ * 別の状態は、それより前に書かれた古い知らせなので当てない（`expectMatchEcho` と `noteRemoteMatch`）。
+ * 見分けるのは done か live かだけで、棄権の印（終わり方）は見ない。ほかの人が先に別の終わり方で
+ * 終了していたときも、届いた中身をそのまま当てて記録どおりにするため。
+ * 待つ長さと、つながり直したときにやめるのは点と同じ（`ECHO_WAIT_MS`、`forgetAwaitingEchoes`）。
+ * 戻らないまま待ちが終わったとき（知らせの取りこぼし・入口が何も書かずに成功を返した）は、
+ * 当てなかった知らせが本物の変化だったかもしれないので、画面に 1 回読み直してもらう
+ * （`subscribeMatchEchoGaveUp`）。当てなかった知らせが無ければ読み直さない（100 人の通信量）。
+ * 仕様: docs/specs/2026-10-14-courts-stale-result.md
+ *
  * **書き方について**: このアプリは React Compiler 向けの ESLint ルール
  * （`react-hooks/refs` など）を有効にしている。「描画（レンダー）の最中に ref を読み書きしない」
  * が特に強いルールなので、進行中の送信をたくさん覚えておく置き場は `useRef` ではなく、
@@ -137,6 +150,41 @@ type FinishState = {
   rejectedMessage: string | null;
 };
 
+/** 試合の状態（終了・取り消し）の戻り待ちで覚える、自分が送った状態。終了なら done、取り消しなら live。 */
+export type OwnMatchStatus = 'done' | 'live';
+
+/** `expectMatchEcho` が返す、送った結果の知らせ方。 */
+export type MatchEchoTicket = {
+  /** 入口に受け付けられた。ここから、戻るのを待つ長さ（`ECHO_WAIT_MS`）を数える。 */
+  accepted: () => void;
+  /** 受け付けられなかった。戻ってこないので待たない。 */
+  failed: () => void;
+};
+
+type MatchEchoEntry = { status: OwnMatchStatus; accepted: boolean };
+
+type MatchEchoWait = {
+  /** 送った順。 */
+  awaiting: MatchEchoEntry[];
+  /** 戻り待ちを諦めるタイマー（最後に受け付けられてから `ECHO_WAIT_MS`）。 */
+  timer: ReturnType<typeof setTimeout> | null;
+  /**
+   * 待っている間に、自分の送った状態のどれとも違う知らせを当てずに捨てた。自分の状態が戻れば
+   * それより古い知らせと分かるが、戻らないまま待ちが終わると本物の変化だったかもしれない。
+   */
+  droppedChange: boolean;
+};
+
+/**
+ * 購読で戻ってきた値が、待っている列のどれかと一致したら、そこまでを消した残りを返す。
+ * 一致しなければ null。点の戻り待ちと試合の状態の戻り待ちで、この判断を共有する。
+ * 同じ値を 2 回送っていることがある（5 → 4 → 5）ので、古いほうの戻りから順に消す。
+ */
+function dropThroughEcho<T>(awaiting: T[], isEcho: (waited: T) => boolean): T[] | null {
+  const echoed = awaiting.findIndex(isEcho);
+  return echoed < 0 ? null : awaiting.slice(echoed + 1);
+}
+
 function keyOf(matchId: string, gameNumber: number): string {
   return `${matchId}:${gameNumber}`;
 }
@@ -205,6 +253,27 @@ export type ScoreSyncStore = {
    * もう届かないので呼ぶ（待ち続けると、そのゲームの他の人の点を `ECHO_WAIT_MS` のあいだ当てそこねる）。
    */
   forgetAwaitingEchoes: () => void;
+  /**
+   * 試合の終了・取り消しを送る前に呼び、送った状態を戻り待ちに入れる。返事が来たら `accepted()`、
+   * 受け付けられなかったら `failed()` を呼ぶ。送る前に入れるのは、返事より先に知らせが届いたとき
+   * （その知らせで待ちを終える）に取りこぼさないため。点と同じ（`attemptSend`）。
+   * 試合の終了（`finish`）はこの中で自分で呼ぶ。取り消しは画面（courts-page.tsx）が呼ぶ。
+   */
+  expectMatchEcho: (matchId: string, status: OwnMatchStatus) => MatchEchoTicket;
+  /**
+   * 購読で届いた試合の状態の変化を知らせ、画面にこのまま当ててよいかを返す。
+   * 自分が送った状態の戻りなら、そこまでの戻り待ちを消す。自分の最後の状態が戻るまでは、
+   * 届いたものは古い（またはそれより前に書かれた）知らせなので、false を返す。
+   */
+  noteRemoteMatch: (change: { matchId: string; status: string }) => boolean;
+  /**
+   * 試合の状態の戻りを待つのを、戻らないままやめたとき（10 秒たった・送れなかった）、待っている間に
+   * 当てなかった知らせがあれば、その試合の id を受け取る。画面はこれで 1 回読み直す。
+   * 当てなかった知らせは、自分の送った状態が戻らないと「古いもの」と言い切れない（ほかの人の終了・
+   * 取り消しだったかもしれない）。読み直さないと、その試合の次の変化まで画面が記録と食い違う。
+   * つながり直したときは、画面がもともと読み直すので呼ばない。
+   */
+  subscribeMatchEchoGaveUp: (listener: (matchId: string) => void) => () => void;
   /** `useSyncExternalStore` に渡す。呼ぶたびに同じ中身なら同じ参照を返す。 */
   getSnapshot: () => Record<string, MatchSyncState>;
   subscribe: (listener: Listener) => () => void;
@@ -218,9 +287,11 @@ export type ScoreSyncStore = {
 export function createScoreSyncStore(): ScoreSyncStore {
   const games = new Map<string, GameSyncState>();
   const finishes = new Map<string, FinishState>();
+  const matchEchoes = new Map<string, MatchEchoWait>();
   const listeners = new Set<Listener>();
   const finishedListeners = new Set<(matchId: string, retiredSide: 'A' | 'B' | null) => void>();
   const scoreRejectedListeners = new Set<(matchId: string) => void>();
+  const matchEchoGaveUpListeners = new Set<(matchId: string) => void>();
   let snapshot: Record<string, MatchSyncState> = {};
   let unloadGuardInstalled = false;
 
@@ -289,6 +360,48 @@ export function createScoreSyncStore(): ScoreSyncStore {
     recomputeSnapshot();
     syncUnloadGuard();
     for (const listener of listeners) listener();
+  }
+
+  function dropMatchEchoWait(matchId: string, wait: MatchEchoWait) {
+    if (wait.timer) clearTimeout(wait.timer);
+    wait.timer = null;
+    if (matchEchoes.get(matchId) === wait) matchEchoes.delete(matchId);
+  }
+
+  /** 戻らないまま待ちが空になったとき。当てなかった知らせがあれば、画面に読み直してもらう。 */
+  function giveUpMatchEchoWait(matchId: string, wait: MatchEchoWait) {
+    dropMatchEchoWait(matchId, wait);
+    if (!wait.droppedChange) return;
+    for (const listener of matchEchoGaveUpListeners) listener(matchId);
+  }
+
+  function expectMatchEcho(matchId: string, status: OwnMatchStatus): MatchEchoTicket {
+    const wait = matchEchoes.get(matchId) ?? { awaiting: [], timer: null, droppedChange: false };
+    matchEchoes.set(matchId, wait);
+    const entry: MatchEchoEntry = { status, accepted: false };
+    wait.awaiting.push(entry);
+
+    // 待ちが片づいた（知らせが戻った・諦めた・テストの後片付け）あとの返事は、もう関係ない
+    const isCurrent = () => matchEchoes.get(matchId) === wait && wait.awaiting.includes(entry);
+
+    return {
+      accepted() {
+        if (!isCurrent()) return;
+        entry.accepted = true;
+        if (wait.timer) clearTimeout(wait.timer);
+        wait.timer = setTimeout(() => {
+          wait.timer = null;
+          // 受け付け済みの分だけ諦める。送っている最中の分は、自分の返事のあとに数え直す
+          wait.awaiting = wait.awaiting.filter((waited) => !waited.accepted);
+          if (wait.awaiting.length === 0) giveUpMatchEchoWait(matchId, wait);
+        }, ECHO_WAIT_MS);
+      },
+      failed() {
+        if (!isCurrent()) return;
+        wait.awaiting = wait.awaiting.filter((waited) => waited !== entry);
+        if (wait.awaiting.length === 0) giveUpMatchEchoWait(matchId, wait);
+      },
+    };
   }
 
   function attemptSend(key: string) {
@@ -387,6 +500,9 @@ export function createScoreSyncStore(): ScoreSyncStore {
     finish.retryTimer = null;
     notify();
 
+    // 送った「終了」が購読で戻ってくるまで、それより古い状態の知らせは画面に当てない
+    const echo = expectMatchEcho(matchId, 'done');
+
     sendRequest({
       url: `/api/matches/${matchId}/result`,
       method: 'POST',
@@ -397,11 +513,15 @@ export function createScoreSyncStore(): ScoreSyncStore {
       if (finishes.get(matchId) !== finish) return;
 
       if (result.ok) {
+        echo.accepted();
         finishes.delete(matchId);
         notify();
         for (const listener of finishedListeners) listener(matchId, finish.retiredSide);
         return;
       }
+
+      // 届かなかった状態は戻ってこない（送り直すときに、また入れる）
+      echo.failed();
 
       if (shouldRetry(result)) {
         finish.attempt += 1;
@@ -487,12 +607,30 @@ export function createScoreSyncStore(): ScoreSyncStore {
       const game = games.get(keyOf(input.matchId, input.gameNumber));
       if (!game || game.awaitingEcho.length === 0) return;
 
-      // 同じ値を 2 回送っていることがある（5 → 4 → 5）。古いほうの戻りから順に消す。
-      const echoed = game.awaitingEcho.findIndex((score) => sameScore(score, input));
-      if (echoed < 0) return;
-      game.awaitingEcho = game.awaitingEcho.slice(echoed + 1);
+      const remaining = dropThroughEcho(game.awaitingEcho, (score) => sameScore(score, input));
+      if (remaining === null) return;
+      game.awaitingEcho = remaining;
       if (game.awaitingEcho.length === 0) clearEchoTimer(game);
       notify();
+    },
+
+    expectMatchEcho,
+
+    noteRemoteMatch(change) {
+      const wait = matchEchoes.get(change.matchId);
+      if (!wait) return true;
+
+      const remaining = dropThroughEcho(wait.awaiting, (waited) => waited.status === change.status);
+      // 自分が送った状態のどれとも違う。自分の最後の状態が戻るまでは、古い知らせとして当てない
+      if (remaining === null) {
+        wait.droppedChange = true;
+        return false;
+      }
+
+      wait.awaiting = remaining;
+      if (remaining.length === 0) dropMatchEchoWait(change.matchId, wait);
+      // 自分の最後の状態が戻ったときだけ当てる（途中の状態の戻りは、当てると一瞬戻って見える）
+      return remaining.length === 0;
     },
 
     forgetAwaitingEchoes() {
@@ -507,6 +645,13 @@ export function createScoreSyncStore(): ScoreSyncStore {
         if (keep.length === 0) clearEchoTimer(game);
         changed = true;
       }
+      for (const [matchId, wait] of matchEchoes) {
+        // 送っている最中の状態は、つながったあとに書かれて戻ってくることがあるので残す
+        wait.awaiting = wait.awaiting.filter((waited) => !waited.accepted);
+        // それまでに当てなかった知らせは、つながったときの読み直しで取り戻すので、もう数えない
+        wait.droppedChange = false;
+        if (wait.awaiting.length === 0) dropMatchEchoWait(matchId, wait);
+      }
       if (changed) notify();
     },
 
@@ -514,6 +659,13 @@ export function createScoreSyncStore(): ScoreSyncStore {
       finishedListeners.add(listener);
       return () => {
         finishedListeners.delete(listener);
+      };
+    },
+
+    subscribeMatchEchoGaveUp(listener) {
+      matchEchoGaveUpListeners.add(listener);
+      return () => {
+        matchEchoGaveUpListeners.delete(listener);
       };
     },
 
@@ -559,6 +711,7 @@ export function createScoreSyncStore(): ScoreSyncStore {
       for (const finish of finishes.values()) {
         if (finish.retryTimer) clearTimeout(finish.retryTimer);
       }
+      for (const [matchId, wait] of [...matchEchoes]) dropMatchEchoWait(matchId, wait);
       games.clear();
       finishes.clear();
       notify();

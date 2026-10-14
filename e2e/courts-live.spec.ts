@@ -9,6 +9,7 @@ import {
   reopenMatchDirectly,
   writeGameScoreDirectly,
 } from './helpers/courts-scenario';
+import { holdRealtimeMatchChanges } from './helpers/realtime-hold';
 
 /**
  * 結果LIVE の「他の人の点がその場で映る」（1-c）の確認。
@@ -448,6 +449,27 @@ test.describe('試合の終了', () => {
     await page.getByRole('button', { name: 'OK' }).click();
     return card;
   }
+
+  test('今の試合の確認画面を開いている間に、ほかの人がその試合を終了したら、確認画面は閉じる（次の試合の中身で開いたままにならない）', async ({
+    browser,
+  }) => {
+    const mine = await openAnotherBrowser(browser, 'player');
+    const card = courtCard(mine.page, LIVE_COURT);
+    await card.getByRole('button', { name: '試合を終了する' }).click();
+    const dialog = mine.page.getByRole('dialog');
+    await expect(dialog.getByText(LIVE_A.join('・'), { exact: false }).first()).toBeVisible();
+
+    // ほかの人が、その試合を終了した
+    await finishMatchDirectly(matchIds.live);
+
+    await expect(
+      mine.page.getByTestId(`previous-match-${LIVE_COURT}`).getByText(LIVE_A.join('・'))
+    ).toBeVisible({ timeout: 5000 });
+    // 次の試合（金子・銀林 vs 銅谷・鉄井）の確認画面が開いたままになっていない
+    await expect(dialog).toHaveCount(0);
+
+    await mine.context.close();
+  });
 
   test('OK でデータベースの試合が終了になる。開き直しても終了のまま', async ({ browser }) => {
     const mine = await openAnotherBrowser(browser, 'player');
@@ -991,6 +1013,77 @@ test.describe('棄権で終了する', () => {
       .toBe('retired_side_b');
 
     await mine.context.close();
+  });
+
+  /**
+   * 自分が送った「終了」の知らせが、「直す」のあとに遅れて届く（体育館の弱い電波）。
+   * 以前は、そのとき画面が一瞬「1つ前（棄権の印）」に戻り、「直し中」の枠が作り直されて、
+   * 開いていた確認画面と選んでいた棄権が消えていた（docs/specs/2026-10-14-courts-stale-result.md）。
+   * 手元では知らせが 0.3 秒で届くので、止めておいて、確認画面を開いてから流す。
+   */
+  test('「直す」のあと、確認画面を開いている間に古い「終了」の知らせが遅れて届いても、確認画面は閉じず、選んだ棄権も残る。ちらつかない。そのあとの他の人の変化は普通に映る', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const realtime = await holdRealtimeMatchChanges(page);
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await openCourtsAndWaitForLive(page);
+    await expect(courtCard(page, LIVE_COURT)).toBeVisible();
+
+    // ここから先の「終了」「取り消し」の知らせは、画面に届かない
+    realtime.hold();
+    await finishWithALeftRetired(page);
+    await expect(previousRow(page).getByText(RETIRED_NOTE)).toBeVisible();
+    await previousRow(page).getByRole('button', { name: '直す' }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
+    const fixing = page.getByTestId(`fixing-match-${LIVE_COURT}`);
+    await expect(fixing.getByText('直し中')).toBeVisible();
+
+    // 確認画面を開いて、B を棄権にしてある
+    await fixing.getByRole('button', { name: 'もう一度終了する' }).click();
+    const dialog = page.getByRole('dialog');
+    const retireB = dialog.getByRole('button', { name: `${LIVE_B.join('・')}が棄権` });
+    await retireB.click();
+    await expect(retireB).toHaveAttribute('aria-pressed', 'true');
+
+    // 流す前から「1つ前」を見張る（一瞬でも出たら記録する）
+    await page.evaluate((testId) => {
+      const seen = { previousAppeared: false };
+      (window as unknown as { __seen: typeof seen }).__seen = seen;
+      new MutationObserver(() => {
+        if (document.querySelector(`[data-testid="${testId}"]`)) seen.previousAppeared = true;
+      }).observe(document, { subtree: true, childList: true });
+    }, `previous-match-${LIVE_COURT}`);
+
+    // 止めていた「終了」「取り消し」の知らせ（古い）を流す。流した知らせより後ろに届く
+    // 別のコートの点が映れば、古い知らせも当て終わっている
+    await expect.poll(() => realtime.heldCount()).toBe(2);
+    realtime.release();
+    await waitUntilEarlierChangesArrive(page, 31);
+
+    await expect(dialog).toBeVisible();
+    await expect(retireB).toHaveAttribute('aria-pressed', 'true');
+    await expect(fixing).toBeVisible();
+    expect(
+      await page.evaluate(
+        () =>
+          (window as unknown as { __seen: { previousAppeared: boolean } }).__seen.previousAppeared
+      )
+    ).toBe(false);
+
+    // そのまま OK で、選んだ棄権で記録される
+    await dialog.getByRole('button', { name: 'OK' }).click();
+    await expect
+      .poll(async () => (await findMatchResult(matchIds.live))?.ending)
+      .toBe('retired_side_b');
+    await expect(previousRow(page).getByText(`（${LIVE_B.join('・')} 棄権）`)).toBeVisible();
+
+    // 自分の送った状態が戻ってきたあとは、ほかの人の変化が普通に映る（待ちっぱなしにならない）
+    await reopenMatchDirectly(matchIds.live);
+    await expect(fixing.getByText('直し中')).toBeVisible({ timeout: 5000 });
+
+    await context.close();
   });
 
   test('観戦者には棄権を選ぶ欄が出ない', async ({ browser }) => {

@@ -19,6 +19,7 @@ import {
   type CourtsEmptyReason,
   type LiveScore,
 } from '@/ui/courts/types';
+import { useFinishSheets } from '@/ui/courts/use-finish-sheets';
 import { useLiveUpdates } from '@/ui/courts/use-live-updates';
 import { appScoreSyncStore, useScoreSync } from '@/ui/courts/use-score-sync';
 
@@ -162,6 +163,8 @@ export function CourtsPage({
     createLiveBoard(overlayPendingScores(serverBoard, canInput, appScoreSyncStore.getSnapshot()))
   );
   const board = useSyncExternalStore(liveBoard.subscribe, liveBoard.get, liveBoard.get);
+  // 終了の確認画面は試合ごとにここで覚える。開いている試合が終わったら閉じる
+  const { finishSheetOf } = useFinishSheets(board);
 
   // 読み直しは、依頼をまとめて連続しないようにする。読み直しの間に届いた変化も覚えておく。
   const [refreshScheduler] = useState(() =>
@@ -197,6 +200,13 @@ export function CourtsPage({
     [refreshScheduler]
   );
 
+  // 自分の終了・取り消しが戻らないまま待ちが終わり、その間に当てなかった知らせがあったら読み直す。
+  // 当てなかったのがほかの人の終了・取り消しだったら、読み直さないと次の変化まで記録と食い違う
+  useEffect(
+    () => appScoreSyncStore.subscribeMatchEchoGaveUp(() => refreshScheduler.request()),
+    [refreshScheduler]
+  );
+
   /** 変化を一覧に当てる。読み直しの最中なら、読み直した一覧に当て直すために覚えておく。 */
   function applyChange(change: LiveChange): boolean {
     refreshScheduler.record(change);
@@ -210,7 +220,13 @@ export function CourtsPage({
   function handleLiveChange(change: LiveChange) {
     // 自分が送った点の戻りなら、戻り待ちを消す（そのあとの当てる判断に効く。use-score-sync.ts）
     if (change.kind === 'score') appScoreSyncStore.noteRemoteScore(change);
-    else forgetReopenFailure(change.matchId);
+    else {
+      // 自分が送った終了・取り消しより古い知らせは当てない。当てると画面が一瞬前の状態に戻り、
+      // 枠が作り直されて開いていた確認画面が閉じる。当てなかった知らせは読み直しの当て直しにも
+      // 入れない（applyChange に渡さない）。
+      if (!appScoreSyncStore.noteRemoteMatch(change)) return;
+      forgetReopenFailure(change.matchId);
+    }
     if (applyChange(change)) refreshScheduler.request();
   }
 
@@ -307,15 +323,6 @@ export function CourtsPage({
     if (matchId) changeScoreOfMatch(matchId, gameNumber, side, delta);
   }
 
-  /**
-   * 確認画面の「OK」で呼ばれる。終了を預かり場所に載せる（点が届いてから送られる）。
-   * 画面は「終了を送っています」を出し、記録されたら次の試合に切り替わる。
-   */
-  function finishMatch(courtNumber: number, retiredSide: 'A' | 'B' | null) {
-    const matchId = activeMatchIdOfCourt(courtNumber);
-    if (matchId) finish(matchId, retiredSide);
-  }
-
   // 終了の取り消し（「直す」）。点や終了と違って、自動では送り直さない（取り消しは押した人が
   // 結果を見て決める操作で、勝手に繰り返すと、あとから別の人が終了したのを取り消してしまうため）。
   // 失敗したら理由を出して、もう一度押してもらう。
@@ -325,9 +332,12 @@ export function CourtsPage({
     if (reopenStates[matchId]?.pending) return;
     setReopenStates((previous) => ({ ...previous, [matchId]: { pending: true, error: null } }));
 
+    // 取り消しが購読で戻ってくるまで、それより古い「終了」の知らせは当てない（use-score-sync.ts）
+    const echo = appScoreSyncStore.expectMatchEcho(matchId, 'live');
     const result = await sendRequest({ url: `/api/matches/${matchId}/result`, method: 'DELETE' });
 
     if (result.ok) {
+      echo.accepted();
       setReopenStates((previous) => {
         const rest = { ...previous };
         delete rest[matchId];
@@ -338,6 +348,7 @@ export function CourtsPage({
       return;
     }
 
+    echo.failed();
     const error = shouldRetry(result)
       ? REOPEN_RETRY_MESSAGE
       : result.kind === 'http'
@@ -366,6 +377,7 @@ export function CourtsPage({
     onIncrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, 1),
     onDecrement: (matchId, gameNumber, side) => changeScoreOfMatch(matchId, gameNumber, side, -1),
     onFinishMatch: (matchId, retiredSide) => finish(matchId, retiredSide),
+    finishSheetOf,
     onReopen: (matchId) => void reopenMatch(matchId),
   };
 
@@ -412,6 +424,8 @@ export function CourtsPage({
 
       <div className="flex flex-col gap-[10px]">
         {courts.map((court) => {
+          // 確認画面の「OK」は、このカードの試合（確認画面を開いた試合）を終了する。
+          // 押した瞬間のコートから引き直すと、開いている間に入れ替わった次の試合を終了してしまう
           const matchId = activeMatchId(court, canInput);
           const activeMatch = board.find((match) => match.matchId === matchId);
           const syncStatus = matchId ? (statusByMatchId[matchId] ?? null) : null;
@@ -442,7 +456,8 @@ export function CourtsPage({
               onDecrement={(gameNumber, side) =>
                 changeScore(court.courtNumber, gameNumber, side, -1)
               }
-              onFinishMatch={(retiredSide) => finishMatch(court.courtNumber, retiredSide)}
+              onFinishMatch={(retiredSide) => matchId && finish(matchId, retiredSide)}
+              finishSheetOf={finishSheetOf}
               fix={fixActions}
             />
           );

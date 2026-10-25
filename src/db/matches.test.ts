@@ -215,10 +215,19 @@ describe('試合の進み具合を書き換える', () => {
   });
 
   test('finish で done になり、reopen で live に戻って finished_at が空になる', async () => {
+    // 終了は担当のときだけ書かれる
+    await admin
+      .from('matches')
+      .update({
+        scorer_participant_id: taroParticipantId,
+        scorer_claimed_at: new Date().toISOString(),
+      })
+      .eq('id', matchId);
     await matchesDb.finish({
       matchId,
       finishedAt: new Date('2027-03-14T04:00:00.000Z'),
       ending: 'normal',
+      expectedScorerParticipantId: taroParticipantId,
     });
     const finished = await admin
       .from('matches')
@@ -243,10 +252,19 @@ describe('試合の進み具合を書き換える', () => {
   });
 
   test('棄権つきで finish すると ending が書かれ、reopen で普通に戻る', async () => {
+    // 終了は担当のときだけ書かれる
+    await admin
+      .from('matches')
+      .update({
+        scorer_participant_id: taroParticipantId,
+        scorer_claimed_at: new Date().toISOString(),
+      })
+      .eq('id', matchId);
     await matchesDb.finish({
       matchId,
       finishedAt: new Date('2027-03-14T05:00:00.000Z'),
       ending: 'retired_side_a',
+      expectedScorerParticipantId: taroParticipantId,
     });
     const finished = await admin.from('matches').select('ending').eq('id', matchId).single();
     expect(finished.data!.ending).toBe('retired_side_a');
@@ -486,6 +504,37 @@ describe('入力担当を読む・書く', () => {
     expect(await readScorerColumns()).toEqual({ participantId: null, claimedAt: null });
   });
 
+  test('終了は、読んだときの担当のままのときだけ書く。担当が違えば書かず false', async () => {
+    await resetScorer();
+    await matchesDb.setScorer({
+      matchId,
+      participantId: jiroParticipantId,
+      expectedHolderParticipantId: null,
+      now: at,
+    });
+
+    expect(
+      await matchesDb.finish({
+        matchId,
+        finishedAt: at,
+        ending: 'normal',
+        expectedScorerParticipantId: taroParticipantId,
+      })
+    ).toBe(false);
+    const { data } = await admin.from('matches').select('status').eq('id', matchId).single();
+    expect(data!.status).not.toBe('done');
+
+    expect(
+      await matchesDb.finish({
+        matchId,
+        finishedAt: at,
+        ending: 'normal',
+        expectedScorerParticipantId: jiroParticipantId,
+      })
+    ).toBe(true);
+    await matchesDb.reopen({ matchId, scorerParticipantId: jiroParticipantId, now: at });
+  });
+
   test('終了の取り消しで、押した人が担当になり、時刻が入る', async () => {
     await resetScorer();
     await matchesDb.setScorer({
@@ -494,7 +543,12 @@ describe('入力担当を読む・書く', () => {
       expectedHolderParticipantId: null,
       now: at,
     });
-    await matchesDb.finish({ matchId, finishedAt: at, ending: 'normal' });
+    await matchesDb.finish({
+      matchId,
+      finishedAt: at,
+      ending: 'normal',
+      expectedScorerParticipantId: taroParticipantId,
+    });
     const reopenedAt = new Date(at.getTime() + 600_000);
 
     await matchesDb.reopen({ matchId, scorerParticipantId: jiroParticipantId, now: reopenedAt });

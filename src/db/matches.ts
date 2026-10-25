@@ -198,12 +198,16 @@ export const matchesDb: SaveScoreRepository &
     }));
   },
 
-  async finish({ matchId, finishedAt, ending }) {
-    const { error } = await getSupabaseAdminClient()
+  async finish({ matchId, finishedAt, ending, expectedScorerParticipantId }) {
+    // 読んでから書くまでの間に引き継がれていたら書かない（setScorer と同じ、条件つきの 1 回の書き込み）
+    const { data, error } = await getSupabaseAdminClient()
       .from('matches')
       .update({ status: 'done', finished_at: finishedAt.toISOString(), ending })
-      .eq('id', matchId);
+      .eq('id', matchId)
+      .eq('scorer_participant_id', expectedScorerParticipantId)
+      .select('id');
     if (error) throw error;
+    return (data ?? []).length > 0;
   },
 
   async reopen({ matchId, scorerParticipantId, now }) {

@@ -3,7 +3,12 @@ import { ApiError } from '@/server/route-helpers';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { canFinishMatch, endingOfRetiredSide, type MatchEnding } from '@/domain/match-rules';
 import { SCORER_ERROR_CODE } from '@/domain/scorer';
-import { otherIsScoringError, standingOfPlayer, type MatchScorer } from '@/usecases/match-scorer';
+import {
+  otherIsScoringError,
+  scorerChangedError,
+  standingOfPlayer,
+  type MatchScorer,
+} from '@/usecases/match-scorer';
 
 export type MatchForFinishing = {
   id: string;
@@ -19,8 +24,16 @@ export type MatchForFinishing = {
 export type FinishMatchRepository = {
   findMatch(matchId: string): Promise<MatchForFinishing | null>;
   findGameScores(matchId: string): Promise<GameScore[]>;
-  /** `matches` を done にし、finished_at と ending（普通か棄権か）を入れる。 */
-  finish(input: { matchId: string; finishedAt: Date; ending: MatchEnding }): Promise<void>;
+  /**
+   * `matches` を done にし、finished_at と ending（普通か棄権か）を入れる。
+   * 担当が `expectedScorerParticipantId` のままのときだけ書き、書けたかを返す。
+   */
+  finish(input: {
+    matchId: string;
+    finishedAt: Date;
+    ending: MatchEnding;
+    expectedScorerParticipantId: string;
+  }): Promise<boolean>;
 };
 
 /**
@@ -88,9 +101,17 @@ export async function finishMatch(deps: FinishMatchRepository, input: FinishMatc
     throw new ApiError(400, canFinish.reason);
   }
 
-  await deps.finish({
+  const written = await deps.finish({
     matchId: input.matchId,
     finishedAt: input.now,
     ending: endingOfRetiredSide(input.retiredSide),
+    expectedScorerParticipantId: match.scorer!.participantId,
   });
+  if (written) return;
+
+  // 書けなかったのは、読んだあとに引き継がれたか、同じ試合への終了が先に通ったか。
+  // 後者は二重の終了なので、上と同じく成功として扱う
+  const latest = await deps.findMatch(input.matchId);
+  if (latest?.status === 'done') return;
+  throw scorerChangedError();
 }

@@ -26,7 +26,7 @@ function fakeRepository(overrides: Partial<FinishMatchRepository> = {}): FinishM
       .fn()
       .mockResolvedValue({ id: 'match-1', status: 'live', maxGameCount: 3, scorer: MY_SCORER }),
     findGameScores: vi.fn().mockResolvedValue([{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }]),
-    finish: vi.fn().mockResolvedValue(undefined),
+    finish: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
 }
@@ -42,6 +42,7 @@ describe('終了を送ると status が done になる', () => {
       matchId: 'match-1',
       finishedAt: NOW,
       ending: 'normal',
+      expectedScorerParticipantId: 'participant-me',
     });
   });
 });
@@ -159,6 +160,7 @@ describe('同点（勝ちゲーム数が同数）の試合に終了を送った�
       matchId: 'match-1',
       finishedAt: NOW,
       ending: 'normal',
+      expectedScorerParticipantId: 'participant-me',
     });
   });
 });
@@ -172,6 +174,7 @@ describe('棄権を選んだ終了（docs/specs/2026-10-11-retire-match.md）', 
       matchId: 'match-1',
       finishedAt: NOW,
       ending: 'retired_side_a',
+      expectedScorerParticipantId: 'participant-me',
     });
   });
 
@@ -306,6 +309,47 @@ describe('試合の終了は担当だけ（docs/specs/2026-10-14-match-scorer.md
     await finishMatch(deps, { matchId: 'match-1', playerId: ME, now: NOW });
 
     expect(deps.finish).toHaveBeenCalledTimes(1);
+  });
+
+  test('読んでから書くまでの間に引き継がれたら、終了は書かれず 409 で断る', async () => {
+    const deps = fakeRepository({
+      findMatch: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'match-1',
+          status: 'live',
+          maxGameCount: 3,
+          scorer: MY_SCORER,
+        })
+        .mockResolvedValueOnce({ id: 'match-1', status: 'live', maxGameCount: 3, scorer: OTHER }),
+      finish: vi.fn().mockResolvedValue(false),
+    });
+
+    await expect(
+      finishMatch(deps, { matchId: 'match-1', playerId: ME, now: NOW })
+    ).rejects.toMatchObject({ status: 409, code: 'not-scorer' });
+  });
+
+  test('読んでから書くまでの間に同じ試合がもう終わっていたら、二重の終了として成功する', async () => {
+    const deps = fakeRepository({
+      findMatch: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: 'match-1',
+          status: 'live',
+          maxGameCount: 3,
+          scorer: MY_SCORER,
+        })
+        .mockResolvedValueOnce({
+          id: 'match-1',
+          status: 'done',
+          maxGameCount: 3,
+          scorer: MY_SCORER,
+        }),
+      finish: vi.fn().mockResolvedValue(false),
+    });
+
+    await finishMatch(deps, { matchId: 'match-1', playerId: ME, now: NOW });
   });
 
   test('すでに終了した試合への二重の終了は、担当でなくても何もせず成功する', async () => {

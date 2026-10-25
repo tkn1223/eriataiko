@@ -963,9 +963,15 @@ export function createScoreSyncStore(): ScoreSyncStore {
       }
 
       wait.awaiting = remaining;
-      if (remaining.length === 0) dropMatchEchoWait(change.matchId, wait);
-      // 自分の最後の状態が戻ったときだけ当てる（途中の状態の戻りは、当てると一瞬戻って見える）
-      return remaining.length === 0;
+      if (remaining.length === 0) {
+        dropMatchEchoWait(change.matchId, wait);
+        return true;
+      }
+      // 自分の最後の状態が戻ったときだけ当てる（途中の状態の戻りは、当てると一瞬戻って見える）。
+      // ただし同じ状態のほかの人の書き込み（ほぼ同時の終了など）だったかもしれないので、
+      // 最後の状態が戻らないまま待ちが終わったら読み直すよう、当てなかった印を付ける
+      wait.droppedChange = true;
+      return false;
     },
 
     forgetAwaitingEchoes() {

@@ -1321,6 +1321,19 @@ describe('useScoreSync', () => {
         expect(gaveUp).toHaveBeenCalledWith('m');
       });
 
+      // 途中の状態の戻りは当てない（一瞬戻って見えるため）。ほかの人がほぼ同時に終了していると、
+      // その知らせが自分の終了の戻りに見えて捨てられ、取り消しが断られると記録と違う終わり方が画面に残っていた
+      test('途中の状態の戻りを当てずに捨てたあと、最後の状態が送れなかったら、読み直しを頼む', () => {
+        const { gaveUp } = listenGaveUp();
+        sendAndAccept(DONE);
+        const reopen = appScoreSyncStore.expectMatchEcho('m', LIVE);
+        expect(shouldApply(DONE)).toBe(false);
+
+        reopen.failed();
+
+        expect(gaveUp).toHaveBeenCalledWith('m');
+      });
+
       test('つながり直したとき（読み直しはそちらで頼む）は、ここでは頼まない', async () => {
         vi.useFakeTimers();
         const { gaveUp } = listenGaveUp();

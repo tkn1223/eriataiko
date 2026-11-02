@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 vi.mock('@/server/session', () => ({ getSession: vi.fn() }));
 
-import { ApiError, requirePlayer } from '@/server/route-helpers';
+import { ApiError, requirePlayer, toErrorResponse } from '@/server/route-helpers';
 import { getSession, type Session } from '@/server/session';
 
 const mockedGetSession = vi.mocked(getSession);
@@ -49,5 +49,30 @@ describe('requirePlayer', () => {
     mockedGetSession.mockResolvedValue(player);
 
     await expect(requirePlayer()).resolves.toEqual(player);
+  });
+});
+
+/**
+ * 画面は `error`（日本語の理由）に加えて、`code` で「担当でないから断られた」を見分ける
+ * （同じ 409 でも「終了した試合です」とは出し方が違うため。docs/specs/2026-10-14-match-scorer.md）。
+ */
+describe('toErrorResponse', () => {
+  test('ApiError の状態番号と日本語の理由を返す（code が無ければ code は付けない）', async () => {
+    const response = toErrorResponse(new ApiError(409, '終了した試合です。'));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: '終了した試合です。' });
+  });
+
+  test('code を付けた ApiError は、本文に code も入る', async () => {
+    const response = toErrorResponse(
+      new ApiError(409, '愛知南のたろうさんが担当しています。', 'not-scorer')
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: '愛知南のたろうさんが担当しています。',
+      code: 'not-scorer',
+    });
   });
 });

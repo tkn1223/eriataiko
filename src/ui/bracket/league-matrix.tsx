@@ -1,7 +1,7 @@
 'use client';
 
 import { teamBgClass } from '@/domain/class-labels';
-import type { LeagueCard, Team, TeamNumber } from '@/ui/bracket/sample-data';
+import type { LeagueCard, Team } from '@/ui/bracket/types';
 
 type Props = {
   teams: Team[];
@@ -9,7 +9,7 @@ type Props = {
   onSelectCard: (card: LeagueCard) => void;
 };
 
-function findCard(cards: LeagueCard[], a: TeamNumber, b: TeamNumber) {
+function findCard(cards: LeagueCard[], a: number, b: number) {
   return cards.find(
     (card) => (card.teamA === a && card.teamB === b) || (card.teamA === b && card.teamB === a)
   );
@@ -18,7 +18,7 @@ function findCard(cards: LeagueCard[], a: TeamNumber, b: TeamNumber) {
 /**
  * 予選リーグの 4×4 星取表。
  *
- * 行・列とも同じチーム順で並べ、行チームから見た結果（勝ち/負け/進行中/未実施）を
+ * 行・列とも同じチーム順で並べ、行チームから見た結果（勝ち/負け/引き分け/進行中/未実施）を
  * マスに出す。対戦が無い組み合わせ（同じチーム同士や、まだ組んでいない相手）は空/「－」。
  */
 export function LeagueMatrix({ teams, cards, onSelectCard }: Props) {
@@ -65,7 +65,7 @@ export function LeagueMatrix({ teams, cards, onSelectCard }: Props) {
         </table>
       </div>
       <p className="mt-[10px] text-[12px] text-gray-500">
-        ○＝カード勝利（数字はカード内の勝ち試合数）。タップで詳細。
+        ○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。
       </p>
     </div>
   );
@@ -140,8 +140,17 @@ function CellMark({
     return <span className="text-[11px] font-bold text-gray-400">未</span>;
   }
   // 記号だけだと読み上げが「白丸」などになって意味が伝わらないので、role="img" と言葉を添える
-  const won = (own ?? 0) > (opponent ?? 0);
-  return won ? (
+  const ownWins = own ?? 0;
+  const opponentWins = opponent ?? 0;
+  // 終わった対戦で勝ち試合数が同じなら引き分け（standings.ts の matchupResult と同じ決め方）
+  if (ownWins === opponentWins) {
+    return (
+      <span role="img" aria-label="引き分け" className="text-[15px] font-black text-gray-500">
+        △
+      </span>
+    );
+  }
+  return ownWins > opponentWins ? (
     <span role="img" aria-label="勝ち" className="text-accent text-[15px] font-black">
       ○
     </span>

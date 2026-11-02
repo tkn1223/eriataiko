@@ -36,6 +36,7 @@ function doubles(overrides: Partial<MyPageViewMatchRow> = {}): MyPageViewMatchRo
   return {
     matchId: 'match-1',
     status: 'done',
+    ending: 'normal',
     maxGameCount: 1,
     courtNumber: 1,
     orderInCourt: 1,
@@ -424,5 +425,41 @@ describe('buildMyPageView の成績（終了した試合だけで計算する）
   test('試合が 1 件も無いときは 0勝0敗になる', () => {
     const view = buildMyPageView(baseInput({ matches: [] }));
     expect(view.record).toEqual({ wins: 0, losses: 0, gamesWon: 0, gamesLost: 0, pointDiff: 0 });
+  });
+});
+
+describe('buildMyPageView と棄権（点数に関係なく相手の勝ち）', () => {
+  // 自分（さとう・すずき = A 側）が 15-11 で点数では勝っている
+  const row = (ending: string) =>
+    doubles({
+      matchId: 'm1',
+      status: 'done',
+      ending,
+      gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
+    });
+
+  test('自分の側が棄権した試合は、点数で勝っていても負け。棄権した側の名前が付く', () => {
+    const view = buildMyPageView(baseInput({ matches: [row('retired_side_a')] }));
+
+    expect(view.matches[0]).toMatchObject({
+      won: false,
+      gamesWon: 1,
+      gamesLost: 0,
+      retiredNames: ['さとう', 'すずき'],
+    });
+    expect(view.record).toMatchObject({ wins: 0, losses: 1, gamesWon: 1, gamesLost: 0 });
+  });
+
+  test('相手が棄権した試合は、勝ち。棄権した相手の名前が付く', () => {
+    const view = buildMyPageView(baseInput({ matches: [row('retired_side_b')] }));
+
+    expect(view.matches[0]).toMatchObject({ won: true, retiredNames: ['わたなべ', 'こばやし'] });
+    expect(view.record).toMatchObject({ wins: 1, losses: 0 });
+  });
+
+  test('棄権の無い試合には retiredNames が付かない', () => {
+    const view = buildMyPageView(baseInput({ matches: [row('normal')] }));
+
+    expect(view.matches[0].retiredNames).toBeUndefined();
   });
 });

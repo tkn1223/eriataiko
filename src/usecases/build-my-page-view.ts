@@ -5,7 +5,7 @@ import {
   type ClassLabel,
   type DivisionRow,
 } from '@/domain/class-labels';
-import { leadingSide, matchOutcome } from '@/domain/match-rules';
+import { matchOutcome, matchWinner, retiredSideOf } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
 
@@ -40,6 +40,8 @@ export type MyPageViewMatchRow = {
   matchId: string;
   /** `matches.status`。'waiting' | 'live' | 'done'。 */
   status: string;
+  /** `matches.ending`。'normal' | 'retired_side_a' | 'retired_side_b'。 */
+  ending: string;
   maxGameCount: number;
   courtNumber: number | null;
   orderInCourt: number | null;
@@ -164,11 +166,13 @@ function toMyMatch(
     const [wonByA, wonByB] = outcome.wonGames;
     base.gamesWon = mySide === 'a' ? wonByA : wonByB;
     base.gamesLost = mySide === 'a' ? wonByB : wonByA;
-    // 勝ちは outcome.winner ではなく leadingSide で決める。結果LIVE
-    // （court-live-card.tsx）は #52 からこの数え方で、ここだけ取り残されていた。
-    // 決勝を 1-0 のまま終了すると outcome.winner は null のままなので、
-    // 21-15 で勝った人の画面に ● が付いていた（PR #53 レビュー）。
-    base.won = leadingSide(outcome.wonGames) === (mySide === 'a' ? 'A' : 'B');
+    // 勝ちは matchWinner 1 か所で決める（順位表・結果LIVE と食い違わないため。棄権は相手の勝ち）。
+    base.won =
+      matchWinner(gameScoresAB, match.maxGameCount, match.ending) === (mySide === 'a' ? 'A' : 'B');
+    const retiredSide = retiredSideOf(match.ending);
+    if (retiredSide !== null) {
+      base.retiredNames = playersOfSide(match, retiredSide === 'A' ? 'a' : 'b').map((p) => p.name);
+    }
   }
 
   return base;
@@ -203,6 +207,7 @@ export function buildMyPageView(input: MyPageViewInput): MyPageView {
       maxGameCount: row.match.maxGameCount,
       gameScores: toGameScores(playedGameScores(row.match.gameScores)),
       mySide: row.mySide === 'a' ? 'A' : 'B',
+      ending: row.match.ending,
     }));
 
   const record = buildPlayerRecord(finishedRecords);

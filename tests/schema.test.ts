@@ -520,15 +520,21 @@ describe('試合のルールと結果', () => {
     expect(error).toBeNull();
   });
 
-  test.each(['retired_side_a', 'retired_side_b', 'walkover_side_a', 'walkover_side_b'])(
-    '棄権・不戦勝（%s）を記録できる',
+  test.each(['retired_side_a', 'retired_side_b'])('棄権（%s）を記録できる', async (ending) => {
+    const matchId = await makeMatch();
+    const { error } = await admin
+      .from('matches')
+      .update({ ending, status: 'done' })
+      .eq('id', matchId);
+    expect(error).toBeNull();
+  });
+
+  test.each(['walkover_side_a', 'walkover_side_b'])(
+    '不戦勝（%s）の値は入らない',
     async (ending) => {
       const matchId = await makeMatch();
-      const { error } = await admin
-        .from('matches')
-        .update({ ending, status: 'done' })
-        .eq('id', matchId);
-      expect(error).toBeNull();
+      const { error } = await admin.from('matches').update({ ending }).eq('id', matchId);
+      expect(error).not.toBeNull();
     }
   );
 
@@ -557,6 +563,70 @@ describe('試合のルールと結果', () => {
       .single();
     expect(data!.status).toBe('waiting');
     expect(data!.ending).toBe('normal');
+  });
+});
+
+describe('試合の入力担当', () => {
+  test('新しい試合には担当がいない（担当も担当になった時刻も空）', async () => {
+    const matchId = await makeMatch();
+    const { data } = await admin
+      .from('matches')
+      .select('scorer_participant_id, scorer_claimed_at')
+      .eq('id', matchId)
+      .single();
+    expect(data).toEqual({ scorer_participant_id: null, scorer_claimed_at: null });
+  });
+
+  test('参加者を担当にして、担当になった時刻と一緒に記録できる', async () => {
+    const matchId = await makeMatch();
+    const scoredAt = '2027-01-22T10:00:00+00:00';
+    const { error } = await admin
+      .from('matches')
+      .update({ scorer_participant_id: ids.participantIds[0], scorer_claimed_at: scoredAt })
+      .eq('id', matchId);
+    expect(error).toBeNull();
+
+    const { data } = await admin
+      .from('matches')
+      .select('scorer_participant_id, scorer_claimed_at')
+      .eq('id', matchId)
+      .single();
+    expect(data!.scorer_participant_id).toBe(ids.participantIds[0]);
+    expect(new Date(data!.scorer_claimed_at!).toISOString()).toBe('2027-01-22T10:00:00.000Z');
+  });
+
+  test('参加者でない id は担当にできない', async () => {
+    const matchId = await makeMatch();
+    const { error } = await admin
+      .from('matches')
+      .update({ scorer_participant_id: '00000000-0000-4000-8000-00000000dead' })
+      .eq('id', matchId);
+    expect(error).not.toBeNull();
+  });
+
+  test('担当の参加者が消えても試合は残り、担当だけが空になる', async () => {
+    const playerId = await insertOne('players', {
+      player_number: numberBase + 60,
+      name: `${tag} 担当だけ消える人`,
+    });
+    const participantId = await insertOne('participants', {
+      competition_id: ids.competitionId,
+      player_id: playerId,
+      team_id: ids.teamAId,
+      division_id: ids.divisionId,
+    });
+    const matchId = await makeMatch();
+    await admin.from('matches').update({ scorer_participant_id: participantId }).eq('id', matchId);
+
+    const { error } = await admin.from('participants').delete().eq('id', participantId);
+    expect(error).toBeNull();
+
+    const { data } = await admin
+      .from('matches')
+      .select('id, scorer_participant_id')
+      .eq('id', matchId)
+      .single();
+    expect(data).toEqual({ id: matchId, scorer_participant_id: null });
   });
 });
 

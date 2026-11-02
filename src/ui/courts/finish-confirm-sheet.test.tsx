@@ -5,6 +5,7 @@ import { FinishConfirmSheet } from '@/ui/courts/finish-confirm-sheet';
 function renderSheet(overrides: Partial<React.ComponentProps<typeof FinishConfirmSheet>> = {}) {
   const onOk = vi.fn();
   const onClose = vi.fn();
+  const onRetiredSideChange = vi.fn();
 
   const utils = render(
     <FinishConfirmSheet
@@ -16,14 +17,46 @@ function renderSheet(overrides: Partial<React.ComponentProps<typeof FinishConfir
       ]}
       matchWinnerName="佐々木・井上"
       matchWinnerScoreText="2-1"
+      teamAName="佐々木・井上"
+      teamBName="田中・木村"
+      retiredSide={null}
+      onRetiredSideChange={onRetiredSideChange}
       onOk={onOk}
       onClose={onClose}
       {...overrides}
     />
   );
 
-  return { ...utils, onOk, onClose };
+  return { ...utils, onOk, onClose, onRetiredSideChange };
 }
+
+describe('FinishConfirmSheet の棄権の欄', () => {
+  test('両ペアの名前のボタンが出て、押すとその側が選ばれる', () => {
+    const { onRetiredSideChange } = renderSheet();
+
+    fireEvent.click(screen.getByRole('button', { name: '田中・木村が棄権' }));
+
+    expect(onRetiredSideChange).toHaveBeenCalledWith('B');
+  });
+
+  test('選ばれている側をもう一度押すと選びが外れる', () => {
+    const { onRetiredSideChange } = renderSheet({ retiredSide: 'A' });
+
+    expect(screen.getByRole('button', { name: '佐々木・井上が棄権' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: '佐々木・井上が棄権' }));
+
+    expect(onRetiredSideChange).toHaveBeenCalledWith(null);
+  });
+
+  test('棄権の欄のボタンは押しやすい大きさ（高さ 44px 以上の指定）', () => {
+    renderSheet();
+
+    expect(screen.getByRole('button', { name: '佐々木・井上が棄権' })).toHaveClass('min-h-11');
+  });
+});
 
 describe('FinishConfirmSheet', () => {
   test('open が false のときは何も出ない', () => {

@@ -5,6 +5,9 @@ import { loadTestEnv } from './tests/load-env.mjs';
 
 const testEnv = loadTestEnv();
 
+/** 共有の「いまの大会」の印を付け替えるテスト。ほかと同時に流さない */
+const TOUCHES_CURRENT_COMPETITION = ['tests/import-competition.test.ts'];
+
 /**
  * テストは拡張子で置き場所が決まる。迷わないように 2 種類だけ。
  *
@@ -36,7 +39,20 @@ export default defineConfig({
           name: 'logic',
           environment: 'node',
           include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+          exclude: [...TOUCHES_CURRENT_COMPETITION],
           env: testEnv,
+        },
+      },
+      {
+        test: {
+          // 「いまの大会」の印（共有）を付け替えるテストだけを、ほかが全部終わってから流す。
+          // 同時に流すと、印を読むテスト（schema.test.ts・me.test.ts）が
+          // 付け替えの途中を読んで落ちる（PR #53 レビュー指摘3 と同じ競合）
+          name: 'current-competition',
+          environment: 'node',
+          include: [...TOUCHES_CURRENT_COMPETITION],
+          env: testEnv,
+          sequence: { groupOrder: 1 },
         },
       },
       {

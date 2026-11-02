@@ -257,6 +257,7 @@ src/
   config/       環境変数、タブ一覧、大会名
   types/        DB の自動生成型
 
+scripts/        PC で打つコマンド（CSV 取り込み・「いまの大会」の切り替えなど。docs/import.md）
 supabase/       表のつくり（スキーマ）。書き込みのコードは入っていない
   migrations/   seed.sql
 tests/          DB の約束を確かめるテスト
@@ -338,9 +339,8 @@ npm run db:push
 - [x] Vercel プロジェクト作成 → GitHub Secrets を 3 つ登録（`docs/deploy.md`）
 - [x] Supabase プロジェクト作成（東京）→ `.env.local` と Vercel に環境変数を設定
       ※ 本番で読み取り可・書き込み不可を実測済み
-- [ ] **入場する人の名簿を登録**（`players` と `entries`。番号・名前・チーム・部・入力可）
-      ※ 旧 `operators` への登録は**不要になった**。段2 で名簿を一本化するため、
-      いま入れると移し替える手間が増える。本番は空のままにしておくこと
+- [ ] **入場する人の名簿と組み合わせを本番に取り込む**（大会・会場・部・チーム・選手・試合。
+      3 枚の CSV からコマンド 1 つで入る。手順は `docs/import.md`）
 - [x] `TOURNAMENT_PASSCODE` を決めて設定
 - [x] GitHub Secrets（`SUPABASE_URL` / `SUPABASE_ANON_KEY`）を入れて keepalive を有効化
 - [ ] 本番と確認用でデータベースを分けるか決める（いまは共有。`docs/database.md`）

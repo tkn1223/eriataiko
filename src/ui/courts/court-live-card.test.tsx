@@ -1,7 +1,17 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
-import { CourtLiveCard } from '@/ui/courts/court-live-card';
-import type { Court, CourtTeam, GameScore, LiveScore } from '@/ui/courts/types';
+import { hasAnyPoint } from '@/domain/scoring';
+import { type ComponentProps } from 'react';
+import { CourtLiveCard, type FixActions, type ScorerControl } from '@/ui/courts/court-live-card';
+import { useFinishSheets } from '@/ui/courts/use-finish-sheets';
+import type {
+  Court,
+  CourtTeam,
+  GameScore,
+  LiveScore,
+  PreviousMatch,
+  ScoreSyncStatus,
+} from '@/ui/courts/types';
 
 /**
  * ペア名は 1 人ずつ別の要素に分けて出す（名前の途中で折り返さないため。court-live-card.tsx の PairName）。
@@ -18,7 +28,20 @@ function team(overrides: Partial<CourtTeam> = {}): CourtTeam {
   return { teamNumber: 1, players: [], slotLabel: null, ...overrides };
 }
 
+/** 保存の状況（案内なし）に、必要な部分だけ上書きする。 */
+function syncStatusOf(overrides: Partial<ScoreSyncStatus> = {}): ScoreSyncStatus {
+  return {
+    retryingMessage: null,
+    rejectedMessage: null,
+    finishing: false,
+    finishRetrying: false,
+    finishRejectedMessage: null,
+    ...overrides,
+  };
+}
+
 const baseLive: NonNullable<Court['live']> = {
+  matchId: 'match-live-1',
   classLabel: { name: '2部', colorNumber: 2 },
   roundLabel: '予選 1回戦',
   teamA: team({ teamNumber: 1, players: ['佐藤', '鈴木'] }),
@@ -28,35 +51,86 @@ const baseLive: NonNullable<Court['live']> = {
   maxGameCount: 1,
 };
 
+/**
+ * 終了の確認画面の開き閉じはページが試合ごとに覚える（use-finish-sheets.ts）ので、
+ * カードだけを試すときは、その覚える役を同じ部品で付けて渡す。
+ */
+type HarnessProps = Omit<
+  ComponentProps<typeof CourtLiveCard>,
+  'finishSheetOf' | 'fix' | 'scorerOf'
+> & {
+  fix?: Omit<FixActions, 'finishSheetOf'>;
+  /** 試合の担当の見せ方。渡さなければ、どの試合も自分が担当（＋ − が押せる）。 */
+  scorer?: ScorerControl;
+};
+
+/** 担当の操作。見せ方（view）だけを替えて、押された操作は spy で受ける。 */
+function scorerControl(
+  view: ScorerControl['view'] = { kind: 'mine' },
+  overrides: Partial<ScorerControl> = {}
+): ScorerControl {
+  return {
+    view,
+    onClaim: () => {},
+    onTakeOver: () => {},
+    onRelease: () => {},
+    onDismissRejection: () => {},
+    ...overrides,
+  };
+}
+
+function CardHarness({ fix, scorer = scorerControl(), ...props }: HarnessProps) {
+  const { finishSheetOf } = useFinishSheets(null);
+  return (
+    <CourtLiveCard
+      {...props}
+      scorerOf={() => scorer}
+      finishSheetOf={finishSheetOf}
+      fix={fix ? { ...fix, finishSheetOf } : undefined}
+    />
+  );
+}
+
 function renderLiveCard({
   live = baseLive,
   next = null,
   scores = live?.scores ?? [],
   finished = false,
+  started = live !== null || hasAnyPoint(scores),
   canInput = true,
+  syncStatus = null,
   onIncrement = () => {},
   onDecrement = () => {},
   onFinishMatch = () => {},
+  scorer,
 }: {
+  scorer?: ScorerControl;
   live?: Court['live'];
   next?: Court['next'];
   scores?: GameScore[];
   finished?: boolean;
+  started?: boolean;
   canInput?: boolean;
+  syncStatus?: ScoreSyncStatus | null;
   onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement?: (gameNumber: number, side: 'A' | 'B') => void;
-  onFinishMatch?: () => void;
+  onFinishMatch?: (retiredSide: 'A' | 'B' | null) => void;
 } = {}) {
-  const court: Court = { courtNumber: 3, live, next };
-  const liveScore: LiveScore | null = live ? { scores, finished } : null;
+  const court: Court = { courtNumber: 3, live, next, fixing: [], previous: null };
+  // 呼出待ち（live が無い）でも、選手が次の試合に点を入れ始めていれば
+  // liveScore を持つ（courts-page.tsx が実際に作る状態と合わせる）。
+  const hasLiveScore = live !== null || (canInput && next !== null);
+  const liveScore: LiveScore | null = hasLiveScore ? { scores, finished, started } : null;
   return render(
-    <CourtLiveCard
+    <CardHarness
       court={court}
       liveScore={liveScore}
       canInput={canInput}
+      syncStatus={syncStatus}
       onIncrement={onIncrement}
       onDecrement={onDecrement}
       onFinishMatch={onFinishMatch}
+      scorer={scorer}
     />
   );
 }
@@ -171,15 +245,23 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
+  function nextMatch(
+    overrides: Partial<NonNullable<Court['next']>> = {}
+  ): NonNullable<Court['next']> {
+    return {
+      matchId: 'match-next-1',
+      classLabel: { name: '1部', colorNumber: 1 },
+      roundLabel: '予選 2回戦',
+      teamA: team({ teamNumber: 3, players: ['山田'] }),
+      teamB: team({ teamNumber: 4, players: ['中村'] }),
+      isMine: false,
+      maxGameCount: 1,
+      ...overrides,
+    };
+  }
+
   test('次の試合があるコートには「次」と部・ペア名が出る', () => {
-    renderLiveCard({
-      next: {
-        classLabel: { name: '1部', colorNumber: 1 },
-        teamA: team({ teamNumber: 3, players: ['山田'] }),
-        teamB: team({ teamNumber: 4, players: ['中村'] }),
-        isMine: false,
-      },
-    });
+    renderLiveCard({ next: nextMatch() });
 
     expect(screen.getByText('次')).toBeInTheDocument();
     expect(screen.getByText('1部')).toBeInTheDocument();
@@ -188,12 +270,7 @@ describe('CourtLiveCard', () => {
 
   test('次の試合の出場者がまだ決まっていなければ、空枠ラベルが出る', () => {
     renderLiveCard({
-      next: {
-        classLabel: { name: '1部', colorNumber: 1 },
-        teamA: team({ teamNumber: 3, players: ['山田'] }),
-        teamB: team({ teamNumber: null, players: [], slotLabel: '予選2位' }),
-        isMine: false,
-      },
+      next: nextMatch({ teamB: team({ teamNumber: null, players: [], slotLabel: '予選2位' }) }),
     });
 
     expect(screen.getByText(wholeText('山田 vs 予選2位'))).toBeInTheDocument();
@@ -206,32 +283,22 @@ describe('CourtLiveCard', () => {
   });
 
   test('次が自分の試合のときは名前がaccent色で強調される', () => {
-    renderLiveCard({
-      next: {
-        classLabel: { name: '1部', colorNumber: 1 },
-        teamA: team({ teamNumber: 3, players: ['山田'] }),
-        teamB: team({ teamNumber: 4, players: ['中村'] }),
-        isMine: true,
-      },
-    });
+    renderLiveCard({ next: nextMatch({ isMine: true }) });
 
     expect(screen.getByText(wholeText('山田 vs 中村'))).toHaveClass('text-accent');
   });
 
-  test('進行中の試合が無いコートに「呼出待ち」が次の試合と一緒に出る', () => {
+  test('進行中の試合が無いコートに「呼出待ち」が次の試合と一緒に出る（観戦者）', () => {
     renderLiveCard({
       live: null,
-      next: {
-        classLabel: { name: '1部', colorNumber: 1 },
-        teamA: team({ teamNumber: 1, players: ['山田'] }),
-        teamB: team({ teamNumber: 2, players: ['中村'] }),
-        isMine: false,
-      },
+      next: nextMatch({ teamA: team({ teamNumber: 1, players: ['山田'] }) }),
+      canInput: false,
     });
 
     expect(screen.getByText('呼出待ち')).toBeInTheDocument();
     expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
   });
 
   test('進行中の試合も次の試合も無いコートに「予定なし」が出る', () => {
@@ -239,6 +306,138 @@ describe('CourtLiveCard', () => {
 
     expect(screen.getByText('予定なし')).toBeInTheDocument();
     expect(screen.queryByText('次')).not.toBeInTheDocument();
+  });
+
+  describe('呼出待ちのコート（選手・canInput が true）', () => {
+    function renderWaiting(overrides: Partial<Parameters<typeof renderLiveCard>[0]> = {}) {
+      return renderLiveCard({
+        live: null,
+        next: nextMatch({ maxGameCount: 1 }),
+        scores: [],
+        canInput: true,
+        ...overrides,
+      });
+    }
+
+    test('点の枠が出て、押せる', () => {
+      const onIncrement = vi.fn();
+      renderWaiting({ onIncrement });
+
+      const button = screen.getByRole('button', { name: '山田の第1ゲームの得点を1増やす' });
+      fireEvent.click(button);
+      expect(onIncrement).toHaveBeenCalledWith(1, 'A');
+    });
+
+    test('まだ点が入っていない間は「呼出待ち」のまま', () => {
+      renderWaiting();
+
+      expect(screen.getByText('呼出待ち')).toBeInTheDocument();
+      expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
+    });
+
+    test('最初の1点が入るとLIVEの見た目に切り替わる', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] });
+
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+      expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('一度点が入ったあと0対0に戻しても、LIVEの見た目のまま（入口の側も呼出待ちに戻さない）', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }], started: true });
+
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+      expect(screen.queryByText('呼出待ち')).not.toBeInTheDocument();
+    });
+
+    test('LIVEに切り替わったあとの回戦・部・チーム色は次の試合の情報のまま', () => {
+      renderWaiting({ scores: [{ gameNumber: 1, sideAScore: 1, sideBScore: 0 }] });
+
+      expect(screen.getByText('1部')).toBeInTheDocument();
+      expect(screen.getByText('予選 2回戦')).toBeInTheDocument();
+    });
+  });
+
+  describe('保存の状況（syncStatus）', () => {
+    test('送り直している間は「保存できていません」の案内が出る', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('保存できていません・送り直しています');
+    });
+
+    test('入口に断られたときは、その理由が出る', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({
+          retryingMessage: null,
+          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+        }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '終了した試合です。先に「終了を取り消す」を押してください。'
+      );
+    });
+
+    test('保存できていれば何も出ない', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({ retryingMessage: null, rejectedMessage: null }),
+      });
+
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
+
+    // 仕様 2026-10-04 の 4: 終了を押しても、送れていない点がある間は案内を消さない
+    // （終了の記録そのものは 1-d まで画面の中だけなので、点の保存状況は終了後も見えるべき）。
+    test('試合が終了した状態でも、送り直している間は「保存できていません」が残る', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: syncStatusOf({
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        }),
+      });
+
+      expect(screen.getByText('終了')).toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('保存できていません・送り直しています');
+    });
+
+    test('試合が終了した状態でも、入口に断られた理由は残る', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: syncStatusOf({
+          retryingMessage: null,
+          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+        }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('終了した試合です');
+    });
+
+    test('試合が終了した状態で、送れていれば何も出ない', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: syncStatusOf({ retryingMessage: null, rejectedMessage: null }),
+      });
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    test('観戦者には、終了した状態でも案内を出さない', () => {
+      renderLiveCard({
+        canInput: false,
+        finished: true,
+        syncStatus: syncStatusOf({
+          retryingMessage: '保存できていません・送り直しています',
+          rejectedMessage: null,
+        }),
+      });
+
+      expect(screen.queryByText(/保存できていません/)).not.toBeInTheDocument();
+    });
   });
 
   describe('観戦者（canInput が false）', () => {
@@ -369,7 +568,98 @@ describe('CourtLiveCard', () => {
       fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
 
-      expect(onFinishMatch).toHaveBeenCalled();
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith(null);
+    });
+  });
+
+  describe('棄権を選んで終了する（docs/specs/2026-10-11-retire-match.md）', () => {
+    // baseLive は 10-8 で A（佐藤・鈴木）が点数で勝っている
+    function openSheet(onFinishMatch = vi.fn(), canInput = true) {
+      renderLiveCard({ onFinishMatch, canInput });
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+      return onFinishMatch;
+    }
+
+    test('確認画面に、両ペアの名前の「棄権」ボタンが出る', () => {
+      openSheet();
+
+      expect(screen.getByRole('button', { name: '佐藤・鈴木が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+      expect(screen.getByRole('button', { name: '高橋・伊藤が棄権' })).toBeInTheDocument();
+    });
+
+    test('点数で勝っている A 側を棄権にすると、「試合の勝ち」が B 側に変わる', () => {
+      openSheet();
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('佐藤・鈴木');
+
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('高橋・伊藤');
+      expect(screen.getByRole('button', { name: '佐藤・鈴木が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      );
+    });
+
+    test('もう一度押すと棄権を取り消せて、勝ちが点数のとおりに戻る', () => {
+      openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('佐藤・鈴木');
+    });
+
+    test('棄権を選んで「OK」を押すと、棄権した側つきで onFinishMatch が呼ばれる', () => {
+      const onFinishMatch = openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('A');
+    });
+
+    test('「戻る」で閉じて開き直すと、棄権の選択は消えている', () => {
+      openSheet();
+      fireEvent.click(screen.getByRole('button', { name: '高橋・伊藤が棄権' }));
+      fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.getByRole('button', { name: '高橋・伊藤が棄権' })).toHaveAttribute(
+        'aria-pressed',
+        'false'
+      );
+    });
+
+    test('同点のときは、棄権を選ぶ前に止まる（確認画面が出ない）', () => {
+      renderLiveCard({ scores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 15 }] });
+      fireEvent.click(screen.getByRole('button', { name: '試合を終了する' }));
+
+      expect(screen.queryByRole('button', { name: '佐藤・鈴木が棄権' })).not.toBeInTheDocument();
+      expect(screen.getByRole('status')).toHaveTextContent('同点では終了できません');
+    });
+
+    test('観戦者には、終了ボタンも棄権を選ぶ欄も出ない', () => {
+      renderLiveCard({ canInput: false });
+
+      expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /棄権/ })).not.toBeInTheDocument();
+    });
+
+    test('棄権で終了を送っている間は、勝ちが相手側になり「（佐藤・鈴木 棄権）」が添えられる', () => {
+      renderLiveCard({
+        finished: true,
+        syncStatus: syncStatusOf({ finishing: true, finishRetiredSide: 'A' }),
+      });
+
+      expect(screen.getByText(/勝ち:/)).toHaveTextContent('高橋・伊藤');
+      expect(screen.getByText('（佐藤・鈴木 棄権）')).toBeInTheDocument();
+    });
+
+    test('棄権の無い終了には「棄権」の文字が出ない', () => {
+      renderLiveCard({ finished: true, syncStatus: syncStatusOf({ finishing: true }) });
+
+      expect(screen.queryByText(/棄権/)).not.toBeInTheDocument();
     });
   });
 
@@ -429,12 +719,7 @@ describe('CourtLiveCard', () => {
     test('「次」の試合はそのまま出る', () => {
       renderLiveCard({
         live: finishedLive,
-        next: {
-          classLabel: { name: '1部', colorNumber: 1 },
-          teamA: team({ teamNumber: 3, players: ['山田'] }),
-          teamB: team({ teamNumber: 4, players: ['中村'] }),
-          isMine: false,
-        },
+        next: nextMatch(),
         scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         finished: true,
       });
@@ -442,6 +727,732 @@ describe('CourtLiveCard', () => {
       expect(screen.getByText('次')).toBeInTheDocument();
       expect(screen.getByText(wholeText('山田 vs 中村'))).toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * 直し中（終了を取り消して点を直している試合）と、1 つ前（直す入口）。
+ * 仕様: docs/specs/2026-10-09-courts-live-and-finish.md の決めたこと 1・受け入れ基準 9〜13。
+ */
+describe('直し中と1つ前', () => {
+  const previousMatch: PreviousMatch = {
+    matchId: 'match-prev',
+    classLabel: { name: '3部', colorNumber: 3 },
+    roundLabel: '予選 3回戦',
+    teamA: team({ teamNumber: 3, players: ['山本', '清水'] }),
+    teamB: team({ teamNumber: 4, players: ['松田', '井上'] }),
+    isMine: false,
+    scores: [
+      { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+      { gameNumber: 2, sideAScore: 0, sideBScore: 0 },
+    ],
+    maxGameCount: 3,
+    ending: 'normal',
+  };
+
+  const fixingMatch: NonNullable<Court['live']> = {
+    matchId: 'match-fixing',
+    classLabel: { name: '1部', colorNumber: 1 },
+    roundLabel: '予選 2回戦',
+    teamA: team({ teamNumber: 1, players: ['中村', '小林'] }),
+    teamB: team({ teamNumber: 2, players: ['加藤', '吉田'] }),
+    isMine: false,
+    scores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 21 }],
+    maxGameCount: 1,
+  };
+
+  function actions(overrides: Partial<FixActions> = {}): Omit<FixActions, 'finishSheetOf'> {
+    return {
+      syncStatusOf: () => null,
+      reopenStateOf: () => null,
+      onIncrement: () => {},
+      onDecrement: () => {},
+      onFinishMatch: () => {},
+      onReopen: () => {},
+      ...overrides,
+    };
+  }
+
+  function renderCard({
+    court,
+    canInput = true,
+    fix = actions(),
+    scorer,
+  }: {
+    court: Partial<Court>;
+    canInput?: boolean;
+    fix?: Omit<FixActions, 'finishSheetOf'>;
+    scorer?: ScorerControl;
+  }) {
+    const full: Court = {
+      courtNumber: 3,
+      live: baseLive,
+      next: null,
+      fixing: [],
+      previous: null,
+      ...court,
+    };
+    const live = full.live;
+    return render(
+      <CardHarness
+        court={full}
+        liveScore={live ? { scores: live.scores, finished: false, started: true } : null}
+        canInput={canInput}
+        syncStatus={null}
+        onIncrement={() => {}}
+        onDecrement={() => {}}
+        onFinishMatch={() => {}}
+        fix={fix}
+        scorer={scorer}
+      />
+    );
+  }
+
+  describe('1つ前', () => {
+    test('棄権で終わった試合は、相手の勝ちと「（◯◯ 棄権）」が出る（点数では勝っていても）', () => {
+      renderCard({ court: { previous: { ...previousMatch, ending: 'retired_side_a' } } });
+
+      const row = screen.getByTestId('previous-match-3');
+      expect(within(row).getByText(/勝ち:/)).toHaveTextContent('松田・井上');
+      expect(within(row).getByText('（山本・清水 棄権）')).toBeInTheDocument();
+    });
+
+    test('棄権の無い試合には「棄権」の文字が出ない', () => {
+      renderCard({ court: { previous: previousMatch } });
+
+      expect(screen.queryByText(/棄権/)).not.toBeInTheDocument();
+    });
+
+    test('「1つ前」に、部・両ペアの名前・実際にプレーされたゲームの得点が出る', () => {
+      renderCard({ court: { previous: previousMatch } });
+
+      const row = screen.getByTestId('previous-match-3');
+      expect(within(row).getByText('1つ前')).toBeInTheDocument();
+      expect(within(row).getByText('3部')).toBeInTheDocument();
+      expect(within(row).getByText(wholeText('山本・清水 vs 松田・井上'))).toBeInTheDocument();
+      expect(within(row).getByText('21-19')).toBeInTheDocument();
+      // 0 対 0 の枠（プレーされていないゲーム）は出さない
+      expect(within(row).queryByText('0-0')).not.toBeInTheDocument();
+    });
+
+    test('選手には「直す」が出る。観戦者には出ない', () => {
+      const { unmount } = renderCard({ court: { previous: previousMatch }, canInput: true });
+      expect(screen.getByRole('button', { name: '直す' })).toBeInTheDocument();
+      unmount();
+
+      renderCard({ court: { previous: previousMatch }, canInput: false });
+      expect(screen.queryByRole('button', { name: '直す' })).not.toBeInTheDocument();
+      // 観戦者にも 1 つ前そのものは見える
+      expect(screen.getByTestId('previous-match-3')).toBeInTheDocument();
+    });
+
+    test('「直す」を押すと確認が出る。「戻る」では何も取り消さない', () => {
+      const onReopen = vi.fn();
+      renderCard({ court: { previous: previousMatch }, fix: actions({ onReopen }) });
+
+      fireEvent.click(screen.getByRole('button', { name: '直す' }));
+      expect(screen.getByText('この試合を直します')).toBeInTheDocument();
+      expect(onReopen).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(onReopen).not.toHaveBeenCalled();
+    });
+
+    test('確認の「OK」で、その試合の取り消しが呼ばれる', () => {
+      const onReopen = vi.fn();
+      renderCard({ court: { previous: previousMatch }, fix: actions({ onReopen }) });
+
+      fireEvent.click(screen.getByRole('button', { name: '直す' }));
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      expect(onReopen).toHaveBeenCalledExactlyOnceWith('match-prev');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    test('取り消しを送っている間は「取り消しています」が出て、「直す」は押せない', () => {
+      renderCard({
+        court: { previous: previousMatch },
+        fix: actions({ reopenStateOf: () => ({ pending: true, error: null }) }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('取り消しています');
+      expect(screen.getByRole('button', { name: '直す' })).toBeDisabled();
+    });
+
+    test('取り消しに失敗したら、日本語の理由が出て、もう一度押せる', () => {
+      renderCard({
+        court: { previous: previousMatch },
+        fix: actions({
+          reopenStateOf: () => ({
+            pending: false,
+            error: '取り消せませんでした。電波を確かめて、もう一度押してください。',
+          }),
+        }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent('取り消せませんでした');
+      expect(screen.getByRole('button', { name: '直す' })).toBeEnabled();
+    });
+
+    test('1 つ前に送れていない点の案内があれば、1 つ前の下に出す（他の人が先に終了させたとき）', () => {
+      renderCard({
+        court: { previous: previousMatch },
+        fix: actions({
+          syncStatusOf: () => ({
+            retryingMessage: null,
+            rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+            finishing: false,
+            finishRetrying: false,
+            finishRejectedMessage: null,
+          }),
+        }),
+      });
+
+      expect(within(screen.getByTestId('previous-match-3')).getByRole('status')).toHaveTextContent(
+        '終了した試合です'
+      );
+    });
+
+    test('進行中も次も無いコートでも、1 つ前が出る（「予定なし」と一緒に）', () => {
+      renderCard({ court: { live: null, next: null, previous: previousMatch } });
+
+      expect(screen.getByText('コート3')).toBeInTheDocument();
+      expect(screen.getByText('予定なし')).toBeInTheDocument();
+      expect(screen.getByTestId('previous-match-3')).toBeInTheDocument();
+    });
+
+    test('進行中の試合の下に出て、今の試合の点も入れられる', () => {
+      const onIncrement = vi.fn();
+      render(
+        <CardHarness
+          court={{
+            courtNumber: 3,
+            live: baseLive,
+            next: null,
+            fixing: [],
+            previous: previousMatch,
+          }}
+          liveScore={{ scores: baseLive.scores, finished: false, started: true }}
+          canInput
+          syncStatus={null}
+          onIncrement={onIncrement}
+          onDecrement={() => {}}
+          onFinishMatch={() => {}}
+          fix={actions()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木の第1ゲームの得点を1増やす' }));
+      expect(onIncrement).toHaveBeenCalledWith(1, 'A');
+      expect(screen.getByTestId('previous-match-3')).toBeInTheDocument();
+    });
+
+    test('1 つ前が無ければ何も出ない', () => {
+      renderCard({ court: {} });
+
+      expect(screen.queryByTestId('previous-match-3')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('直し中', () => {
+    test('「もう一度終了する」の確認で棄権を選ぶと、その側つきで終了が呼ばれる', () => {
+      const onFinishMatch = vi.fn();
+      renderCard({ court: { fixing: [fixingMatch] }, fix: actions({ onFinishMatch }) });
+
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      fireEvent.click(screen.getByRole('button', { name: '加藤・吉田が棄権' }));
+      // 点数では B が勝っているが、B 側の棄権なので A の勝ちになる
+      expect(screen.getByText(/試合の勝ち/)).toHaveTextContent('中村・小林');
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('match-fixing', 'B');
+    });
+
+    test('「直し中」の表示と、得点の枠が出る', () => {
+      renderCard({ court: { fixing: [fixingMatch] } });
+
+      const panel = screen.getByTestId('fixing-match-3');
+      expect(within(panel).getByText('直し中')).toBeInTheDocument();
+      expect(within(panel).getByText('予選 2回戦')).toBeInTheDocument();
+      expect(within(panel).getByText('第1ゲーム')).toBeInTheDocument();
+      expect(within(panel).getByText('15')).toBeInTheDocument();
+      expect(within(panel).getByText('21')).toBeInTheDocument();
+    });
+
+    test('選手は直し中の点を押せる。押した点は、その試合として渡る', () => {
+      const onIncrement = vi.fn();
+      const onDecrement = vi.fn();
+      renderCard({
+        court: { fixing: [fixingMatch] },
+        fix: actions({ onIncrement, onDecrement }),
+      });
+      const panel = screen.getByTestId('fixing-match-3');
+
+      fireEvent.click(
+        within(panel).getByRole('button', { name: '中村・小林の第1ゲームの得点を1増やす' })
+      );
+      fireEvent.click(
+        within(panel).getByRole('button', { name: '加藤・吉田の第1ゲームの得点を1減らす' })
+      );
+
+      expect(onIncrement).toHaveBeenCalledWith('match-fixing', 1, 'A');
+      expect(onDecrement).toHaveBeenCalledWith('match-fixing', 1, 'B');
+    });
+
+    test('「もう一度終了する」→ 確認 → OK で、その試合の終了が呼ばれる', () => {
+      const onFinishMatch = vi.fn();
+      renderCard({ court: { fixing: [fixingMatch] }, fix: actions({ onFinishMatch }) });
+
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+      expect(screen.getByText('この試合を終了します')).toBeInTheDocument();
+      expect(onFinishMatch).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      expect(onFinishMatch).toHaveBeenCalledExactlyOnceWith('match-fixing', null);
+    });
+
+    test('同点では「もう一度終了する」を押しても確認に進まず、理由が出る', () => {
+      renderCard({
+        court: {
+          fixing: [
+            {
+              ...fixingMatch,
+              maxGameCount: 3,
+              scores: [
+                { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
+                { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
+              ],
+            },
+          ],
+        },
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: 'もう一度終了する' }));
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(screen.getByText('同点では終了できません', { exact: false })).toBeInTheDocument();
+    });
+
+    test('観戦者には、点を押すボタンも「もう一度終了する」も出ない。点は数字で見える', () => {
+      renderCard({ court: { fixing: [fixingMatch] }, canInput: false });
+      const panel = screen.getByTestId('fixing-match-3');
+
+      expect(within(panel).getByText('直し中')).toBeInTheDocument();
+      expect(within(panel).getByText('15')).toBeInTheDocument();
+      expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'もう一度終了する' })).not.toBeInTheDocument();
+    });
+
+    test('終了を送っている間は「終了を送っています」が出て、ボタンは消える', () => {
+      renderCard({
+        court: { fixing: [fixingMatch] },
+        fix: actions({
+          syncStatusOf: () => ({
+            retryingMessage: null,
+            rejectedMessage: null,
+            finishing: true,
+            finishRetrying: false,
+            finishRejectedMessage: null,
+          }),
+        }),
+      });
+      const panel = screen.getByTestId('fixing-match-3');
+
+      expect(within(panel).getByRole('status')).toHaveTextContent('終了を送っています');
+      expect(
+        within(panel).queryByRole('button', { name: 'もう一度終了する' })
+      ).not.toBeInTheDocument();
+    });
+
+    test('直し中があっても、今の試合の点は入れられ、「試合を終了する」も出る', () => {
+      const onIncrement = vi.fn();
+      render(
+        <CardHarness
+          court={{
+            courtNumber: 3,
+            live: baseLive,
+            next: null,
+            fixing: [fixingMatch],
+            previous: null,
+          }}
+          liveScore={{ scores: baseLive.scores, finished: false, started: true }}
+          canInput
+          syncStatus={null}
+          onIncrement={onIncrement}
+          onDecrement={() => {}}
+          onFinishMatch={() => {}}
+          fix={actions()}
+        />
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: '佐藤・鈴木の第1ゲームの得点を1増やす' }));
+
+      expect(onIncrement).toHaveBeenCalledWith(1, 'A');
+      expect(screen.getByRole('button', { name: '試合を終了する' })).toBeInTheDocument();
+      expect(screen.getByText('LIVE')).toBeInTheDocument();
+    });
+
+    test('今の試合が無く直し中だけのコートは「予定なし」と言わない', () => {
+      renderCard({ court: { live: null, next: null, fixing: [fixingMatch] } });
+
+      expect(screen.queryByText('予定なし')).not.toBeInTheDocument();
+      expect(screen.getByTestId('fixing-match-3')).toBeInTheDocument();
+    });
+
+    // 直した人がその試合の担当になる（仕様 ⑩）。直し中の枠も、今の試合と同じ担当の見せ方をする
+    describe('入力の担当（直し中の枠）', () => {
+      test('自分が担当なら、直し中の枠の ＋ − と「もう一度終了する」「入力をやめる」が出る', () => {
+        const onRelease = vi.fn();
+        renderCard({
+          court: { live: null, fixing: [fixingMatch] },
+          scorer: scorerControl({ kind: 'mine' }, { onRelease }),
+        });
+        const panel = screen.getByTestId('fixing-match-3');
+
+        expect(
+          within(panel).getByRole('button', { name: '中村・小林の第1ゲームの得点を1増やす' })
+        ).toBeInTheDocument();
+        expect(within(panel).getByRole('button', { name: 'もう一度終了する' })).toBeInTheDocument();
+        fireEvent.click(within(panel).getByRole('button', { name: '入力をやめる' }));
+        expect(onRelease).toHaveBeenCalledTimes(1);
+      });
+
+      test('担当がいないときは、「入力する人がいません」と「得点を入力する」。＋ − と終了は出ない', () => {
+        const onClaim = vi.fn();
+        renderCard({
+          court: { live: null, fixing: [fixingMatch] },
+          scorer: scorerControl({ kind: 'vacant' }, { onClaim }),
+        });
+        const panel = screen.getByTestId('fixing-match-3');
+
+        expect(within(panel).getByText(/入力する人がいません/)).toBeInTheDocument();
+        expect(
+          within(panel).queryByRole('button', { name: /得点を1増やす/ })
+        ).not.toBeInTheDocument();
+        expect(
+          within(panel).queryByRole('button', { name: 'もう一度終了する' })
+        ).not.toBeInTheDocument();
+        fireEvent.click(within(panel).getByRole('button', { name: '得点を入力する' }));
+        expect(onClaim).toHaveBeenCalledTimes(1);
+      });
+
+      test('ほかの人が担当中なら、その人の名前と「引き継ぐ」。＋ − と終了は出ない', () => {
+        renderCard({
+          court: { live: null, fixing: [fixingMatch] },
+          scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }),
+        });
+        const panel = screen.getByTestId('fixing-match-3');
+
+        expect(within(panel).getByText('愛知北のじろうさんが入力しています')).toBeInTheDocument();
+        expect(within(panel).getByRole('button', { name: '引き継ぐ' })).toBeInTheDocument();
+        expect(
+          within(panel).queryByRole('button', { name: /得点を1増やす/ })
+        ).not.toBeInTheDocument();
+        expect(
+          within(panel).queryByRole('button', { name: 'もう一度終了する' })
+        ).not.toBeInTheDocument();
+      });
+    });
+  });
+});
+
+/**
+ * 試合の入力担当（docs/specs/2026-10-14-match-scorer.md）。
+ * 担当の見せ方（自分／いない／ほかの人）は渡された `scorerOf` のとおりに出す。決まり（5 分など）は
+ * 画面の外（`scorer-view.ts`）。
+ */
+describe('CourtLiveCard の入力の担当', () => {
+  const OTHER = scorerControl({ kind: 'other', name: '愛知北のじろう' });
+  const VACANT = scorerControl({ kind: 'vacant' });
+
+  test('担当がいない進行中の試合に「入力する人がいません」と「得点を入力する」が出る。＋ − と終了は出ない', () => {
+    renderLiveCard({ scorer: VACANT });
+
+    expect(screen.getByText(/入力する人がいません/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '得点を入力する' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1減らす/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '入力をやめる' })).not.toBeInTheDocument();
+  });
+
+  test('担当がいなくても、いまの点数は数字で見える', () => {
+    renderLiveCard({ scorer: VACANT });
+
+    expect(screen.getByText('10')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+  });
+
+  test('「得点を入力する」を押すと、担当を取る操作が呼ばれる', () => {
+    const onClaim = vi.fn();
+    renderLiveCard({ scorer: scorerControl({ kind: 'vacant' }, { onClaim }) });
+
+    fireEvent.click(screen.getByRole('button', { name: '得点を入力する' }));
+
+    expect(onClaim).toHaveBeenCalledTimes(1);
+  });
+
+  test('自分が担当なら ＋ − と「試合を終了する」「入力をやめる」が出る。「得点を入力する」は出ない', () => {
+    renderLiveCard({ scorer: scorerControl({ kind: 'mine' }) });
+
+    expect(
+      screen.getByRole('button', { name: '佐藤・鈴木の第1ゲームの得点を1増やす' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '試合を終了する' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '入力をやめる' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '得点を入力する' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/入力する人がいません/)).not.toBeInTheDocument();
+  });
+
+  test('「入力をやめる」を押すと、担当をやめる操作が呼ばれる', () => {
+    const onRelease = vi.fn();
+    renderLiveCard({ scorer: scorerControl({ kind: 'mine' }, { onRelease }) });
+
+    fireEvent.click(screen.getByRole('button', { name: '入力をやめる' }));
+
+    expect(onRelease).toHaveBeenCalledTimes(1);
+  });
+
+  test('ほかの人が担当中なら「◯◯さんが入力しています」（チーム名つき）と「引き継ぐ」が出る。＋ − と終了は出ない', () => {
+    renderLiveCard({ scorer: OTHER });
+
+    expect(screen.getByText('愛知北のじろうさんが入力しています')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '引き継ぐ' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '試合を終了する' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '得点を入力する' })).not.toBeInTheDocument();
+  });
+
+  test('「引き継ぐ」→ 確認「◯◯さんが入れています。引き継ぎますか？」→ OK で、引き継ぐ操作が呼ばれる', () => {
+    const onTakeOver = vi.fn();
+    renderLiveCard({
+      scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }, { onTakeOver }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '引き継ぐ' }));
+    expect(
+      screen.getByText('愛知北のじろうさんが入れています。引き継ぎますか？')
+    ).toBeInTheDocument();
+    // 確認の前は引き継がない
+    expect(onTakeOver).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(onTakeOver).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('確認で「戻る」を押すと、引き継がずに閉じる', () => {
+    const onTakeOver = vi.fn();
+    renderLiveCard({
+      scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }, { onTakeOver }),
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '引き継ぐ' }));
+    fireEvent.click(screen.getByRole('button', { name: '戻る' }));
+
+    expect(onTakeOver).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('確認を開いている間に担当が自分になったら（ほかの人がやめた・自分が引き継いだ）、確認は閉じる', () => {
+    const { rerender } = renderLiveCard({ scorer: OTHER });
+    fireEvent.click(screen.getByRole('button', { name: '引き継ぐ' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    rerender(
+      <CardHarness
+        court={{ courtNumber: 3, live: baseLive, next: null, fixing: [], previous: null }}
+        liveScore={{ scores: baseLive.scores, finished: false, started: true }}
+        canInput
+        syncStatus={null}
+        onIncrement={() => {}}
+        onDecrement={() => {}}
+        onFinishMatch={() => {}}
+        scorer={VACANT}
+      />
+    );
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '得点を入力する' })).toBeInTheDocument();
+  });
+
+  describe('観戦者', () => {
+    test('担当がいなくても「得点を入力する」は出ない。いないことは見える', () => {
+      renderLiveCard({ canInput: false, scorer: VACANT });
+
+      expect(screen.getByText(/入力する人がいません/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '得点を入力する' })).not.toBeInTheDocument();
+    });
+
+    test('ほかの人が担当中なら、担当の名前は見えるが「引き継ぐ」は出ない', () => {
+      renderLiveCard({ canInput: false, scorer: OTHER });
+
+      expect(screen.getByText('愛知北のじろうさんが入力しています')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '引き継ぐ' })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('呼出待ちの試合（選手に出る、昇格した次の試合）', () => {
+    const next: NonNullable<Court['next']> = {
+      matchId: 'match-next',
+      classLabel: { name: '3部', colorNumber: 3 },
+      roundLabel: '予選 2回戦',
+      teamA: team({ teamNumber: 1, players: ['中村', '小林'] }),
+      teamB: team({ teamNumber: 2, players: ['加藤', '吉田'] }),
+      isMine: false,
+      maxGameCount: 1,
+    };
+
+    test('担当がいなければ、呼出待ちでも先に「得点を入力する」を押す。押すまで ＋ − は出ない', () => {
+      renderLiveCard({ live: null, next, scores: [], started: false, scorer: VACANT });
+
+      expect(screen.getByText('呼出待ち')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: '得点を入力する' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
+    });
+
+    test('自分が担当なら、まだ 1 点も入っていなくても ＋ − が出る', () => {
+      renderLiveCard({ live: null, next, scores: [], started: false });
+
+      expect(
+        screen.getByRole('button', { name: '中村・小林の第1ゲームの得点を1増やす' })
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe('送った点が担当でないと断られたとき（⑧⑨）', () => {
+    const rejected = syncStatusOf({
+      scorerRejection: {
+        message: '愛知北のじろうさんが担当しています。',
+        games: [{ gameNumber: 1, sideAScore: 12, sideBScore: 10 }],
+      },
+    });
+
+    test('カードの中に、担当の名前と、送れなかった点が出る', () => {
+      renderLiveCard({ syncStatus: rejected, scorer: OTHER });
+
+      expect(screen.getByText('愛知北のじろうさんが担当しています。')).toBeInTheDocument();
+      expect(screen.getByText('送れなかった点：第1ゲーム 12-10')).toBeInTheDocument();
+    });
+
+    test('複数のゲームの点は、まとめて並ぶ', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({
+          scorerRejection: {
+            message: '愛知北のじろうさんが担当しています。',
+            games: [
+              { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
+              { gameNumber: 2, sideAScore: 3, sideBScore: 5 },
+            ],
+          },
+        }),
+        scorer: OTHER,
+      });
+
+      expect(
+        screen.getByText('送れなかった点：第1ゲーム 21-15、第2ゲーム 3-5')
+      ).toBeInTheDocument();
+    });
+
+    test('「閉じる」で消せる', () => {
+      const onDismissRejection = vi.fn();
+      renderLiveCard({
+        syncStatus: rejected,
+        scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }, { onDismissRejection }),
+      });
+
+      fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+
+      expect(onDismissRejection).toHaveBeenCalledTimes(1);
+    });
+
+    test('「閉じる」は 44px 以上、知らせは目立つ（読み上げられる）', () => {
+      renderLiveCard({ syncStatus: rejected, scorer: OTHER });
+
+      expect(screen.getByRole('button', { name: '閉じる' })).toHaveClass('min-h-11');
+      expect(screen.getByRole('alert')).toHaveTextContent('愛知北のじろうさんが担当しています。');
+    });
+
+    test('担当が自分に戻っていても（引き継ぎ直した）、閉じるまで知らせは残る', () => {
+      renderLiveCard({ syncStatus: rejected, scorer: scorerControl({ kind: 'mine' }) });
+
+      expect(screen.getByText('送れなかった点：第1ゲーム 12-10')).toBeInTheDocument();
+    });
+
+    test('観戦者には出さない（点を送らないので断られることがない）', () => {
+      renderLiveCard({ canInput: false, syncStatus: rejected, scorer: OTHER });
+
+      expect(screen.queryByText(/送れなかった点/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('担当を取る・やめる操作の案内', () => {
+    test('取る操作を送り直している間は案内が出る。その間も ＋ − は押せる（⑤）', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({ scorerOp: { kind: 'claim', retrying: true } }),
+        scorer: scorerControl({ kind: 'mine' }),
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '入力の担当を取れていません・送り直しています'
+      );
+      expect(
+        screen.getByRole('button', { name: '佐藤・鈴木の第1ゲームの得点を1増やす' })
+      ).toBeInTheDocument();
+    });
+
+    test('やめる操作を送り直している間も案内が出る', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({ scorerOp: { kind: 'release', retrying: true } }),
+        scorer: VACANT,
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        '入力の担当をやめられていません・送り直しています'
+      );
+    });
+
+    test('送り直しではない（まだ最初の 1 回を送っている）間は、案内を出さない', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({ scorerOp: { kind: 'claim', retrying: false } }),
+        scorer: scorerControl({ kind: 'mine' }),
+      });
+
+      expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    });
+
+    test('断られた理由（参加者でない、など）はそのまま出る', () => {
+      renderLiveCard({
+        syncStatus: syncStatusOf({ scorerOpMessage: 'この大会の参加者として登録されていません。' }),
+        scorer: VACANT,
+      });
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'この大会の参加者として登録されていません。'
+      );
+    });
+  });
+
+  test('終わったコート（終了を送っている間）には、担当の表示も操作も出ない', () => {
+    renderLiveCard({ finished: true, scorer: VACANT });
+
+    expect(screen.queryByText(/入力する人がいません/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '得点を入力する' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '入力をやめる' })).not.toBeInTheDocument();
+  });
+
+  test('「得点を入力する」「引き継ぐ」「入力をやめる」は 44px 以上のボタン', () => {
+    const { unmount } = renderLiveCard({ scorer: VACANT });
+    expect(screen.getByRole('button', { name: '得点を入力する' })).toHaveClass('min-h-12');
+    unmount();
+
+    const other = renderLiveCard({ scorer: OTHER });
+    expect(screen.getByRole('button', { name: '引き継ぐ' })).toHaveClass('min-h-11');
+    other.unmount();
+
+    renderLiveCard({ scorer: scorerControl({ kind: 'mine' }) });
+    expect(screen.getByRole('button', { name: '入力をやめる' })).toHaveClass('min-h-11');
   });
 });
 

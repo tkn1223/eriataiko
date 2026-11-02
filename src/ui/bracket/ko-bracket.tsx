@@ -1,7 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import type { Champion, KoBracketData, KoMatch, KoSlot } from '@/ui/bracket/sample-data';
+import { teamBgClass } from '@/domain/class-labels';
+import type { Champion, KoBracketData, KoMatch, KoSlot } from '@/ui/bracket/types';
 
 type Props = {
   data: KoBracketData;
@@ -10,8 +11,9 @@ type Props = {
 /**
  * 決勝トーナメント（準決勝 → 決勝 → 優勝、と 3位決定戦）。
  *
- * 予選リーグの計算はまだしないので、枠はすべて見本の固定データのまま。
- * 確定していない枠は「予選 1位」のような文言で出す。
+ * 枠は、チームが入っていればチーム名（チーム色つき）、まだ空なら表に入っている空枠の名前
+ * （「予選1位」など）を薄字で出す。予選の結果から自動で埋めることはしない。
+ * 対戦の数字は中の試合の勝ち数（終わった試合だけ）。
  */
 export function KoBracket({ data }: Props) {
   return (
@@ -85,7 +87,7 @@ function ChampionBox({ champion }: { champion: Champion }) {
   );
 }
 
-/** 終わった一戦の勝者。まだ終わっていない・スコアが無いときは null。 */
+/** 終わった一戦の勝者。まだ終わっていない・引き分け・数字が無いときは null。 */
 function winnerOf(match: KoMatch): 'a' | 'b' | null {
   if (match.status !== 'done' || match.scoreA === undefined || match.scoreB === undefined) {
     return null;
@@ -101,6 +103,7 @@ function KoBox({ match }: { match: KoMatch }) {
   return (
     <div
       data-testid={`ko-match-${match.id}`}
+      data-status={match.status}
       className={`relative w-[205px] shrink-0 rounded-[10px] border bg-white text-[13.5px] ${
         match.status === 'live' ? 'border-accent' : 'border-gray-200'
       }`}
@@ -110,14 +113,38 @@ function KoBox({ match }: { match: KoMatch }) {
           LIVE
         </span>
       )}
-      <SlotRow slot={match.slotA} isWinner={winner === 'a'} isDone={match.status === 'done'} />
+      <SlotRow
+        slot={match.slotA}
+        score={match.scoreA}
+        scoreTestId="ko-score-a"
+        isWinner={winner === 'a'}
+        isDone={match.status === 'done'}
+      />
       <div aria-hidden="true" className="border-t border-gray-200" />
-      <SlotRow slot={match.slotB} isWinner={winner === 'b'} isDone={match.status === 'done'} />
+      <SlotRow
+        slot={match.slotB}
+        score={match.scoreB}
+        scoreTestId="ko-score-b"
+        isWinner={winner === 'b'}
+        isDone={match.status === 'done'}
+      />
     </div>
   );
 }
 
-function SlotRow({ slot, isWinner, isDone }: { slot: KoSlot; isWinner: boolean; isDone: boolean }) {
+function SlotRow({
+  slot,
+  score,
+  scoreTestId,
+  isWinner,
+  isDone,
+}: {
+  slot: KoSlot;
+  score: number | undefined;
+  scoreTestId: string;
+  isWinner: boolean;
+  isDone: boolean;
+}) {
   const className = !slot.isDecided
     ? 'text-[12px] font-bold text-gray-400'
     : isDone
@@ -126,5 +153,21 @@ function SlotRow({ slot, isWinner, isDone }: { slot: KoSlot; isWinner: boolean; 
         : 'text-[13.5px] font-bold text-gray-400'
       : 'text-[13.5px] font-bold';
 
-  return <p className={`px-3 py-[7px] break-words ${className}`}>{slot.label}</p>;
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-[7px]">
+      {slot.isDecided && (
+        <span
+          aria-hidden="true"
+          data-testid="ko-team-dot"
+          className={`size-[10px] shrink-0 rounded-[2px] ${teamBgClass(slot.teamNumber ?? null)}`}
+        />
+      )}
+      <span className={`min-w-0 flex-1 break-words ${className}`}>{slot.label}</span>
+      {score !== undefined && (
+        <span data-testid={scoreTestId} className="tabular shrink-0 text-[13.5px] font-black">
+          {score}
+        </span>
+      )}
+    </div>
+  );
 }

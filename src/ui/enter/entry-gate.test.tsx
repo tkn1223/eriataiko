@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { EntryGate, type EnterDivision, type EnterTeam, type Entrant } from '@/ui/enter/entry-gate';
+import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 
 // 入場に成功すると router.refresh() で画面を描き直す作りなので、差し替えておく
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }));
@@ -321,5 +322,58 @@ describe('入場したあと', () => {
     renderGate({ entrants: [], teams: [], divisions: [] });
 
     expect(screen.getByText(/参加者がまだ登録されていません/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * 結果LIVE で送れていない点があるまま入り直したとき（docs/specs/2026-10-14-match-scorer.md の ⑪）。
+ * 入場の画面は、入り直しの始まりと終わりを預かり場所に知らせる（前の人の点を新しい人の名前で送らないため）。
+ */
+describe('入り直しを預かり場所に知らせる', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('名前で入り直せたら、始まりと、新しい入場者（参加者の id）を知らせる', async () => {
+    const begin = vi.spyOn(appScoreSyncStore, 'beginEntrantChange');
+    const end = vi.spyOn(appScoreSyncStore, 'endEntrantChange');
+    renderGate({ passcodeRequired: false });
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
+
+    expect(begin).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(end).toHaveBeenCalledWith('e-p1'));
+  });
+
+  test('退場したら、入場者がいなくなった（null）と知らせる', async () => {
+    const end = vi.spyOn(appScoreSyncStore, 'endEntrantChange');
+    renderGate({
+      session: { role: 'player', playerId: 'p1', playerName: 'さとう', playerNumber: 1 },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '退場する' }));
+
+    await waitFor(() => expect(end).toHaveBeenCalledWith(null));
+  });
+
+  test('入り直せなかった（断られた・つながらない）ら、前の入場者のままにする', async () => {
+    const end = vi.spyOn(appScoreSyncStore, 'endEntrantChange');
+    const cancel = vi.spyOn(appScoreSyncStore, 'cancelEntrantChange');
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ error: '合言葉が違います。' }), { status: 401 })
+    );
+    fetchMock.mockImplementationOnce(async () => {
+      throw new Error('network down');
+    });
+    renderGate({ passcodeRequired: false });
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
+    await waitFor(() => expect(screen.getByText('合言葉が違います。')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /すずき/ }));
+    await waitFor(() =>
+      expect(screen.getByText(/ネットワークに繋がりませんでした/)).toBeInTheDocument()
+    );
+
+    expect(end).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
   });
 });

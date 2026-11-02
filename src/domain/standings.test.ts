@@ -24,8 +24,34 @@ function doneMatch(sideAScore: number, sideBScore: number, maxGameCount = 1): Ma
     maxGameCount,
     gameScores: [game(1, sideAScore, sideBScore)],
     status: 'done',
+    ending: 'normal',
   };
 }
+
+describe('棄権は点数に関係なく相手の勝ち（順位表と対戦の勝ちがそろう）', () => {
+  const retiredA: MatchInput = {
+    maxGameCount: 1,
+    gameScores: [game(1, 21, 10)],
+    status: 'done',
+    ending: 'retired_side_a',
+  };
+
+  test('点数で勝っている A 側が棄権した試合は、対戦の勝ち試合数で B の勝ちに数える', () => {
+    expect(matchupResult([retiredA]).wonMatches).toEqual([0, 1]);
+  });
+
+  test('順位表でも、棄権した側が負け・相手が勝ち。ゲーム数と得失点は点数のまま', () => {
+    const rows = buildStandings(
+      [{ teamId: 't1' }, { teamId: 't2' }],
+      [{ sideATeamId: 't1', sideBTeamId: 't2', stageFormat: 'league', matches: [retiredA] }]
+    );
+    const t1 = rows.find((r) => r.teamId === 't1')!;
+    const t2 = rows.find((r) => r.teamId === 't2')!;
+    expect([t1.wins, t1.losses]).toEqual([0, 1]);
+    expect([t2.wins, t2.losses]).toEqual([1, 0]);
+    expect([t1.gamesWon, t1.gamesLost, t1.pointDiff]).toEqual([1, 0, 11]);
+  });
+});
 
 describe('matchupResult（対戦 1 つの結果）', () => {
   test('対戦の中の試合が全部終わっていれば、勝ち試合数の多いチームがその対戦の勝ちになる', () => {
@@ -37,7 +63,7 @@ describe('matchupResult（対戦 1 つの結果）', () => {
   test('中の試合が 1 つでも終わっていなければ、その対戦の勝ちは決まっていない扱いになる', () => {
     const result = matchupResult([
       doneMatch(21, 10),
-      { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live' },
+      { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live', ending: 'normal' },
     ]);
 
     expect(result.finished).toBe(false);
@@ -56,6 +82,7 @@ describe('matchupResult（対戦 1 つの結果）', () => {
       maxGameCount: 3,
       gameScores: [game(1, 21, 15), game(2, 0, 0), game(3, 0, 0)],
       status: 'done',
+      ending: 'normal',
     };
 
     const result = matchupResult([match]);
@@ -68,6 +95,7 @@ describe('matchupResult（対戦 1 つの結果）', () => {
       maxGameCount: 3,
       gameScores: [game(1, 21, 19), game(2, 0, 0), game(3, 0, 0)],
       status: 'done',
+      ending: 'normal',
     };
 
     const result = matchupResult([match]);
@@ -86,6 +114,7 @@ describe('matchupResult（対戦 1 つの結果）', () => {
       maxGameCount: 1,
       gameScores: [game(1, 0, 0)],
       status: 'done',
+      ending: 'normal',
     };
 
     const result = matchupResult([match]);
@@ -102,8 +131,13 @@ describe('buildStandings（順位表）', () => {
   const teamE = { teamId: 'team-e' };
   const teamF = { teamId: 'team-f' };
 
-  function matchup(sideATeamId: string, sideBTeamId: string, matches: MatchInput[]): MatchupInput {
-    return { sideATeamId, sideBTeamId, matches };
+  function matchup(
+    sideATeamId: string,
+    sideBTeamId: string,
+    matches: MatchInput[],
+    stageFormat = 'league'
+  ): MatchupInput {
+    return { sideATeamId, sideBTeamId, stageFormat, matches };
   }
 
   test('順位表の勝敗は、終わった対戦だけで数えられる（進行中・未実施は入らない）', () => {
@@ -112,7 +146,7 @@ describe('buildStandings（順位表）', () => {
       [
         matchup('team-a', 'team-b', [doneMatch(21, 10)]),
         matchup('team-a', 'team-c', [
-          { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live' },
+          { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live', ending: 'normal' },
         ]),
       ]
     );
@@ -264,7 +298,7 @@ describe('buildStandings（順位表）', () => {
       [teamA, teamB],
       [
         matchup('team-a', 'team-b', [
-          { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live' },
+          { maxGameCount: 1, gameScores: [game(1, 15, 12)], status: 'live', ending: 'normal' },
         ]),
       ]
     );
@@ -320,5 +354,51 @@ describe('buildStandings（順位表）', () => {
     const rows = buildStandings([teamA, teamB, teamC], []);
 
     expect(rows.map((row) => row.teamId)).toEqual(['team-a', 'team-b', 'team-c']);
+  });
+
+  // #62: 決勝トーナメントの勝ちを予選の順位表に数えてしまう（エラーは出ない）のを、計算の側で防ぐ。
+  describe('決勝トーナメントの対戦は順位表に数えない（#62）', () => {
+    const leagueMatchups = [
+      matchup('team-a', 'team-b', [doneMatch(21, 10)]),
+      matchup('team-c', 'team-d', [doneMatch(21, 19), doneMatch(10, 21)]),
+    ];
+    // 予選で勝っていない B が決勝で勝つ、というふうに順位を入れ替えてしまう並び。
+    const knockoutMatchups = [
+      matchup('team-b', 'team-a', [doneMatch(21, 10), doneMatch(21, 10)], 'knockout'),
+      matchup('team-d', 'team-c', [doneMatch(21, 10)], 'knockout'),
+    ];
+
+    test('buildStandings に決勝の対戦を混ぜて渡しても、混ぜないときと同じ結果になる', () => {
+      const teams = [teamA, teamB, teamC, teamD];
+
+      const withoutKnockout = buildStandings(teams, leagueMatchups);
+      const withKnockout = buildStandings(teams, [...leagueMatchups, ...knockoutMatchups]);
+
+      expect(withKnockout).toEqual(withoutKnockout);
+    });
+
+    test('終わった決勝の対戦だけを渡すと、全チームが 0 勝 0 敗のままになる', () => {
+      const rows = buildStandings([teamA, teamB], knockoutMatchups.slice(0, 1));
+
+      for (const row of rows) {
+        expect([
+          row.wins,
+          row.losses,
+          row.draws,
+          row.gamesWon,
+          row.gamesLost,
+          row.pointDiff,
+        ]).toEqual([0, 0, 0, 0, 0, 0]);
+      }
+    });
+
+    test('数えるのは stageFormat が league の対戦だけ（知らない値も数えない）', () => {
+      const rows = buildStandings(
+        [teamA, teamB],
+        [matchup('team-a', 'team-b', [doneMatch(21, 10)], 'something-else')]
+      );
+
+      expect(rows.every((row) => row.wins === 0 && row.losses === 0)).toBe(true);
+    });
   });
 });

@@ -1,6 +1,34 @@
 import { describe, expect, test } from 'vitest';
 import { buildPlayerRecord } from '@/domain/player-record';
 
+describe('棄権は点数に関係なく相手の勝ち（順位表と食い違わない）', () => {
+  test('点数で勝っていても、自分の側が棄権した試合は負け。ゲーム数と得失点は点数のまま', () => {
+    const record = buildPlayerRecord([
+      {
+        maxGameCount: 1,
+        gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
+        mySide: 'A',
+        ending: 'retired_side_a',
+      },
+    ]);
+
+    expect(record).toEqual({ wins: 0, losses: 1, gamesWon: 1, gamesLost: 0, pointDiff: 4 });
+  });
+
+  test('相手が棄権した試合は、点数で負けていても勝ち', () => {
+    const record = buildPlayerRecord([
+      {
+        maxGameCount: 1,
+        gameScores: [{ gameNumber: 1, sideAScore: 11, sideBScore: 15 }],
+        mySide: 'A',
+        ending: 'retired_side_b',
+      },
+    ]);
+
+    expect(record).toEqual({ wins: 1, losses: 0, gamesWon: 0, gamesLost: 1, pointDiff: -4 });
+  });
+});
+
 describe('buildPlayerRecord が終了した試合の一覧から通算成績を出す', () => {
   test('勝った試合は wins に数え、ゲームと得失点も勝った分だけ積む', () => {
     const record = buildPlayerRecord([
@@ -8,6 +36,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 1,
         gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
         mySide: 'A',
+        ending: 'normal',
       },
     ]);
 
@@ -20,6 +49,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 1,
         gameScores: [{ gameNumber: 1, sideAScore: 11, sideBScore: 15 }],
         mySide: 'A',
+        ending: 'normal',
       },
     ]);
 
@@ -32,6 +62,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 1,
         gameScores: [{ gameNumber: 1, sideAScore: 11, sideBScore: 15 }],
         mySide: 'B',
+        ending: 'normal',
       },
     ]);
 
@@ -44,6 +75,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 1,
         gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
         mySide: 'B',
+        ending: 'normal',
       },
     ]);
 
@@ -62,6 +94,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
           { gameNumber: 3, sideAScore: 18, sideBScore: 18 },
         ],
         mySide: 'A',
+        ending: 'normal',
       },
     ]);
 
@@ -78,6 +111,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 3,
         gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         mySide: 'A',
+        ending: 'normal',
       },
     ]);
 
@@ -90,6 +124,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 3,
         gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
         mySide: 'B',
+        ending: 'normal',
       },
     ]);
 
@@ -102,6 +137,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
         maxGameCount: 1,
         gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
         mySide: 'A',
+        ending: 'normal',
       }, // 勝ち
       {
         maxGameCount: 3,
@@ -111,6 +147,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
           { gameNumber: 3, sideAScore: 18, sideBScore: 21 },
         ],
         mySide: 'A',
+        ending: 'normal',
       }, // 負け（1-2）
     ]);
 
@@ -133,6 +170,7 @@ describe('buildPlayerRecord が終了した試合の一覧から通算成績を�
           { gameNumber: 3, sideAScore: 0, sideBScore: 0 },
         ],
         mySide: 'A',
+        ending: 'normal',
       },
     ]);
 

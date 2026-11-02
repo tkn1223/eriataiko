@@ -1,14 +1,14 @@
 'use client';
 
 import { teamBgClass } from '@/domain/class-labels';
-import type { StandingRow, Team, TeamNumber } from '@/ui/bracket/sample-data';
+import type { StandingRow, Team } from '@/ui/bracket/types';
 
 type Props = {
   teams: Team[];
   rows: StandingRow[];
 };
 
-function teamName(teams: Team[], teamNumber: TeamNumber) {
+function teamName(teams: Team[], teamNumber: number) {
   return teams.find((team) => team.number === teamNumber)?.name ?? '';
 }
 
@@ -72,7 +72,7 @@ export function StandingsTable({ teams, rows }: Props) {
                   </span>
                 </td>
                 <td className="tabular py-2 text-center text-[14px] font-bold">
-                  {row.wins}勝{row.losses}敗
+                  {row.wins}勝{row.losses}敗{row.draws > 0 ? `${row.draws}分` : ''}
                 </td>
                 <td className="tabular py-2 text-center text-[14px] font-bold">
                   {row.gamesWon}-{row.gamesLost}

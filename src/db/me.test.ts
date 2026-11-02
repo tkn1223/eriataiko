@@ -246,6 +246,13 @@ describe('findMyPageData', () => {
     expect(names).toEqual([`${tag} 相手`, `${tag} 相方`, `${tag} 自分`].sort());
   });
 
+  test('棄権の印（ending）が読める', async () => {
+    await admin.from('matches').update({ ending: 'retired_side_b' }).eq('id', doneMatchId);
+    const data = await findMyPageData(myPlayerId, competitionId);
+
+    expect(data!.matches.find((m) => m.matchId === doneMatchId)!.ending).toBe('retired_side_b');
+  });
+
   test('未実施の試合には、コート番号と順番が入っている', async () => {
     const data = await findMyPageData(myPlayerId, competitionId);
     const waiting = data!.matches.find((m) => m.matchId === waitingMatchId)!;

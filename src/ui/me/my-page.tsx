@@ -1,4 +1,5 @@
 import { Fragment } from 'react';
+import { RetiredNote } from '@/ui/components/retired-note';
 import Link from 'next/link';
 import { hasTeamColor, teamBgClass } from '@/domain/class-labels';
 import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
@@ -168,6 +169,8 @@ function MatchCard({ match }: { match: MyMatch }) {
             </Fragment>
           ))}
         </p>
+        {/* 棄権した側は点数で勝っていても負けになるので、理由を小さく添える */}
+        {match.retiredNames && <RetiredNote names={match.retiredNames} />}
       </div>
 
       <div className="shrink-0 text-right">

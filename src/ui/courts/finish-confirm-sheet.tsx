@@ -19,6 +19,12 @@ type Props = {
   matchWinnerName: string | null;
   /** 「2-1」のような、勝った側が先の表記。 */
   matchWinnerScoreText: string | null;
+  /** 両ペアの名前。棄権した側を選ぶボタンに出す。 */
+  teamAName: string;
+  teamBName: string;
+  /** 棄権した側。無ければ普通の終了。選んだら「試合の勝ち」は相手側になる（呼び出し側が計算して渡す）。 */
+  retiredSide: 'A' | 'B' | null;
+  onRetiredSideChange: (side: 'A' | 'B' | null) => void;
   onOk: () => void;
   onClose: () => void;
 };
@@ -37,6 +43,10 @@ export function FinishConfirmSheet({
   games,
   matchWinnerName,
   matchWinnerScoreText,
+  teamAName,
+  teamBName,
+  retiredSide,
+  onRetiredSideChange,
   onOk,
   onClose,
 }: Props) {
@@ -69,6 +79,34 @@ export function FinishConfirmSheet({
           <span className="tabular whitespace-nowrap">{`（${matchWinnerScoreText}）`}</span>
         </p>
       )}
+
+      {/* 棄権があった場合だけ選ぶ。選ばなければ今までどおり点数で勝ち負けが決まる。
+          棄権でも代わりの試合の点数は入っているので、ゲームの内訳はそのまま。 */}
+      <div className="mt-3">
+        <p className="mb-1.5 text-[12px] font-bold text-gray-500">
+          棄権があったときだけ、棄権したペアを押します（無ければそのまま OK）
+        </p>
+        <div className="flex flex-col gap-2">
+          {(
+            [
+              ['A', teamAName],
+              ['B', teamBName],
+            ] as const
+          ).map(([side, name]) => (
+            <button
+              key={side}
+              type="button"
+              aria-pressed={retiredSide === side}
+              onClick={() => onRetiredSideChange(retiredSide === side ? null : side)}
+              className={`min-h-11 w-full rounded-[10px] border px-3 py-[10px] text-left text-[14px] font-bold break-words ${
+                retiredSide === side ? 'border-ink bg-ink text-white' : 'border-gray-300'
+              }`}
+            >
+              {`${name}が棄権`}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button

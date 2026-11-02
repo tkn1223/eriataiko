@@ -1,8 +1,9 @@
 'use client';
 
 import { classColorClasses } from '@/domain/class-labels';
-import type { CardMatch, LeagueCard, Team, TeamNumber } from '@/ui/bracket/sample-data';
+import type { CardMatch, LeagueCard, Team } from '@/ui/bracket/types';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
+import { RetiredNote } from '@/ui/components/retired-note';
 
 type Props = {
   card: LeagueCard | null;
@@ -10,7 +11,7 @@ type Props = {
   onClose: () => void;
 };
 
-function teamName(teams: Team[], teamNumber: TeamNumber) {
+function teamName(teams: Team[], teamNumber: number) {
   return teams.find((team) => team.number === teamNumber)?.name ?? '';
 }
 
@@ -55,14 +56,17 @@ export function CardDetailSheet({ card, teams, onClose }: Props) {
 
 function CardMatchRow({ match }: { match: CardMatch }) {
   const classColors = classColorClasses(match.classLabel.colorNumber);
-  const aWins =
-    match.status === 'done' && match.scoreA !== undefined && match.scoreB !== undefined
-      ? match.scoreA > match.scoreB
-      : false;
-  const bWins =
-    match.status === 'done' && match.scoreA !== undefined && match.scoreB !== undefined
-      ? match.scoreB > match.scoreA
-      : false;
+  const hasGames = match.gamesWonA !== undefined && match.gamesWonB !== undefined;
+  // 勝ったほうを太字にするのは、終わった試合だけ（進行中はまだ決まっていない）。
+  // 勝ちは usecase が matchWinner で決めて渡す（棄権は点数と逆になるので、ここでゲーム数から決めない）
+  const aWins = match.status === 'done' && match.winner === 'A';
+  const bWins = match.status === 'done' && match.winner === 'B';
+  const retiredNames =
+    match.retiredSide === 'A'
+      ? match.teamAPlayers
+      : match.retiredSide === 'B'
+        ? match.teamBPlayers
+        : [];
 
   return (
     <li
@@ -87,11 +91,12 @@ function CardMatchRow({ match }: { match: CardMatch }) {
         >
           {match.teamBPlayers.join('・')}
         </p>
+        <RetiredNote names={retiredNames} />
       </div>
       <div className="shrink-0 text-right">
-        {match.status !== 'waiting' && match.scoreA !== undefined && match.scoreB !== undefined ? (
+        {match.status !== 'waiting' && hasGames ? (
           <p className="tabular text-accent text-[12px] font-extrabold">
-            {match.scoreA}-{match.scoreB}
+            {match.gamesWonA}-{match.gamesWonB}
           </p>
         ) : (
           <p className="text-[11px] font-bold text-gray-400">未</p>

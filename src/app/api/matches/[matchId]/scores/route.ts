@@ -12,7 +12,7 @@ const scoreSchema = z.object({
 
 /**
  * 得点を保存する。**今の点数をそのまま送る**方式（「1 点足して」ではない）。
- * 詳しい分岐は `src/usecases/save-score.ts` を参照。
+ * **担当でない人の点は 409（code `not-scorer`）で断る。** 詳しい分岐は `src/usecases/save-score.ts` を参照。
  */
 export async function POST(
   request: Request,
@@ -23,8 +23,15 @@ export async function POST(
     const { matchId } = await context.params;
     const body = await parseBody(request, scoreSchema);
 
-    await saveScore(matchesDb, { matchId, ...body, now: new Date() });
+    const { scorerClaimed } = await saveScore(matchesDb, {
+      matchId,
+      ...body,
+      playerId: player.playerId,
+      now: new Date(),
+    });
     await logWrite(player, 'score.save', { matchId, ...body });
+    // 担当がいない試合に点が届いて、送ってきた人が担当になった。取る操作の記録と同じ名前で残す
+    if (scorerClaimed) await logWrite(player, 'scorer.claim', { matchId, via: 'score.save' });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

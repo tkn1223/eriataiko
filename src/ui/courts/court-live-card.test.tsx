@@ -759,7 +759,6 @@ describe('直し中と1つ前', () => {
     ],
     maxGameCount: 3,
     ending: 'normal',
-    scorerParticipantId: null,
   };
 
   const fixingMatch: NonNullable<Court['live']> = {

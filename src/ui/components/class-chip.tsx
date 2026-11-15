@@ -6,18 +6,21 @@ import { classColorClasses, type ClassLabel } from '@/domain/class-labels';
  */
 export function ClassChip({
   classLabel,
-  outlined = false,
+  large = false,
 }: {
   classLabel: ClassLabel;
-  /** 試合速報のカード用: 少し大きく、丸い細い枠で囲む（進行表は今までの見た目のまま）。 */
-  outlined?: boolean;
+  /**
+   * 試合速報のカード用: 文字を 12px・太さ 700 にする（見本の数値。枠線は付けない）。
+   * 進行表は今までの見た目のまま。
+   */
+  large?: boolean;
 }) {
   const colors = classColorClasses(classLabel.colorNumber);
-  const size = outlined ? 'px-2.5 py-0.5 text-[12px] font-bold' : 'px-2 py-0.5 text-[10px]';
+  const size = large
+    ? 'px-2.5 py-0.5 text-[12px] font-bold'
+    : 'px-2 py-0.5 text-[10px] font-extrabold';
   return (
-    <span
-      className={`shrink-0 rounded-full ${outlined ? '' : 'font-extrabold'} ${size} ${colors.text} ${colors.tint}`}
-    >
+    <span className={`shrink-0 rounded-full ${size} ${colors.text} ${colors.tint}`}>
       {classLabel.name}
     </span>
   );

@@ -38,7 +38,7 @@ type Props = {
   liveScore: LiveScore | null;
   /**
    * 得点を押せる人（選手として入った人）かどうか。false（観戦者）のときは
-   * 「−」「＋」「試合を終了する」を出さず、得点は数字で見せるだけにする
+   * 「−」「＋」「試合終了」を出さず、得点は数字で見せるだけにする
    * （docs/specs/2026-09-19-courts-real-data.md の「決めたこと」3）。
    */
   canInput: boolean;
@@ -61,7 +61,7 @@ type Props = {
    */
   scorerOf: (matchId: string) => ScorerControl;
   /**
-   * 直し中の試合と、1 つ前の「直す」を動かすのに要るもの。今の試合ではなく、試合の id ごとに呼ぶ。
+   * 直し中の試合と、1 つ前の「訂正」を動かすのに要るもの。今の試合ではなく、試合の id ごとに呼ぶ。
    * 渡さなければ、直し中と1つ前は見るだけ（押せるボタンは出ない）。
    */
   fix?: FixActions;
@@ -78,9 +78,9 @@ export type ScorerControl = {
   recordedScorerIsMe: boolean;
   /** 「入力を担当する」。担当を取る。 */
   onClaim: () => void;
-  /** 「引き継ぐ」の確認で OK。ほかの人から担当を取る。 */
+  /** 「入力を引き継ぐ」の確認で OK。ほかの人から担当を取る。 */
   onTakeOver: () => void;
-  /** 「入力をやめる」。 */
+  /** 「担当をやめる」。 */
   onRelease: () => void;
   /** 担当でないと断られた点の知らせの「閉じる」。 */
   onDismissRejection: () => void;
@@ -320,7 +320,7 @@ function OtherScorerBanner({
  * 試合の入力担当まわりの表示。
  * - 担当でないと断られた点の知らせ（あれば。試合が終わっても閉じるまで残す）
  * - `showStatus` のとき、担当の状況: いなければ［入力を担当する］、ほかの人なら帯と［入力を引き継ぐ］
- *   （自分が担当のときは何も出さない。＋ − と「入力をやめる」は呼び出し側が並べる）
+ *   （自分が担当のときは何も出さない。＋ − と「担当をやめる」は呼び出し側が並べる）
  */
 function ScorerSection({
   scorer,
@@ -408,7 +408,7 @@ function CourtHeader({
   return (
     <div className="flex items-center gap-2">
       <span className="text-[23px] font-extrabold tracking-[0.02em]">コート{courtNumber}</span>
-      {classLabel && <ClassChip classLabel={classLabel} outlined />}
+      {classLabel && <ClassChip classLabel={classLabel} large />}
       <StatusPill {...status} />
     </div>
   );
@@ -479,7 +479,7 @@ function TeamPanel({
 }
 
 /**
- * ［−］［＋］。**同じ大きさ**（高さ 48px）で、色だけ分ける（＋は黒地に白、−は白地）。
+ * ［−］［＋］。**同じ大きさ**（高さ 44px）で、色だけ分ける（＋は黒地に白、−は白地）。
  * 押したときの名前（aria-label）は昔のまま（画面テストが使っている）。
  */
 const SCORE_BUTTON_CLASSES =
@@ -652,7 +652,7 @@ function useShownGame(matchId: string, scores: GameScore[], maxGameCount: number
   };
 }
 
-/** カードの枠。自分の試合は太い金の枠、ほかは細い薄い金の枠（色は globals.css の @theme）。 */
+/** カードの枠。自分の試合は太い金の枠、ほかは細い通常の枠線（色は globals.css の @theme）。 */
 function cardBorderClasses(isMine: boolean): string {
   return isMine ? 'border-[1.5px] border-gold' : 'border border-line';
 }
@@ -674,7 +674,7 @@ function previousNoticeLines(
   ];
 }
 
-/** 1 つ前の行を、いまの人に出すか・［直す］を出すか（`previous-access.ts`）。 */
+/** 1 つ前の行を、いまの人に出すか・［訂正］を出すか（`previous-access.ts`）。 */
 function previousAccessOf(
   court: Court,
   canInput: boolean,
@@ -685,15 +685,16 @@ function previousAccessOf(
   if (!previous) return null;
   // いまそのコートの試合 = 進行中、無ければ次（呼出待ち）。担当が自分かどうかを見る
   const current = court.live ?? court.next;
+  const lines = previousNoticeLines(previous, fix, canInput);
   return {
     previous,
-    lines: previousNoticeLines(previous, fix, canInput),
+    lines,
     ...previousRowAccess({
       canInput,
       playedInPrevious: previous.isMine,
       wasScorerOfPrevious: scorerOf(previous.matchId).recordedScorerIsMe,
       scorerOfCurrent: current ? scorerOf(current.matchId).view.kind : null,
-      hasNoticeAboutPrevious: previousNoticeLines(previous, fix, canInput).length > 0,
+      hasNoticeAboutPrevious: lines.length > 0,
     }),
   };
 }
@@ -736,7 +737,7 @@ export function CourtLiveCard({
   }
   // ここから先は必ず値がある（handleFinishClick などの入れ子の関数からも null を疑わなくてよい）。
   const live = resolvedLive;
-  // 「試合を終了する」の確認画面。誤タップの歯止めがこれ 1 つしか無い。試合ごとにページが覚える
+  // 「試合終了」の確認画面。誤タップの歯止めがこれ 1 つしか無い。試合ごとにページが覚える
   const finishSheet = finishSheetOf(live.matchId);
   const retiredSide = finishSheet.retiredSide;
   // 点を入れられるのは、担当（自分）のときだけ。担当でなければ、点は数字で見せるだけ
@@ -984,8 +985,8 @@ function FixingPanels({
 
 /**
  * 直し中の試合（終了を取り消して、点を直している試合）。今の試合と同じ得点板で出す。
- * 今の試合とは別の枠（オレンジの点線）にして、どちらの点を押しているか間違えないようにする。
- * 直したら「もう一度終了する」（確認 → 終了を送る。流れは今の試合の「試合を終了する」と同じ）。
+ * 今の試合とは別の枠（金の点線）にして、どちらの点を押しているか間違えないようにする。
+ * 直したら「もう一度終了する」（確認 → 終了を送る。流れは今の試合の「試合終了」と同じ）。
  */
 function FixingPanel({
   courtNumber,
@@ -1140,10 +1141,10 @@ function TeamDot({ team }: { team: CourtTeam }) {
 }
 
 /**
- * 1 つ前の試合（そのコートで、終了の時刻が一番新しい終わった試合）を 1 行で。「1つ前　愛知北 2-1 愛知西　［直す］」。
+ * 1 つ前の試合（そのコートで、終了の時刻が一番新しい終わった試合）を 1 行で。「1つ前　愛知北 2-1 愛知西　［訂正］」。
  * 1 ゲーム制なら点数、複数ゲーム制なら取ったゲーム数。棄権なら、勝ちと理由を下に添える。
- * 「直す」→ 確認 → 終了の取り消し。取り消されると、その試合は「直し中」として戻ってくる。
- * 出すか・［直す］を出すかは、呼び出し側が決めて渡す（`previous-access.ts`）。
+ * 「訂正」→ 確認 → 終了の取り消し。取り消されると、その試合は「直し中」として戻ってくる。
+ * 出すか・［訂正］を出すかは、呼び出し側が決めて渡す（`previous-access.ts`）。
  */
 function PreviousRow({
   courtNumber,

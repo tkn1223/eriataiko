@@ -405,11 +405,11 @@ export function CourtsPage({
 
   /** 試合の入力担当の見せ方と操作。今の試合も、直し中の試合も、試合の id で引く。 */
   function scorerControlOf(matchId: string): ScorerControl {
+    const match = board.find((m) => m.matchId === matchId);
     return {
-      view: scorerViewOfMatch(board.find((m) => m.matchId === matchId)),
+      view: scorerViewOfMatch(match),
       recordedScorerIsMe:
-        myParticipantId !== null &&
-        board.find((m) => m.matchId === matchId)?.scorerParticipantId === myParticipantId,
+        myParticipantId !== null && match?.scorerParticipantId === myParticipantId,
       onClaim: () => startScorerOp(matchId, () => claimScorer(matchId, false)),
       onTakeOver: () => startScorerOp(matchId, () => claimScorer(matchId, true)),
       onRelease: () => startScorerOp(matchId, () => releaseScorer(matchId)),

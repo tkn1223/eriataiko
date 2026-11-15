@@ -58,7 +58,6 @@ const previous: PreviousMatch = {
   scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
   maxGameCount: 1,
   ending: 'normal',
-  scorerParticipantId: null,
 };
 
 function scorerControl(
@@ -249,7 +248,7 @@ describe('得点板のカード', () => {
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
-  test('自分の試合でないカードは、オレンジの枠にならない', () => {
+  test('自分の試合でないカードは、金の枠にならない', () => {
     renderCard({ court: { live } });
 
     expect(screen.getByTestId('court-card-1')).not.toHaveClass('border-gold');
@@ -306,14 +305,14 @@ describe('担当の欄', () => {
     expect(onIncrement).toHaveBeenCalledWith(1, 'A');
   });
 
-  test('自分が担当のとき、［−］［＋］の下に［試合を終了する］と［担当をやめる］が出る', () => {
+  test('自分が担当のとき、［−］［＋］の下に［試合終了］と［担当をやめる］が出る', () => {
     renderCard({ court: { live } });
 
     expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('bg-btn-dark');
     expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
   });
 
-  test('ほかの人が担当の試合で、選手には担当の名前（チーム名つき）と［引き継ぐ］が出る', () => {
+  test('ほかの人が担当の試合で、選手には担当の名前（チーム名つき）と［入力を引き継ぐ］が出る', () => {
     renderCard({
       court: { live },
       scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }),
@@ -325,7 +324,7 @@ describe('担当の欄', () => {
     expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
   });
 
-  test('ほかの人が担当の試合でも、観戦者には名前も［引き継ぐ］も出ない', () => {
+  test('ほかの人が担当の試合でも、観戦者には名前も［入力を引き継ぐ］も出ない', () => {
     renderCard({
       court: { live },
       canInput: false,
@@ -337,8 +336,8 @@ describe('担当の欄', () => {
   });
 });
 
-describe('1つ前の［直す］を出す相手', () => {
-  test('その試合に出た選手には、1 行の「1つ前　愛知北 21-15 愛知西　［直す］」が出る', () => {
+describe('1つ前の［訂正］を出す相手', () => {
+  test('その試合に出た選手には、1 行の「1つ前　愛知北 21-15 愛知西　［訂正］」が出る', () => {
     renderCard({
       court: { live, previous: { ...previous, isMine: true } },
       scorer: scorerControl({ kind: 'vacant' }),
@@ -379,6 +378,16 @@ describe('1つ前の［直す］を出す相手', () => {
     ).toBeInTheDocument();
   });
 
+  test('進行中が無く呼出待ちの次の試合があるコートでは、その次の試合の担当（自分）に出る', () => {
+    // 前の試合が終わった直後は、次の試合が「呼出待ち」のまま担当を取る。その人が
+    // いまのコートの担当なので、1つ前の押し間違いを直せるようにしておく
+    renderCard({ court: { next, previous }, scorer: scorerControl({ kind: 'mine' }) });
+
+    expect(
+      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '訂正' })
+    ).toBeInTheDocument();
+  });
+
   test('出ていない選手で、担当でもない人には出ない', () => {
     for (const view of [{ kind: 'vacant' }, { kind: 'other', name: '愛知北のじろう' }] as const) {
       const { unmount } = renderCard({ court: { live, previous }, scorer: scorerControl(view) });
@@ -409,7 +418,7 @@ describe('1つ前の［直す］を出す相手', () => {
 });
 
 describe('1つ前の知らせ', () => {
-  test('出す相手でない選手でも、その試合の保存の知らせが残っていれば、知らせのために行だけ出す（［直す］は出さない）', () => {
+  test('出す相手でない選手でも、その試合の保存の知らせが残っていれば、知らせのために行だけ出す（［訂正］は出さない）', () => {
     function Harness() {
       const { finishSheetOf } = useFinishSheets(null);
       return (

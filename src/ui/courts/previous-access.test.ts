@@ -9,15 +9,15 @@ const base = {
   hasNoticeAboutPrevious: false,
 };
 
-describe('previousRowAccess（1つ前の行と［直す］を出す相手）', () => {
-  test('その試合に出た選手には、行も［直す］も出る', () => {
+describe('previousRowAccess（1つ前の行と［訂正］を出す相手）', () => {
+  test('その試合に出た選手には、行も［訂正］も出る', () => {
     expect(previousRowAccess({ ...base, playedInPrevious: true })).toEqual({
       showRow: true,
       showFixButton: true,
     });
   });
 
-  test('いまそのコートの試合の担当（自分）には、行も［直す］も出る', () => {
+  test('いまそのコートの試合の担当（自分）には、行も［訂正］も出る', () => {
     expect(previousRowAccess({ ...base, scorerOfCurrent: 'mine' })).toEqual({
       showRow: true,
       showFixButton: true,
@@ -54,7 +54,7 @@ describe('previousRowAccess（1つ前の行と［直す］を出す相手）', (
     ).toEqual({ showRow: false, showFixButton: false });
   });
 
-  test('出す相手でなくても、その試合について知らせが残っている選手には、知らせのために行だけ出す（［直す］は出さない）', () => {
+  test('出す相手でなくても、その試合について知らせが残っている選手には、知らせのために行だけ出す（［訂正］は出さない）', () => {
     expect(
       previousRowAccess({ ...base, scorerOfCurrent: 'other', hasNoticeAboutPrevious: true })
     ).toEqual({ showRow: true, showFixButton: false });

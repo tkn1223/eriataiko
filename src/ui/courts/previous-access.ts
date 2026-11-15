@@ -1,7 +1,7 @@
 import type { ScorerView } from '@/ui/courts/scorer-view';
 
 /**
- * 1 つ前の試合の行と［直す］を、誰に出すか（仕様 docs/specs/2026-11-15-courts-redesign.md の「決めたこと」6）。
+ * 1 つ前の試合の行と［訂正］を、誰に出すか（仕様 docs/specs/2026-11-15-courts-redesign.md の「決めたこと」6）。
  *
  * 出すのは次の人だけ。
  * - その 1 つ前の試合に出た選手
@@ -13,7 +13,7 @@ import type { ScorerView } from '@/ui/courts/scorer-view';
  * **画面に出す人を絞るだけ。** 入口（API）は今までどおり誰が押しても受け付け、押した人が担当になる。
  *
  * 例外: 絞った相手でなくても、その 1 つ前の試合について保存の知らせ（断られた点・取り消せなかった等）が
- * 残っている選手には、知らせを消さないために行だけ出す（［直す］は出さない）。
+ * 残っている選手には、知らせを消さないために行だけ出す（［訂正］は出さない）。
  */
 export function previousRowAccess(input: {
   /** 選手として入った人か（観戦者は false）。 */

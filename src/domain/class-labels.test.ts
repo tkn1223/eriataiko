@@ -6,6 +6,7 @@ import {
   classLabelsByDivisionId,
   hasTeamColor,
   teamBgClass,
+  teamPanelClasses,
 } from '@/domain/class-labels';
 import * as classLabels from '@/domain/class-labels';
 
@@ -111,5 +112,24 @@ describe('teamBgClass', () => {
 
   test('foldTeamNumber は無くなっている', () => {
     expect('foldTeamNumber' in classLabels).toBe(false);
+  });
+});
+
+describe('teamPanelClasses（得点板の枠の色）', () => {
+  test('チーム 1〜4 は、上の線・薄い塗り・文字の色が、それぞれ別のチームの色になる', () => {
+    const panels = [1, 2, 3, 4].map(teamPanelClasses);
+    for (const [index, panel] of panels.entries()) {
+      const n = index + 1;
+      expect(panel.border).toContain(`border-team-${n}`);
+      expect(panel.tint).toBe(`bg-linear-to-b from-team-${n}-bg to-team-${n}-bg-end`);
+      expect(panel.text).toContain(`team-${n}`);
+    }
+    expect(new Set(panels.map((panel) => panel.border)).size).toBe(4);
+  });
+
+  test('チームが決まっていない側（null）と、1〜4 に無い番号は灰色の枠になる', () => {
+    expect(teamPanelClasses(null)).toEqual(teamPanelClasses(5));
+    expect(teamPanelClasses(null).border).toContain('gray');
+    expect(teamPanelClasses(null).tint).toContain('gray');
   });
 });

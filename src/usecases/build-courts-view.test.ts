@@ -516,6 +516,22 @@ describe('buildCourtsView', () => {
     expect(view.courts[0].live!.teamB.teamNumber).toBeNull();
   });
 
+  test('カードに出すチーム名が、両方の側の teamName として入る（決まっていない側は null）', () => {
+    const view = buildCourtsView(
+      baseInput({
+        matches: [
+          match({
+            sideA: side({ teamName: '愛知南' }),
+            sideB: side({ teamNumber: null, teamName: null, slotLabel: '予選4位' }),
+          }),
+        ],
+      })
+    );
+
+    expect(view.courts[0].live!.teamA.teamName).toBe('愛知南');
+    expect(view.courts[0].live!.teamB.teamName).toBeNull();
+  });
+
   test('自分が出ている試合には isMine が true になる', () => {
     const view = buildCourtsView(baseInput({ myParticipantId: 'p-a1' }));
 

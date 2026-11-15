@@ -6,6 +6,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalSt
 import { endingOfRetiredSide } from '@/domain/match-rules';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import { LiveDownNotice } from '@/ui/components/live-down-notice';
+import { NavbarSubtitle } from '@/ui/navbar-subtitle';
 import { applyLiveChange, carryOverReopened, type LiveChange } from '@/ui/courts/apply-live-change';
 import { createClock } from '@/ui/courts/clock';
 import {
@@ -404,8 +405,11 @@ export function CourtsPage({
 
   /** 試合の入力担当の見せ方と操作。今の試合も、直し中の試合も、試合の id で引く。 */
   function scorerControlOf(matchId: string): ScorerControl {
+    const match = board.find((m) => m.matchId === matchId);
     return {
-      view: scorerViewOfMatch(board.find((m) => m.matchId === matchId)),
+      view: scorerViewOfMatch(match),
+      recordedScorerIsMe:
+        myParticipantId !== null && match?.scorerParticipantId === myParticipantId,
       onClaim: () => startScorerOp(matchId, () => claimScorer(matchId, false)),
       onTakeOver: () => startScorerOp(matchId, () => claimScorer(matchId, true)),
       onRelease: () => startScorerOp(matchId, () => releaseScorer(matchId)),
@@ -525,18 +529,25 @@ export function CourtsPage({
   );
   const shownEmptyReason = currentEmptyReason(board, hasCardWithMatch, emptyReason);
 
-  return (
-    <div className="mx-auto max-w-md px-4 py-4">
-      <h1 className="mb-[14px] text-[18px] font-black">結果LIVE</h1>
+  // 描き直しのたびに作り直すと、上の帯への差し込みを毎回やり直すので、値が変わったときだけ作る
+  const stageProgress = useMemo(
+    () => (
+      <NavbarSubtitle>
+        {stageLabel}{' '}
+        <span className="tabular">
+          {completedMatches}/{totalMatches}
+        </span>{' '}
+        試合
+      </NavbarSubtitle>
+    ),
+    [stageLabel, completedMatches, totalMatches]
+  );
 
-      <div className="mb-[14px] flex flex-wrap items-center gap-2">
-        <span className="bg-ink inline-flex items-center rounded-full px-3 py-1 text-[13px] font-extrabold text-white">
-          {stageLabel}
-        </span>
-        <span className="tabular text-[13px] font-bold text-gray-400">
-          {completedMatches}/{totalMatches} 試合消化
-        </span>
-      </div>
+  return (
+    <div className="mx-auto max-w-md px-3 py-3">
+      {/* 「結果LIVE」「コートの状況」の見出しは出さない（下のメニューに同じ文字がある）。
+          いまの段と消化数は、上のバーの大会名と同じ 1 行に載せる（仕様 2026-11-15） */}
+      {stageProgress}
 
       {connection === 'down' && <LiveDownNotice />}
 
@@ -549,11 +560,9 @@ export function CourtsPage({
         </p>
       )}
 
-      <h2 className="mb-[10px] text-[15px] font-black">コートの状況</h2>
-
       {shownEmptyReason && <EmptyCourtsNotice reason={shownEmptyReason} />}
 
-      <div className="flex flex-col gap-[10px]">
+      <div className="flex flex-col gap-3">
         {courts.map((court) => {
           // 確認画面の「OK」は、このカードの試合（確認画面を開いた試合）を終了する。
           // 押した瞬間のコートから引き直すと、開いている間に入れ替わった次の試合を終了してしまう

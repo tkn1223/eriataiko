@@ -75,7 +75,7 @@ export async function claimScorer(
     throw new ApiError(404, 'その試合は見つかりませんでした。画面を更新してください。');
   }
   if (match.status === 'done') {
-    throw new ApiError(409, '終了した試合です。先に「直す」で終了を取り消してください。');
+    throw new ApiError(409, '終了した試合です。先に「訂正」を押して、終了を取り消してください。');
   }
 
   const decision = decideClaim(
@@ -88,7 +88,7 @@ export async function claimScorer(
   if (decision === 'refuse') {
     throw new ApiError(
       409,
-      `${match.scorer!.label}さんが入力しています。入力するには、引き継いでください。`,
+      `${match.scorer!.label}さんが入力しています。入力するには、「入力を引き継ぐ」を押してください。`,
       SCORER_ERROR_CODE.scorerActive
     );
   }

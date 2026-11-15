@@ -33,6 +33,11 @@ export type CourtsEmptyReason = 'courts-undecided' | 'all-finished' | 'no-matche
 export type CourtTeam = {
   /** `teams.team_number`。まだ決まっていなければ null（薄い色になる）。 */
   teamNumber: number | null;
+  /**
+   * チーム名（`teams.name`。例: '愛知南'）。得点板の枠の上に出す。チームが決まっていなければ null。
+   * 省略できるのは、チーム名を出さない画面（進行表など）と、古い形のテストの値のため。
+   */
+  teamName?: string | null;
   /** 決まっていれば選手名（ダブルスは2人）。まだ決まっていなければ空配列。 */
   players: string[];
   /**

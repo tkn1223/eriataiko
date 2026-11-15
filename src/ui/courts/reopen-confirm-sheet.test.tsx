@@ -31,7 +31,7 @@ describe('ReopenConfirmSheet', () => {
   test('どの試合を直すのか（ペア名とゲームごとの得点）が出る', () => {
     renderSheet();
 
-    expect(screen.getByText('この試合を直します')).toBeInTheDocument();
+    expect(screen.getByText('この試合を訂正します')).toBeInTheDocument();
     expect(screen.getByText('佐々木・井上')).toBeInTheDocument();
     expect(screen.getByText('田中・木村')).toBeInTheDocument();
     expect(screen.getByText('21 - 19')).toBeInTheDocument();

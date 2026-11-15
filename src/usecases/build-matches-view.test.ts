@@ -119,7 +119,12 @@ describe('buildMatchesView', () => {
       })
     );
 
-    expect(view.board[0].teamB).toEqual({ teamNumber: null, players: [], slotLabel: '予選1位' });
+    expect(view.board[0].teamB).toEqual({
+      teamNumber: null,
+      teamName: null,
+      players: [],
+      slotLabel: '予選1位',
+    });
   });
 
   test('棄権の印（ending）がそのまま入る', () => {

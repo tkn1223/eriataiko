@@ -291,6 +291,9 @@ describe('findCourtsData', () => {
     // a 側・b 側のチームを取り違えていないか
     // （チーム番号は 1〜4 だけ。5 以上は 20260920000000_halls_and_team_limit.sql が弾く）
     expect(live.sideB.teamNumber).toBe(3);
+    // カードに出すチーム名。a 側・b 側を取り違えていないか
+    expect(live.sideA.teamName).toBe(`${tag} チームA`);
+    expect(live.sideB.teamName).toBe(`${tag} チームB`);
     expect(live.sideA.players.map((p) => p.name).sort()).toEqual(
       [`${tag} 自分`, `${tag} 相方`].sort()
     );
@@ -305,6 +308,8 @@ describe('findCourtsData', () => {
     expect(undecided.sideB.slotLabel).toBe('予選4位');
     expect(undecided.sideB.players).toEqual([]);
     expect(undecided.sideB.teamNumber).toBeNull();
+    // チームが決まっていない側のチーム名は無い
+    expect(undecided.sideB.teamName).toBeNull();
     // 決まっている側（a）は名前が入る
     expect(undecided.sideA.players.map((p) => p.name)).toEqual([`${tag} 相方`]);
   });

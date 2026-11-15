@@ -207,8 +207,8 @@ export function selectMatchRows(supabase: SupabaseReadClient, competitionId: str
       divisions!inner(competition_id),
       matchups!inner(
         stage_id, round_name, side_a_slot_label, side_b_slot_label,
-        side_a_team:teams!matchups_side_a_team_id_fkey(team_number),
-        side_b_team:teams!matchups_side_b_team_id_fkey(team_number)
+        side_a_team:teams!matchups_side_a_team_id_fkey(team_number, name),
+        side_b_team:teams!matchups_side_b_team_id_fkey(team_number, name)
       ),
       match_players(side, participant_id, order_in_pair, participants!inner(players!inner(name))),
       game_scores(game_number, side_a_score, side_b_score, updated_at)`
@@ -246,12 +246,14 @@ export function toViewMatchRow(match: MatchRow): CourtsViewMatchRow {
     roundName: match.matchups.round_name,
     sideA: toSideRow(
       match.matchups.side_a_team?.team_number ?? null,
+      match.matchups.side_a_team?.name ?? null,
       match.matchups.side_a_slot_label,
       players,
       'a'
     ),
     sideB: toSideRow(
       match.matchups.side_b_team?.team_number ?? null,
+      match.matchups.side_b_team?.name ?? null,
       match.matchups.side_b_slot_label,
       players,
       'b'
@@ -325,12 +327,14 @@ async function findParticipants(
 
 function toSideRow(
   teamNumber: number | null,
+  teamName: string | null,
   slotLabel: string | null,
   players: (CourtsViewPlayerRow & { side: string })[],
   side: 'a' | 'b'
 ): CourtsViewSideRow {
   return {
     teamNumber,
+    teamName,
     slotLabel,
     players: players
       .filter((p) => p.side === side)

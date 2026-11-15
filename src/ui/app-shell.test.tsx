@@ -22,7 +22,7 @@ describe('AppShell', () => {
     render(<AppShell title="えりあ太鼓カップ 2027">中身</AppShell>);
 
     const bar = screen.getByRole('banner');
-    expect(bar).toHaveClass('bg-bar');
+    expect(bar).toHaveClass('app-bar');
     expect(bar.querySelector('svg')).not.toBeNull();
     expect(bar).toHaveTextContent(/^えりあ太鼓カップ 2027$/);
   });

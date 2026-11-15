@@ -42,9 +42,9 @@ describe('BottomNav', () => {
     mockPathname.mockReturnValue('/courts');
     render(<BottomNav />);
 
-    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toHaveClass('bg-bar');
-    expect(screen.getByRole('link', { name: /試合速報/ })).toHaveClass('text-gold');
-    expect(screen.getByRole('link', { name: /進行表/ })).not.toHaveClass('text-gold');
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toHaveClass('app-nav');
+    expect(screen.getByRole('link', { name: /試合速報/ })).toHaveClass('app-nav-active');
+    expect(screen.getByRole('link', { name: /進行表/ })).not.toHaveClass('app-nav-active');
     for (const link of screen.getAllByRole('link')) {
       expect(link.querySelector('svg')).not.toBeNull();
     }

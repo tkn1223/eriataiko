@@ -46,22 +46,38 @@ export function teamBgClass(teamNumber: number | null): string {
 
 /**
  * 試合速報の得点板の枠（チーム名・選手名・点数を入れる 1 枚）の色。
- * - border: チームの色の枠線（1px）
- * - tint: 枠の地（チームの色の淡色。globals.css の `--color-team-N-bg`）
- * - text: チーム名の文字（チームの色そのまま）
+ * - border: 上の 5px のチーム色の帯（上の線だけ。角丸にそって曲がる）
+ * - tint: 中の地（チームの淡い色から白っぽい色への縦のにじみ。globals.css の `--color-team-N-bg` と `-bg-end`）
+ * - text: チーム名の文字（チームの色。チーム 4 だけ読みやすい濃い色）
  * チームが決まっていない側・1〜4 に無い番号は灰色。
  * クラス名は上の表と同じ理由（Tailwind が文字列で探す）で、完全な形で書く。
  */
 const TEAM_PANEL_CLASSES: Record<TeamNumber, { border: string; tint: string; text: string }> = {
-  1: { border: 'border-team-1', tint: 'bg-team-1-bg', text: 'text-team-1' },
-  2: { border: 'border-team-2', tint: 'bg-team-2-bg', text: 'text-team-2' },
-  3: { border: 'border-team-3', tint: 'bg-team-3-bg', text: 'text-team-3' },
-  4: { border: 'border-team-4', tint: 'bg-team-4-bg', text: 'text-team-4' },
+  1: {
+    border: 'border-team-1',
+    tint: 'bg-linear-to-b from-team-1-bg to-team-1-bg-end',
+    text: 'text-team-1',
+  },
+  2: {
+    border: 'border-team-2',
+    tint: 'bg-linear-to-b from-team-2-bg to-team-2-bg-end',
+    text: 'text-team-2',
+  },
+  3: {
+    border: 'border-team-3',
+    tint: 'bg-linear-to-b from-team-3-bg to-team-3-bg-end',
+    text: 'text-team-3',
+  },
+  4: {
+    border: 'border-team-4',
+    tint: 'bg-linear-to-b from-team-4-bg to-team-4-bg-end',
+    text: 'text-team-4-ink',
+  },
 };
 
 const NO_TEAM_PANEL_CLASSES = {
   border: 'border-gray-300',
-  tint: 'bg-gray-100',
+  tint: 'bg-linear-to-b from-gray-100 to-gray-50',
   text: 'text-gray-500',
 };
 

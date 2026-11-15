@@ -303,10 +303,10 @@ test.describe('自分の試合', () => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
-    await expect(courtCard(page, 1)).toHaveClass(/(^|\s)border-gold(\s|$)/);
+    await expect(courtCard(page, 1)).toHaveClass(/court-card-mine/);
     await expect(page.getByText('あなたの試合')).toHaveCount(0);
     // ほかのコートはオレンジの枠にならない
-    await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/(^|\s)border-gold(\s|$)/);
+    await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/court-card-mine/);
   });
 
   test('観戦者には、どのカードも金の太い枠にならない', async ({ page }) => {
@@ -314,7 +314,7 @@ test.describe('自分の試合', () => {
     await page.goto('/courts');
 
     await expect(courtCard(page, 1)).toBeVisible();
-    await expect(page.locator('[data-testid^="court-card-"].border-gold')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="court-card-"].court-card-mine')).toHaveCount(0);
   });
 });
 
@@ -547,7 +547,7 @@ for (const width of [375, 390]) {
     ).toEqual([]);
 
     // 2 桁の得点が枠からはみ出さない
-    const tooNarrow = await card.locator('.tabular').evaluateAll((boxes) =>
+    const tooNarrow = await card.locator('.score-number, .tabular').evaluateAll((boxes) =>
       boxes
         .map((box) => {
           const range = document.createRange();
@@ -555,7 +555,8 @@ for (const width of [375, 390]) {
           return {
             text: box.textContent,
             textWidth: range.getBoundingClientRect().width,
-            boxWidth: box.getBoundingClientRect().width,
+            boxWidth: (box.closest('[data-testid^="team-panel-"]') ?? box).getBoundingClientRect()
+              .width,
           };
         })
         .filter((box) => box.textWidth > box.boxWidth)
@@ -729,7 +730,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
       const card = courtCard(page, FINAL_COURT_NUMBER);
 
-      const tooNarrow = await card.locator('.tabular').evaluateAll((boxes) =>
+      const tooNarrow = await card.locator('.score-number, .tabular').evaluateAll((boxes) =>
         boxes
           .map((box) => {
             const range = document.createRange();
@@ -737,7 +738,8 @@ test.describe('決勝トーナメントが始まったとき', () => {
             return {
               text: box.textContent,
               textWidth: range.getBoundingClientRect().width,
-              boxWidth: box.getBoundingClientRect().width,
+              boxWidth: (box.closest('[data-testid^="team-panel-"]') ?? box).getBoundingClientRect()
+                .width,
             };
           })
           .filter((box) => box.textWidth > box.boxWidth)
@@ -885,7 +887,7 @@ test.describe('保存（1-b）', () => {
 
     // － を押しても 0 より下にはならない（A 側も 0 なので、B 側の数字を「－」のとなりで見る）
     await minus.click();
-    await expect(card.getByTestId('team-panel-B').locator('.tabular')).toHaveText('0');
+    await expect(card.getByTestId('team-panel-B').locator('.score-number')).toHaveText('0');
     await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
 
     await tapTenTimesAtOnce(plus);

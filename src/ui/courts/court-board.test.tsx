@@ -11,6 +11,10 @@ import type {
   ScoreSyncStatus,
 } from '@/ui/courts/types';
 
+/** 終わったゲームの札（「第1G：」と太い数字が別の要素なので、札全体の文字で探す）。 */
+const chip = (text: string) => (_content: string, element: Element | null) =>
+  element?.tagName === 'LI' && element.textContent === text;
+
 /**
  * 結果LIVE のカードの作り直し（得点板の形）の受け入れ基準。
  * 仕様: docs/specs/2026-11-15-courts-redesign.md
@@ -158,13 +162,13 @@ describe('得点板のカード', () => {
     expect(screen.getByTestId('team-panel-B').className).toContain('border-team-2');
   });
 
-  test('点数は、自分の試合では大きく（48px）、ほかの試合では 38px', () => {
+  test('点数は、自分の試合でもほかの試合でも同じ大きな数字（64px・太さ 900。見た目は globals.css の .score-number）', () => {
     const { unmount } = renderCard({ court: { live: { ...live, isMine: true } } });
-    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('text-[48px]');
+    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('score-number');
     unmount();
 
     renderCard({ court: { live } });
-    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('text-[38px]');
+    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('score-number');
   });
 
   test('「コートN」と部の札が 1 行目に出て、「LIVE」の点滅は出ない', () => {
@@ -226,7 +230,7 @@ describe('得点板のカード', () => {
       renderCard({ court: { live: final } });
 
       expect(screen.getByText('第2ゲーム')).toBeInTheDocument();
-      expect(screen.getByText('第1G：21-15')).toBeInTheDocument();
+      expect(screen.getByText(chip('第1G：21-15'))).toBeInTheDocument();
       // 枠に出ているのは、いま入れている第2ゲームの点
       expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toBeInTheDocument();
     });
@@ -244,14 +248,14 @@ describe('得点板のカード', () => {
   test('自分の試合のカードは枠が太い金色で囲まれ、「あなたの試合」の文字は出ない', () => {
     renderCard({ court: { live: { ...live, isMine: true } } });
 
-    expect(screen.getByTestId('court-card-1')).toHaveClass('border-gold');
+    expect(screen.getByTestId('court-card-1')).toHaveClass('court-card-mine');
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
   test('自分の試合でないカードは、金の枠にならない', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByTestId('court-card-1')).not.toHaveClass('border-gold');
+    expect(screen.getByTestId('court-card-1')).not.toHaveClass('court-card-mine');
   });
 
   test('進行中のカードに「次」の行は出ない', () => {
@@ -268,8 +272,7 @@ describe('担当の欄', () => {
     renderCard({ court: { live }, scorer: scorerControl({ kind: 'vacant' }, { onClaim }) });
 
     const claim = screen.getByRole('button', { name: '入力を担当する' });
-    expect(claim.className).toContain('border-dashed');
-    expect(claim.className).toContain('border-live');
+    expect(claim.className).toContain('claim-box');
     expect(within(claim).getByText('入力担当がまだいません')).toBeInTheDocument();
     fireEvent.click(claim);
     expect(onClaim).toHaveBeenCalledTimes(1);
@@ -298,8 +301,8 @@ describe('担当の欄', () => {
       button.className.split(' ').filter((name) => /^(min-h|h|w|min-w|flex)-/.test(name));
     for (const button of buttons) expect(sizeClasses(button)).toEqual(sizeClasses(buttons[0]));
     // ＋は黒地に白、−は白地
-    expect(buttons[1].className).toContain('bg-btn-dark');
-    expect(buttons[0].className).not.toContain('bg-btn-dark');
+    expect(buttons[1].className).toContain('btn-plus');
+    expect(buttons[0].className).not.toContain('btn-plus');
 
     fireEvent.click(buttons[1]);
     expect(onIncrement).toHaveBeenCalledWith(1, 'A');
@@ -308,7 +311,7 @@ describe('担当の欄', () => {
   test('自分が担当のとき、［−］［＋］の下に［試合終了］と［担当をやめる］が出る', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('bg-btn-dark');
+    expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('btn-end');
     expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
   });
 
@@ -318,8 +321,8 @@ describe('担当の欄', () => {
       scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }),
     });
 
-    expect(screen.getByText('愛知北のじろうさん')).toBeInTheDocument();
-    expect(screen.getByText('が入力しています')).toBeInTheDocument();
+    expect(screen.getByText('愛知北のじろうさんが')).toBeInTheDocument();
+    expect(screen.getByText('入力しています')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '入力を引き継ぐ' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
   });

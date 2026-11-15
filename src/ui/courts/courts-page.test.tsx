@@ -7,6 +7,10 @@ import { CourtsPage } from '@/ui/courts/courts-page';
 import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 import type { Court, CourtMatch, CourtTeam } from '@/ui/courts/types';
 
+/** 終わったゲームの札（「第1G：」と太い数字が別の要素なので、札全体の文字で探す）。 */
+const chip = (text: string) => (_content: string, element: Element | null) =>
+  element?.tagName === 'LI' && element.textContent === text;
+
 /**
  * 画面は読み直し（router.refresh）と、他の人の変化の受け取り（use-live-updates.ts）を使う。
  * どちらも本物は使わず、読み直しの回数を数え、変化は自分で届ける。
@@ -473,7 +477,7 @@ describe('CourtsPage', () => {
 
     // いま入れているのは第2ゲーム。終わった第1ゲームは上の札に出る
     expect(within(card).getByText('第2ゲーム')).toBeInTheDocument();
-    expect(within(card).getByText('第1G：21-19')).toBeInTheDocument();
+    expect(within(card).getByText(chip('第1G：21-19'))).toBeInTheDocument();
     expect(within(card).queryByText('第3ゲーム')).not.toBeInTheDocument();
 
     fireEvent.click(
@@ -2164,7 +2168,7 @@ describe('CourtsPage', () => {
         renderPage({ board: boardWithScorers({ 'match-1': { id: 'p-jiro', minutesAgo: 1 } }) });
         const card = screen.getByTestId('court-card-1');
 
-        expect(within(card).getByText('愛知北のじろうさん')).toBeInTheDocument();
+        expect(within(card).getByText('愛知北のじろうさんが')).toBeInTheDocument();
         expect(within(card).getByRole('button', { name: '入力を引き継ぐ' })).toBeInTheDocument();
         expect(plusOf(card)).not.toBeInTheDocument();
         expect(within(card).queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
@@ -2218,7 +2222,7 @@ describe('CourtsPage', () => {
             board: boardWithScorers({ 'match-1': { id: 'p-jiro', minutesAgo: 4.8 } }),
           });
           const card = screen.getByTestId('court-card-1');
-          expect(within(card).getByText('愛知北のじろうさん')).toBeInTheDocument();
+          expect(within(card).getByText('愛知北のじろうさんが')).toBeInTheDocument();
 
           act(() => {
             vi.advanceTimersByTime(30_000);
@@ -2282,7 +2286,7 @@ describe('CourtsPage', () => {
           act(() => {
             vi.advanceTimersByTime(30_000);
           });
-          expect(within(card).getByText('愛知北のじろうさん')).toBeInTheDocument();
+          expect(within(card).getByText('愛知北のじろうさんが')).toBeInTheDocument();
 
           act(() => {
             vi.advanceTimersByTime(5 * 60_000);
@@ -2301,7 +2305,7 @@ describe('CourtsPage', () => {
 
         deliver(scorerChange('match-1', 'p-jiro'));
 
-        expect(within(card).getByText('愛知北のじろうさん')).toBeInTheDocument();
+        expect(within(card).getByText('愛知北のじろうさんが')).toBeInTheDocument();
         expect(within(card).getByRole('button', { name: '入力を引き継ぐ' })).toBeInTheDocument();
         await new Promise((resolve) => setTimeout(resolve, 500));
         expect(refresh).not.toHaveBeenCalled();

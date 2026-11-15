@@ -544,7 +544,7 @@ export function CourtsPage({
   );
 
   return (
-    <div className="mx-auto max-w-md px-3.5 py-3">
+    <div className="mx-auto max-w-md px-3 py-3">
       {/* 「結果LIVE」「コートの状況」の見出しは出さない（下のメニューに同じ文字がある）。
           いまの段と消化数は、上のバーの大会名と同じ 1 行に載せる（仕様 2026-11-15） */}
       {stageProgress}
@@ -562,7 +562,7 @@ export function CourtsPage({
 
       {shownEmptyReason && <EmptyCourtsNotice reason={shownEmptyReason} />}
 
-      <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-3">
         {courts.map((court) => {
           // 確認画面の「OK」は、このカードの試合（確認画面を開いた試合）を終了する。
           // 押した瞬間のコートから引き直すと、開いている間に入れ替わった次の試合を終了してしまう

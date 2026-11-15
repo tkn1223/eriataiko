@@ -10,14 +10,14 @@ export function ClassChip({
 }: {
   classLabel: ClassLabel;
   /**
-   * 試合速報のカード用: 文字を 12px・太さ 700 にする（見本の数値。枠線は付けない）。
+   * 試合速報のカード用: 文字を 13px・太さ 700、余白を 3px 10px にする（見本の数値。枠線は付けない）。
    * 進行表は今までの見た目のまま。
    */
   large?: boolean;
 }) {
   const colors = classColorClasses(classLabel.colorNumber);
   const size = large
-    ? 'px-2.5 py-0.5 text-[12px] font-bold'
+    ? 'px-2.5 py-[3px] text-[13px] font-bold'
     : 'px-2 py-0.5 text-[10px] font-extrabold';
   return (
     <span className={`shrink-0 rounded-full ${size} ${colors.text} ${colors.tint}`}>

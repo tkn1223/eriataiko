@@ -13,10 +13,10 @@ const ICONS = {
 } as const;
 
 /**
- * 画面下のメニュー。ほぼ黒地で、いま開いている項目だけ金色の文字と少し明るい下地、ほかは薄い灰色
+ * 画面下のメニュー。ほぼ黒の縦のにじみで、いま開いている項目だけ金色の文字と下に光る金の線、ほかは薄い灰色
  * （色は globals.css の @theme。docs/specs/2026-11-15-courts-redesign.md）。
  *
- * 片手・汗ばんだ指で押されるので、親指の届く下側に置き、1 項目の高さは 64px（44px 以上）。
+ * 片手・汗ばんだ指で押されるので、親指の届く下側に置き、1 項目の高さは 52px（44px 以上）。
  * 画面に貼り付けて（fixed）スクロールしても消えないようにする。
  * メニューの増減は src/config/tabs.ts を直す。
  */
@@ -26,7 +26,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="メインメニュー"
-      className="bg-bar fixed bottom-0 left-0 z-20 grid w-full grid-cols-4 gap-1 px-1.5 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+      className="app-nav fixed bottom-0 left-0 z-20 grid w-full grid-cols-4 px-1 pt-2.5 pb-[calc(18px+env(safe-area-inset-bottom))]"
     >
       {TABS.map((tab) => {
         const isCurrent = pathname === tab.href;
@@ -38,8 +38,8 @@ export function BottomNav() {
             href={tab.href}
             // 色だけでは現在地が伝わらない人のための印
             aria-current={isCurrent ? 'page' : undefined}
-            className={`flex min-h-16 flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${
-              isCurrent ? 'text-gold bg-nav-active' : 'text-bar-muted'
+            className={`relative flex min-h-[52px] flex-col items-center justify-center gap-1 text-[11.5px] font-semibold ${
+              isCurrent ? 'app-nav-active' : ''
             }`}
           >
             <Icon className="size-6" />

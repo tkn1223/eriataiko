@@ -13,10 +13,10 @@
      次の大会で色が付かなくなる。数が増える前提で 6 つ用意してある。 */
   --color-class-1: #c2410c;
   --color-class-1-bg: #fdede6;
-  --color-class-2: #2563eb;
-  --color-class-2-bg: #e8effc;
-  --color-class-3: #1b8a4c;
-  --color-class-3-bg: #e6f4ec;
+  --color-class-2: #2c5fd6;
+  --color-class-2-bg: #e4ecff;
+  --color-class-3: #1e7b3a;
+  --color-class-3-bg: #e2f3e6;
   --color-class-4: #6d28d9;
   --color-class-4-bg: #f1ebfd;
   --color-class-5: #be185d;
@@ -33,29 +33,56 @@
   /* いちばん濃い色。見出しの文字・選ばれているボタン・優勝の帯・シートの暗幕（ink/45） */
   --color-ink: #171717;
 
-  /* 全画面の色合い（黒・金・白。docs/specs/2026-11-15-courts-redesign.md）。
-     背景・上の帯・下のメニュー・試合速報のカードの色は、ここの変数だけから取る（ばらばらに色を書かない）。
+  /* 全画面の色合い（黒・金・白。docs/specs/2026-11-15-courts-redesign.md、見本は demo5）。
+     背景・上の帯・下のメニュー・試合速報のカードの色は、ここの変数と、下の「見た目の部品」の
+     クラスだけから取る（画面の部品にばらばらに色を書かない）。
      黒い帯は「帯の色」であって、ダークモードではない（ダークモードは使わない） */
-  --color-page: #ffffff;
-  /* 上の帯・下のメニュー */
-  --color-bar: #171c23;
-  --color-bar-sub: #c9c4b9;
-  --color-bar-muted: #d8d3c8;
-  --color-nav-active: #262c35;
-  /* 金（自分の試合の枠・下のメニューで開いている項目・旗の印）と、その淡い地・淡い枠 */
+  --color-page: #faf9f7;
+  /* 上の帯（斜めのにじみ）・下のメニュー（縦のにじみ） */
+  --color-bar-from: #2b3038;
+  --color-bar-mid: #171b21;
+  --color-bar-to: #0e1115;
+  --color-bar-sub: #d9d6cf;
+  --color-nav-from: #22272e;
+  --color-nav-to: #111418;
+  --color-nav-text: #cfcac0;
+  /* 金（自分の試合の枠・下のメニューで開いている項目・鉛筆の点線）とその系統 */
   --color-gold: #d5a23c;
+  --color-gold-light: #f3d58c;
+  --color-gold-line: #c99a3e;
+  --color-gold-mine: #ddb767;
+  --color-gold-ink: #9c6512;
+  --color-gold-ink-soft: #8a6a2a;
+  --color-gold-pale: #fffbf1;
   --color-gold-soft: #fff4df;
-  --color-gold-edge: #f1ddb4;
-  /* 通常の枠線（カード・ボタン） */
-  --color-line: #e2deda;
-  /* ＋・［試合終了］の黒 */
-  --color-btn-dark: #242424;
-  /* 状態の札の地 */
-  --color-status-live: #def3e3;
+  /* カード・区切りの細い線 */
+  --color-line: #ece8e2;
+  /* 白いボタンの線 */
+  --color-btn-line: #dad6cf;
+  --color-btn-line-round: #cfcac2;
+  /* 灰色の地（ゲームのタブの台・終わったゲームの札・ほかの人が担当の帯・1つ前の行） */
+  --color-fill-tabs: #f2f0ec;
+  --color-fill-band: #f4f2ef;
+  --color-fill-row: #f6f4f0;
+  /* 黒ボタンのにじみ（上→下） */
+  --color-btn-top: #3d3d3d;
+  --color-btn-bottom: #161616;
+  --color-btn-end-top: #363636;
+  --color-btn-end-bottom: #121212;
+  --color-tab-top: #3a3a3a;
+  /* 状態の札 */
+  --color-status-live: #e2f3e6;
+  --color-status-live-ink: #1e7b3a;
+  --color-status-live-dot: #22a04b;
   --color-status-wait: #fff0d1;
-  /* 終わったゲームの札 */
-  --color-beige-chip: #f5f1e8;
-  --color-beige-chip-line: #ddd5c4;
+  --color-status-wait-ink: #a86e00;
+  --color-icon-muted: #666666;
+  /* 文字の濃さ（ゲームの表示・札・タブ） */
+  --color-ink-2: #333333;
+  --color-ink-3: #555555;
+  /* シャトルの羽根 */
+  --color-feather-line: #9aa0a8;
+  --color-feather-edge: #c7ccd2;
 
   /* 入場画面の下地・枠線・薄い文字。運用中のアプリ（badminton-app）の
      入場画面から実測した色。**body には敷かない**（Konsta の配色と喧嘩して
@@ -72,12 +99,17 @@
   --color-team-1: #c82929;
   --color-team-2: #177734;
   --color-team-3: #1769cc;
-  --color-team-4: #b87a00;
-  /* 試合速報の得点板の枠の地（チームの色の淡色） */
-  --color-team-1-bg: #fbe6e6;
-  --color-team-2-bg: #e2f3e7;
-  --color-team-3-bg: #dfecff;
-  --color-team-4-bg: #fff0ca;
+  --color-team-4: #c08400;
+  /* 試合速報の得点板の枠の地（チームの淡い色 → 白っぽい色のにじみ）。チーム 4 のチーム名の文字だけ濃い色 */
+  --color-team-1-bg: #fde9e9;
+  --color-team-1-bg-end: #fff6f6;
+  --color-team-2-bg: #e5f4e9;
+  --color-team-2-bg-end: #f5fbf7;
+  --color-team-3-bg: #e2eeff;
+  --color-team-3-bg-end: #f4f8ff;
+  --color-team-4-bg: #fff2d2;
+  --color-team-4-bg-end: #fffaee;
+  --color-team-4-ink: #a86e00;
 
   /* Web フォントは読み込まない。体育館の電波が細いことがあるのと、
      日本語は端末標準（iOS: ヒラギノ / Android: Noto Sans CJK）で十分きれいに出るため。 */
@@ -112,4 +144,138 @@ body {
 /* 得点は桁が動くと読みづらいので等幅数字で揃える */
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------------
+   見た目の部品（試合速報・上の帯・下のメニュー。値は demo5 からそのまま写したもの）。
+   色は上の @theme の変数から取る。ここだけに置き、画面の部品には書かない。
+   ------------------------------------------------------------------ */
+
+/* 上の帯: 斜めのにじみ・右上の金の光・下の端の金の細い弧 */
+.app-bar {
+  /* position は付けない（呼び出し側の sticky が効くように。疑似要素の基準も sticky で足りる） */
+  overflow: hidden;
+  color: #fff;
+  background: linear-gradient(
+    160deg,
+    var(--color-bar-from) 0%,
+    var(--color-bar-mid) 55%,
+    var(--color-bar-to) 100%
+  );
+}
+.app-bar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(90% 120% at 100% 0%, rgb(213 162 60 / 0.38), rgb(213 162 60 / 0) 55%);
+}
+.app-bar::after {
+  content: '';
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  bottom: -38px;
+  height: 60px;
+  border-top: 1.5px solid rgb(232 190 100 / 0.75);
+  border-radius: 50%;
+  filter: drop-shadow(0 -2px 4px rgb(232 190 100 / 0.6));
+}
+.app-bar > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* 下のメニュー */
+.app-nav {
+  background: linear-gradient(180deg, var(--color-nav-from), var(--color-nav-to));
+  box-shadow: 0 -4px 14px rgb(0 0 0 / 0.12);
+  color: var(--color-nav-text);
+}
+.app-nav-active {
+  color: var(--color-gold);
+}
+.app-nav-active::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-gold);
+  box-shadow: 0 0 8px rgb(213 162 60 / 0.7);
+}
+
+/* コートのカード */
+.court-card {
+  background: #fff;
+  border: 1px solid var(--color-line);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 8px 20px rgb(40 30 10 / 0.07);
+}
+.court-card-mine {
+  border: 1.5px solid var(--color-gold-mine);
+  background: linear-gradient(180deg, #fffdf7 0%, #fff 30%);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.04),
+    0 10px 24px rgb(213 162 60 / 0.18);
+}
+
+/* 得点板の枠の影と、点数の字体（Web フォントは使わない。端末の標準の字体） */
+.team-panel {
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.06);
+}
+.score-number {
+  font-family: -apple-system, 'SF Pro Display', system-ui, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 64px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+  color: #111;
+}
+
+/* ボタン */
+.btn-plus {
+  /* −（1px の線）と同じ幅になるよう、見えない 1px の線を付ける */
+  border: 1px solid transparent;
+  background-origin: border-box;
+  background: linear-gradient(180deg, var(--color-btn-top), var(--color-btn-bottom)) border-box;
+  color: #fff;
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.28);
+}
+.btn-minus {
+  background: #fff;
+  border: 1px solid var(--color-btn-line);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.08);
+  color: #222;
+}
+.btn-end {
+  background: linear-gradient(180deg, var(--color-btn-end-top), var(--color-btn-end-bottom));
+  color: #fff;
+  border: 1.5px solid var(--color-gold-line);
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.28);
+}
+.btn-quit {
+  background: #fff;
+  border: 1px solid var(--color-btn-line);
+  box-shadow: 0 2px 4px rgb(0 0 0 / 0.06);
+}
+.btn-round {
+  background: #fff;
+  border: 1px solid var(--color-btn-line-round);
+  border-radius: 999px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.07);
+}
+.tab-on {
+  background: linear-gradient(180deg, var(--color-tab-top), var(--color-btn-bottom));
+  color: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25);
+}
+
+/* ［入力を担当する］: 金の点線 */
+.claim-box {
+  border: 2px dashed var(--color-gold);
+  background: linear-gradient(180deg, var(--color-gold-pale), var(--color-gold-soft));
+  color: var(--color-gold-ink);
 }

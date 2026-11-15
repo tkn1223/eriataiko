@@ -79,19 +79,25 @@ export async function finishMatch(deps: FinishMatchRepository, input: FinishMatc
 
   const standing = standingOfPlayer(match.scorer, input.playerId, input.now);
   if (standing === 'other') {
-    throw otherIsScoringError(match.scorer!, '終了するには、先に引き継いでください。');
+    throw otherIsScoringError(
+      match.scorer!,
+      '終了するには、先に「入力を引き継ぐ」を押してください。'
+    );
   }
   if (standing === 'vacant') {
     throw new ApiError(
       409,
-      'この試合の入力担当ではありません。「得点を入力する」を押してから終了してください。',
+      'この試合の入力担当ではありません。「入力を担当する」を押してから「試合終了」を押してください。',
       SCORER_ERROR_CODE.notScorer
     );
   }
 
   const scores = await deps.findGameScores(input.matchId);
   if (!hasAnyPoint(scores)) {
-    throw new ApiError(400, 'まだ 1 点も入っていません。得点を入れてから終了してください。');
+    throw new ApiError(
+      400,
+      'まだ 1 点も入っていません。得点を入れてから「試合終了」を押してください。'
+    );
   }
 
   // 「同点では終了できない」の判定は画面側とここで共有する（PR #52 レビュー指摘4）。

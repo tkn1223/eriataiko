@@ -599,7 +599,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
     ).toBeVisible();
   });
 
-  test('いま入れている第2ゲームが出て、終わった第1ゲームが札で出る。矢印で第3ゲームまで動かせる', async ({
+  test('いま入れている第2ゲームが出て、終わった第1ゲームが札で出る。タブで第3ゲームまで切り替えられる', async ({
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
@@ -613,6 +613,44 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await showGame(card, 3);
     await expect(card.getByText('第3ゲーム', { exact: true })).toBeVisible();
   });
+
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、ゲームのタブ（第1・第2・第3）が横にはみ出さず、1 つ 44px 以上`, async ({
+      page,
+    }) => {
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto('/courts');
+
+      const card = courtCard(page, FINAL_COURT_NUMBER);
+      await takeScorer(card);
+      const tabs = card.getByRole('tab');
+      await expect(tabs).toHaveCount(3);
+
+      const boxes = await tabs.evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          return { w: rect.width, h: rect.height, right: rect.right };
+        })
+      );
+      const cardBox = (await card.boundingBox())!;
+      for (const box of boxes) {
+        expect(box.w).toBeGreaterThanOrEqual(44);
+        expect(box.h).toBeGreaterThanOrEqual(44);
+        expect(box.right).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+      }
+      const { scrollWidth, innerWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth,
+      }));
+      expect(scrollWidth).toBe(innerWidth);
+
+      // 押すと、そのゲームに切り替わる（選ばれたタブと「第Nゲーム」が変わる）
+      await tabs.nth(0).click();
+      await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+      await expect(card.getByText('第1ゲーム', { exact: true })).toBeVisible();
+    });
+  }
 
   test('第1ゲームを出しているあいだは、終わったゲームの札は出ない', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');

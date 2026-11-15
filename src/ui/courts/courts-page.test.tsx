@@ -1821,6 +1821,21 @@ describe('CourtsPage', () => {
       expect(screen.queryByText('このコートの試合は終わりました')).not.toBeInTheDocument();
     });
 
+    test('その試合で入力担当だった人（試合には出ていない）には、終了のあとも［訂正］が出る。担当だった記録が別の人なら出ない', () => {
+      const { unmount } = renderPage({
+        board: [previousMatch({ scorerParticipantId: 'p-me' })],
+        emptyReason: 'all-finished',
+      });
+      expect(screen.getByRole('button', { name: '訂正' })).toBeInTheDocument();
+      unmount();
+
+      renderPage({
+        board: [previousMatch({ scorerParticipantId: 'p-jiro' })],
+        emptyReason: 'all-finished',
+      });
+      expect(screen.queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
+    });
+
     test('全部終わったあと、1つ前を出せない人（出ていない選手・観戦者）には「このコートの試合は終わりました」が出る', () => {
       renderPage({ board: [previousMatch()], emptyReason: 'all-finished' });
 

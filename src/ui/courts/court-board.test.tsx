@@ -58,6 +58,7 @@ const previous: PreviousMatch = {
   scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
   maxGameCount: 1,
   ending: 'normal',
+  scorerParticipantId: null,
 };
 
 function scorerControl(
@@ -66,6 +67,7 @@ function scorerControl(
 ): ScorerControl {
   return {
     view,
+    recordedScorerIsMe: false,
     onClaim: () => {},
     onTakeOver: () => {},
     onRelease: () => {},
@@ -87,6 +89,7 @@ function renderCard({
   court,
   canInput = true,
   scorer = scorerControl(),
+  previousScorer,
   scores,
   syncStatus = null,
   onIncrement = () => {},
@@ -94,6 +97,8 @@ function renderCard({
   court: Partial<Court>;
   canInput?: boolean;
   scorer?: ScorerControl;
+  /** 1 つ前の試合の担当の見え方（渡さなければ scorer と同じ）。 */
+  previousScorer?: ScorerControl;
   scores?: GameScore[];
   syncStatus?: ScoreSyncStatus | null;
   onIncrement?: (gameNumber: number, side: 'A' | 'B') => void;
@@ -122,7 +127,9 @@ function renderCard({
         onDecrement={() => {}}
         onFinishMatch={() => {}}
         finishSheetOf={finishSheetOf}
-        scorerOf={() => scorer}
+        scorerOf={(matchId) =>
+          matchId === previous.matchId && previousScorer ? previousScorer : scorer
+        }
         fix={{ ...fixActions, finishSheetOf }}
       />
     );
@@ -380,6 +387,18 @@ describe('1つ前の［直す］を出す相手', () => {
       expect(screen.queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
       unmount();
     }
+  });
+
+  test('その 1 つ前の試合で入力担当だった人（出てもいない・いまの担当でもない）には出る', () => {
+    renderCard({
+      court: { live, previous },
+      scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }),
+      previousScorer: scorerControl({ kind: 'vacant' }, { recordedScorerIsMe: true }),
+    });
+
+    expect(
+      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '訂正' })
+    ).toBeInTheDocument();
   });
 
   test('観戦者には出ない', () => {

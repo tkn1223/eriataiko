@@ -6,7 +6,7 @@ import { playedGameScores, type GameScore } from '@/domain/scoring';
  * 試合に「いまのゲーム」という印は持っていない（終わるかどうかは人が「試合を終了する」を押したときだけ。
  * 何点で 1 ゲームが終わるかも部によって違う）。そこで、点が入っているゲームのうち一番後ろを
  * 「いま入れているゲーム」とする。まだ 1 点も無ければ第1ゲーム。
- * 点を入れる人が次のゲームに進む・戻る操作は、カード側が覚える（`court-live-card.tsx`）。
+ * 点を入れる人がゲームのタブで切り替える操作は、カード側が覚える（`court-live-card.tsx`）。
  */
 export function defaultShownGame(scores: GameScore[], maxGameCount: number): number {
   const lastPlayed = Math.max(0, ...playedGameScores(scores).map((score) => score.gameNumber));

@@ -72,7 +72,7 @@ export async function saveScore(
     throw new ApiError(404, 'その試合は見つかりませんでした。画面を更新してください。');
   }
   if (match.status === 'done') {
-    throw new ApiError(409, '終了した試合です。先に「終了を取り消す」を押してください。');
+    throw new ApiError(409, '終了した試合です。先に「訂正」を押して、終了を取り消してください。');
   }
   if (input.gameNumber < 1) {
     throw new ApiError(400, 'ゲーム番号は 1 以上で送ってください。');

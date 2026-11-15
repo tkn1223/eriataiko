@@ -407,6 +407,9 @@ export function CourtsPage({
   function scorerControlOf(matchId: string): ScorerControl {
     return {
       view: scorerViewOfMatch(board.find((m) => m.matchId === matchId)),
+      recordedScorerIsMe:
+        myParticipantId !== null &&
+        board.find((m) => m.matchId === matchId)?.scorerParticipantId === myParticipantId,
       onClaim: () => startScorerOp(matchId, () => claimScorer(matchId, false)),
       onTakeOver: () => startScorerOp(matchId, () => claimScorer(matchId, true)),
       onRelease: () => startScorerOp(matchId, () => releaseScorer(matchId)),

@@ -795,10 +795,7 @@ test.describe('1つ前と直す', () => {
     const card = courtCard(page, LIVE_COURT);
     const row = page.getByTestId(`previous-match-${LIVE_COURT}`);
     await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
-    // 終わった試合の担当は、次の試合の担当ではないので、1 つ前の行は出ない（試合に出た選手でもない）。
-    // 次の試合の担当になると（いまそのコートの担当）、1 つ前が出る
-    await expect(row).toHaveCount(0);
-    await takeScorer(card);
+    // 終わった試合の入力担当（この人）には、試合に出ていなくても、次の試合の担当でなくても、1 つ前が出る
     await expect(row).toContainText('5-3');
 
     await row.getByRole('button', { name: '訂正' }).click();

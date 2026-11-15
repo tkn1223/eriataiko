@@ -60,6 +60,7 @@ function scorerControl(
 ): ScorerControl {
   return {
     view,
+    recordedScorerIsMe: false,
     onClaim: () => {},
     onTakeOver: () => {},
     onRelease: () => {},
@@ -189,7 +190,7 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByText('第3ゲーム')).not.toBeInTheDocument();
   });
 
-  test('点を入れる人は、矢印で次のゲームに進んで、まだ点の入っていない第2ゲームの枠も押せる', () => {
+  test('点を入れる人は、タブで第2ゲームに切り替えて、まだ点の入っていない第2ゲームの枠も押せる', () => {
     const onIncrement = vi.fn();
     const onDecrement = vi.fn();
     renderLiveCard({
@@ -204,7 +205,7 @@ describe('CourtLiveCard', () => {
     fireEvent.click(screen.getByRole('button', { name: '高橋・伊藤の第1ゲームの得点を1減らす' }));
     expect(onDecrement).toHaveBeenCalledWith(1, 'B');
 
-    fireEvent.click(screen.getByRole('button', { name: '次のゲームに進む' }));
+    fireEvent.click(screen.getByRole('tab', { name: '第2' }));
     expect(screen.getByText('第2ゲーム')).toBeInTheDocument();
     // 第2ゲームは 0 対 0 の枠。終わった第1ゲームは上の札に出る
     expect(screen.getByText('第1G：10-8')).toBeInTheDocument();
@@ -212,22 +213,30 @@ describe('CourtLiveCard', () => {
     expect(onIncrement).toHaveBeenCalledWith(2, 'A');
 
     // 戻れば第1ゲームの点を直せる
-    fireEvent.click(screen.getByRole('button', { name: '前のゲームにもどる' }));
+    fireEvent.click(screen.getByRole('tab', { name: '第1' }));
     expect(screen.getByText('第1ゲーム')).toBeInTheDocument();
   });
 
-  test('ゲームを動かす矢印は、点を入れる人の複数ゲーム制のカードにだけ出る（端では押せない）', () => {
+  test('ゲームのタブは、点を入れる人の複数ゲーム制のカードにだけ、ゲーム数ぶん並ぶ。見ているゲームが選ばれた印になる', () => {
     const { unmount } = renderLiveCard({ live: { ...baseLive, maxGameCount: 3 } });
-    expect(screen.getByRole('button', { name: '前のゲームにもどる' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: '次のゲームに進む' })).toBeEnabled();
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['第1', '第2', '第3']);
+    expect(screen.getByRole('tab', { name: '第1' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '第2' })).toHaveAttribute('aria-selected', 'false');
+    // 押しやすい大きさ（実際の幅・高さは e2e で測る）
+    for (const tab of tabs) expect(tab).toHaveClass('min-h-11');
+    fireEvent.click(screen.getByRole('tab', { name: '第3' }));
+    expect(screen.getByRole('tab', { name: '第3' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByText('第3ゲーム')).toBeInTheDocument();
     unmount();
 
     const viewer = renderLiveCard({ live: { ...baseLive, maxGameCount: 3 }, canInput: false });
-    expect(screen.queryByRole('button', { name: '次のゲームに進む' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
     viewer.unmount();
 
+    // ゲームが 1 つしか無い試合には出ない
     renderLiveCard({ live: baseLive });
-    expect(screen.queryByRole('button', { name: '次のゲームに進む' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
   });
 
   test('自分の試合中のコートは枠が太い金色で囲まれる（「あなたの試合」の文字は出さない）', () => {
@@ -360,12 +369,12 @@ describe('CourtLiveCard', () => {
       renderLiveCard({
         syncStatus: syncStatusOf({
           retryingMessage: null,
-          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+          rejectedMessage: '終了した試合です。先に「訂正」を押して、終了を取り消してください。',
         }),
       });
 
       expect(screen.getByRole('status')).toHaveTextContent(
-        '終了した試合です。先に「終了を取り消す」を押してください。'
+        '終了した試合です。先に「訂正」を押して、終了を取り消してください。'
       );
     });
 
@@ -397,7 +406,7 @@ describe('CourtLiveCard', () => {
         finished: true,
         syncStatus: syncStatusOf({
           retryingMessage: null,
-          rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+          rejectedMessage: '終了した試合です。先に「訂正」を押して、終了を取り消してください。',
         }),
       });
 
@@ -750,6 +759,7 @@ describe('直し中と1つ前', () => {
     ],
     maxGameCount: 3,
     ending: 'normal',
+    scorerParticipantId: null,
   };
 
   const fixingMatch: NonNullable<Court['live']> = {
@@ -900,7 +910,7 @@ describe('直し中と1つ前', () => {
         fix: actions({
           syncStatusOf: () => ({
             retryingMessage: null,
-            rejectedMessage: '終了した試合です。先に「終了を取り消す」を押してください。',
+            rejectedMessage: '終了した試合です。先に「訂正」を押して、終了を取り消してください。',
             finishing: false,
             finishRetrying: false,
             finishRejectedMessage: null,

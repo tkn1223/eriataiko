@@ -232,6 +232,8 @@ export type PreviousMatch = {
   /** 終わった試合の得点。実際にプレーされたゲームだけを出すのは画面の側。 */
   scores: GameScore[];
   maxGameCount: number;
+  /** 記録上の入力担当（`matches.scorer_participant_id`）。終了しても残る。いなければ null。 */
+  scorerParticipantId: string | null;
   /** `matches.ending`。棄権で終わった試合には「（◯◯ 棄権）」を添え、勝ちを相手側にする。 */
   ending: string;
 };

@@ -54,6 +54,7 @@ function toPreviousMatch(match: CourtMatch): PreviousMatch {
     scores: match.scores,
     maxGameCount: match.maxGameCount,
     ending: match.ending,
+    scorerParticipantId: match.scorerParticipantId,
   };
 }
 

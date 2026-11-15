@@ -71,7 +71,12 @@ type Props = {
 export type ScorerControl = {
   /** 自分が担当か、いないか、ほかの人か。 */
   view: ScorerView;
-  /** 「得点を入力する」。担当を取る。 */
+  /**
+   * 記録上の担当（`matches.scorer_participant_id`。5 分で外れた扱いになっても、終了しても残る）が自分か。
+   * 1 つ前の試合の担当だった人に［訂正］を出すのに使う。記録が読めなければ false。
+   */
+  recordedScorerIsMe: boolean;
+  /** 「入力を担当する」。担当を取る。 */
   onClaim: () => void;
   /** 「引き継ぐ」の確認で OK。ほかの人から担当を取る。 */
   onTakeOver: () => void;
@@ -251,9 +256,9 @@ function ScorerRejectionNotice({
 }
 
 /**
- * 担当がいない試合の、赤い点線の大きなボタン［得点を入力する］（中に小さく「入力担当がまだいません」）。
+ * 担当がいない試合の、赤い点線の大きなボタン［入力を担当する］（中に小さく「入力担当がまだいません」）。
  * 観戦者には何も出さない（押せないし、誰が入力しているかも見せない。仕様 2026-11-15 の「決めたこと」5）。
- * 押したときの名前は昔のまま「得点を入力する」にしておく（画面テストが使っている）。
+ * 押したときの名前（aria-label）は見えている文字と同じ「入力を担当する」にしている。
  */
 function VacantScorerBanner({ canInput, onClaim }: { canInput: boolean; onClaim: () => void }) {
   if (!canInput) return null;
@@ -314,7 +319,7 @@ function OtherScorerBanner({
 /**
  * 試合の入力担当まわりの表示。
  * - 担当でないと断られた点の知らせ（あれば。試合が終わっても閉じるまで残す）
- * - `showStatus` のとき、担当の状況: いなければ［得点を入力する］、ほかの人なら灰色の帯と［引き継ぐ］
+ * - `showStatus` のとき、担当の状況: いなければ［入力を担当する］、ほかの人なら帯と［入力を引き継ぐ］
  *   （自分が担当のときは何も出さない。＋ − と「入力をやめる」は呼び出し側が並べる）
  */
 function ScorerSection({
@@ -514,7 +519,11 @@ function ScoreButtons({
   );
 }
 
-/** 「第Nゲーム」を真ん中に小さく。点を入れる人には、前後のゲームへ動く矢印を添える。 */
+/**
+ * 「第Nゲーム」を真ん中に小さく。点を入れる人（複数ゲーム制）には、その下にゲームのタブ
+ * ［第1］［第2］［第3］を並べる。見ているゲームは黒地に白文字、ほかは白地。
+ * どのタブも高さ 44px 以上で、ゲーム数ぶんを等分するので 375px でもはみ出さない。
+ */
 function GameLabelRow({
   shownGame,
   maxGameCount,
@@ -522,33 +531,34 @@ function GameLabelRow({
 }: {
   shownGame: number;
   maxGameCount: number;
-  /** 渡されたときだけ（点を入れる人で、複数ゲーム制）矢印を出す。 */
+  /** 渡されたときだけ（点を入れる人で、複数ゲーム制）タブを出す。 */
   onChange?: (gameNumber: number) => void;
 }) {
   return (
-    <div className="flex items-center justify-center gap-1">
+    <div className="flex flex-col gap-1.5">
+      <p className="text-center text-[12px] font-bold">{`第${shownGame}ゲーム`}</p>
       {onChange && (
-        <button
-          type="button"
-          aria-label="前のゲームにもどる"
-          disabled={shownGame <= 1}
-          onClick={() => onChange(shownGame - 1)}
-          className="flex min-h-11 min-w-11 items-center justify-center text-[18px] font-extrabold text-gray-500 disabled:text-gray-300"
-        >
-          ‹
-        </button>
-      )}
-      <span className="text-[12px] font-bold">{`第${shownGame}ゲーム`}</span>
-      {onChange && (
-        <button
-          type="button"
-          aria-label="次のゲームに進む"
-          disabled={shownGame >= maxGameCount}
-          onClick={() => onChange(shownGame + 1)}
-          className="flex min-h-11 min-w-11 items-center justify-center text-[18px] font-extrabold text-gray-500 disabled:text-gray-300"
-        >
-          ›
-        </button>
+        <div role="tablist" aria-label="ゲームの切り替え" className="flex gap-2">
+          {Array.from({ length: maxGameCount }, (_, index) => index + 1).map((gameNumber) => {
+            const selected = gameNumber === shownGame;
+            return (
+              <button
+                key={gameNumber}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => onChange(gameNumber)}
+                className={`min-h-11 min-w-0 flex-1 rounded-[9px] border text-[14px] font-bold ${
+                  selected
+                    ? 'bg-btn-dark border-btn-dark text-white'
+                    : 'border-line bg-white text-gray-700'
+                }`}
+              >
+                {`第${gameNumber}`}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -681,6 +691,7 @@ function previousAccessOf(
     ...previousRowAccess({
       canInput,
       playedInPrevious: previous.isMine,
+      wasScorerOfPrevious: scorerOf(previous.matchId).recordedScorerIsMe,
       scorerOfCurrent: current ? scorerOf(current.matchId).view.kind : null,
       hasNoticeAboutPrevious: previousNoticeLines(previous, fix, canInput).length > 0,
     }),

@@ -61,19 +61,13 @@ export async function takeScorer(card: Locator) {
 }
 
 /**
- * カードが出しているゲームを、矢印（「次のゲームに進む」「前のゲームにもどる」）で目的のゲームに合わせる。
+ * カードが出しているゲームを、ゲームのタブ（［第1］［第2］［第3］）で目的のゲームに合わせる。
  * 複数ゲーム制のカードは、いま入れている 1 ゲームだけを出す（docs/specs/2026-11-15-courts-redesign.md）ので、
- * 別のゲームの点を押す前にこれを呼ぶ。矢印は担当（点を入れる人）にだけ出るので、`takeScorer` のあとに呼ぶ。
+ * 別のゲームの点を押す前にこれを呼ぶ。タブは担当（点を入れる人）にだけ出るので、`takeScorer` のあとに呼ぶ。
  */
 export async function showGame(card: Locator, gameNumber: number) {
-  const label = card.getByText(/^第\d+ゲーム$/).first();
-  for (let step = 0; step < 6; step += 1) {
-    await expect(label).toBeVisible();
-    const shown = Number(((await label.textContent()) ?? '').replace(/\D/g, ''));
-    if (shown === gameNumber) return;
-    await card
-      .getByRole('button', { name: shown < gameNumber ? '次のゲームに進む' : '前のゲームにもどる' })
-      .click();
-  }
-  await expect(label).toHaveText(`第${gameNumber}ゲーム`);
+  const tab = card.getByRole('tab', { name: `第${gameNumber}`, exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(card.getByText(`第${gameNumber}ゲーム`, { exact: true })).toBeVisible();
 }

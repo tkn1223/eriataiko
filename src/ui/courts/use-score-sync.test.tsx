@@ -171,7 +171,7 @@ describe('useScoreSync', () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValue(
       jsonResponse(409, {
-        error: '終了した試合です。先に「終了を取り消す」を押してください。',
+        error: '終了した試合です。先に「訂正」を押して、終了を取り消してください。',
       })
     );
 
@@ -185,7 +185,7 @@ describe('useScoreSync', () => {
     });
 
     expect(result.current.statusByMatchId['m']?.rejectedMessage).toBe(
-      '終了した試合です。先に「終了を取り消す」を押してください。'
+      '終了した試合です。先に「訂正」を押して、終了を取り消してください。'
     );
     expect(result.current.statusByMatchId['m']?.retryingMessage).toBeNull();
 
@@ -1569,7 +1569,8 @@ describe('担当でないと断られた点（⑧）', () => {
   test('終了が担当でないと断られたら、その理由が終了の案内に出る', async () => {
     vi.mocked(fetch).mockImplementation(async () =>
       jsonResponse(409, {
-        error: '愛知北のじろうさんが担当しています。終了するには、先に引き継いでください。',
+        error:
+          '愛知北のじろうさんが担当しています。終了するには、先に「入力を引き継ぐ」を押してください。',
         code: 'not-scorer',
       })
     );
@@ -1579,7 +1580,7 @@ describe('担当でないと断られた点（⑧）', () => {
 
     await waitFor(() =>
       expect(result.current.statusByMatchId['m']?.finishRejectedMessage).toBe(
-        '愛知北のじろうさんが担当しています。終了するには、先に引き継いでください。'
+        '愛知北のじろうさんが担当しています。終了するには、先に「入力を引き継ぐ」を押してください。'
       )
     );
   });

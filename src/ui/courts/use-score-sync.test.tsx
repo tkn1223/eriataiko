@@ -1547,7 +1547,7 @@ describe('担当でないと断られた点（⑧）', () => {
     expect(result.current.statusByMatchId['m']?.scorerRejection).toBeNull();
   });
 
-  test('点が断られたまま「試合を終了する」を押すと、終了は送らず、理由を出す', async () => {
+  test('点が断られたまま「試合終了」を押すと、終了は送らず、理由を出す', async () => {
     vi.mocked(fetch).mockImplementation(async () => jsonResponse(409, NOT_SCORER));
     const { result } = renderHook(() => useScoreSync());
 
@@ -1919,7 +1919,7 @@ describe('押した人と送る人が違えば送らない（⑪）', () => {
     expect(scoreCalls()).toHaveLength(1);
   });
 
-  test('結果LIVE を開いた画面が別の人を知らせても、待たずにその場で送らないと決める', async () => {
+  test('試合速報を開いた画面が別の人を知らせても、待たずにその場で送らないと決める', async () => {
     await pressAsTaroAndFail();
     const { result } = renderHook(() => useScoreSync());
 

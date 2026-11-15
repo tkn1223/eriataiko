@@ -650,7 +650,7 @@ test.describe('試合の終了', () => {
  * 1 つ前と直す（1-d の後半）。コート 13 は、1 つ前（杉本・柳田 対 桃井・栗原、21-12）と、
  * 進行中の次の試合（楠田・榊原 対 椎名・樫村、1-0）がある。
  */
-test.describe('1つ前と直す', () => {
+test.describe('1つ前と訂正', () => {
   const PREVIOUS_A = ['杉本', '柳田'];
   const NEXT_LIVE_A = ['楠田', '榊原'];
 
@@ -755,7 +755,7 @@ test.describe('1つ前と直す', () => {
     await context.close();
   });
 
-  test('片方で直すと、もう片方（観戦者）にも直し中が映り、もう一度終了すると1つ前に戻る', async ({
+  test('片方で訂正すると、もう片方（観戦者）にも直し中が映り、もう一度終了すると1つ前に戻る', async ({
     browser,
   }) => {
     const player = await openCourts(browser, 'player');

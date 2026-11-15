@@ -167,7 +167,7 @@ describe('得点板のカード', () => {
     expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('text-[38px]');
   });
 
-  test('「コートN」と部の札が 1 行目に出て、「結果LIVE」の LIVE の点滅は出ない', () => {
+  test('「コートN」と部の札が 1 行目に出て、「LIVE」の点滅は出ない', () => {
     renderCard({ court: { courtNumber: 4, live } });
 
     expect(screen.getByText('コート4')).toBeInTheDocument();
@@ -408,6 +408,18 @@ describe('1つ前の［訂正］を出す相手', () => {
     expect(
       within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '訂正' })
     ).toBeInTheDocument();
+  });
+
+  test('進行中のコートで、その 1つ前の試合に出ていない選手（知らせも無く、いまの担当でも前の担当でもない）には、［訂正］も 1つ前の行も出ない', () => {
+    renderCard({
+      court: { live, previous: { ...previous, isMine: false } },
+      canInput: true,
+      scorer: scorerControl({ kind: 'other', name: '愛知北のじろう' }),
+      previousScorer: scorerControl({ kind: 'vacant' }, { recordedScorerIsMe: false }),
+    });
+
+    expect(screen.queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
   });
 
   test('観戦者には出ない', () => {

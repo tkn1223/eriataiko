@@ -519,7 +519,7 @@ test.describe('試合速報 の操作が、別のブラウザの進行表にそ�
     await watcher.context.close();
   });
 
-  test('試合速報 で試合を終了すると、進行表のそのコートの「現在◯試合目」「残り◯試合」が変わる', async ({
+  test('試合速報で試合終了すると、進行表のそのコートの「現在◯試合目」「残り◯試合」が変わる', async ({
     browser,
   }) => {
     const watcher = await openMatchesAs(browser, 'viewer');

@@ -296,7 +296,7 @@ test('観戦者には帯が出ない', async ({ page }) => {
 });
 
 test.describe('自分の試合', () => {
-  test('選手として入った人が出る進行中の試合は、枠がオレンジで囲まれ、「あなたの試合」の文字は出ない', async ({
+  test('選手として入った人が出る進行中の試合は、枠が太い金色で囲まれ、「あなたの試合」の文字は出ない', async ({
     page,
   }) => {
     // 愛知南のたろう（#3）は seed のコート1 進行中の試合（たろう・いとう 対 やまもと・まつもと）に出ている
@@ -309,7 +309,7 @@ test.describe('自分の試合', () => {
     await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/(^|\s)border-gold(\s|$)/);
   });
 
-  test('観戦者には、どのカードもオレンジの枠にならない', async ({ page }) => {
+  test('観戦者には、どのカードも金の太い枠にならない', async ({ page }) => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
@@ -446,7 +446,7 @@ test.describe('選手として入った人の操作', () => {
   });
 });
 
-test('押せるところ（−・＋・試合を終了する）はどれも44px以上', async ({ page }) => {
+test('押せるところ（−・＋・試合終了）はどれも44px以上', async ({ page }) => {
   await enterAsPlayer(page, '愛知南', 'たろう');
   await page.goto('/courts');
 

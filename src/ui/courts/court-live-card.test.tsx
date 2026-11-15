@@ -1133,7 +1133,7 @@ describe('直し中と1つ前', () => {
         expect(onRelease).toHaveBeenCalledTimes(1);
       });
 
-      test('担当がいないときは、赤い点線の「入力を担当する」。＋ − と終了は出ない', () => {
+      test('担当がいないときは、金の点線の「入力を担当する」。＋ − と終了は出ない', () => {
         const onClaim = vi.fn();
         renderCard({
           court: { live: null, fixing: [fixingMatch] },
@@ -1182,7 +1182,7 @@ describe('CourtLiveCard の入力の担当', () => {
   const OTHER = scorerControl({ kind: 'other', name: '愛知北のじろう' });
   const VACANT = scorerControl({ kind: 'vacant' });
 
-  test('担当がいない進行中の試合に、赤い点線の「入力を担当する」が出る。＋ − と終了は出ない', () => {
+  test('担当がいない進行中の試合に、金の点線の「入力を担当する」が出る。＋ − と終了は出ない', () => {
     renderLiveCard({ scorer: VACANT });
 
     expect(screen.getByText('入力担当がまだいません')).toBeInTheDocument();

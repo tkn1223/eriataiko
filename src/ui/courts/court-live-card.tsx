@@ -790,7 +790,7 @@ export function CourtLiveCard({
   return (
     <div
       data-testid={`court-card-${court.courtNumber}`}
-      // 自分の試合は太い金の枠、ほかは細い金の枠
+      // 自分の試合は金の枠と金みの影、ほかは細い灰色の線（globals.css の .court-card）
       className={`flex flex-col gap-2 rounded-[18px] p-3 ${cardSurfaceClasses(live.isMine)}`}
     >
       <CourtHeader
@@ -1182,17 +1182,18 @@ function PreviousRow({
           </button>
         )}
       </div>
-      <p className="bg-fill-row flex h-[38px] items-center justify-center gap-2.5 truncate rounded-[10px] text-[13px] font-bold">
-        <span>
+      {/* 名前が長いときは、行ごと切ると中央寄せで両端が見えなくなるので、名前ごとに「…」で切る。点数は切らない */}
+      <p className="bg-fill-row flex h-[38px] items-center justify-center gap-2.5 rounded-[10px] px-2 text-[13px] font-bold">
+        <span className="min-w-0 truncate">
           <TeamDot team={previous.teamA} />
           {teamLabel(previous.teamA)}
         </span>{' '}
-        <b className="tabular text-[15px] font-extrabold">
+        <b className="tabular shrink-0 text-[15px] font-extrabold">
           {scoreA}
           <span className="mx-1">-</span>
           {scoreB}
         </b>{' '}
-        <span>
+        <span className="min-w-0 truncate">
           <TeamDot team={previous.teamB} />
           {teamLabel(previous.teamB)}
         </span>

@@ -36,9 +36,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
                 {title}
               </h1>
               {subtitle && (
-                <p className="text-bar-sub mt-0.5 text-[12.5px] font-medium whitespace-nowrap">
-                  {subtitle}
-                </p>
+                <p className="text-bar-sub mt-0.5 truncate text-[12.5px] font-medium">{subtitle}</p>
               )}
             </div>
           </div>

@@ -267,7 +267,7 @@ describe('得点板のカード', () => {
 });
 
 describe('担当の欄', () => {
-  test('担当がいない試合で、選手には赤い点線の［入力を担当する］と「入力担当がまだいません」が出る', () => {
+  test('担当がいない試合で、選手には金の点線の［入力を担当する］と「入力担当がまだいません」が出る', () => {
     const onClaim = vi.fn();
     renderCard({ court: { live }, scorer: scorerControl({ kind: 'vacant' }, { onClaim }) });
 

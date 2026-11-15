@@ -305,7 +305,7 @@ test.describe('自分の試合', () => {
 
     await expect(courtCard(page, 1)).toHaveClass(/court-card-mine/);
     await expect(page.getByText('あなたの試合')).toHaveCount(0);
-    // ほかのコートはオレンジの枠にならない
+    // ほかのコートは金の枠にならない
     await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/court-card-mine/);
   });
 

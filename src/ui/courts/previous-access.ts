@@ -13,7 +13,8 @@ import type { ScorerView } from '@/ui/courts/scorer-view';
  * **画面に出す人を絞るだけ。** 入口（API）は今までどおり誰が押しても受け付け、押した人が担当になる。
  *
  * 例外: 絞った相手でなくても、その 1 つ前の試合について保存の知らせ（断られた点・取り消せなかった等）が
- * 残っている選手には、知らせを消さないために行だけ出す（［訂正］は出さない）。
+ * 残っている選手にも、行と［訂正］を出す（エラー文が「先に『訂正』を押して」と言うので、
+ * 知らせだけ出してボタンが見えない人を作らない）。
  */
 export function previousRowAccess(input: {
   /** 選手として入った人か（観戦者は false）。 */
@@ -28,7 +29,10 @@ export function previousRowAccess(input: {
   hasNoticeAboutPrevious: boolean;
 }): { showRow: boolean; showFixButton: boolean } {
   if (!input.canInput) return { showRow: false, showFixButton: false };
-  const showFixButton =
-    input.playedInPrevious || input.wasScorerOfPrevious || input.scorerOfCurrent === 'mine';
-  return { showRow: showFixButton || input.hasNoticeAboutPrevious, showFixButton };
+  const show =
+    input.playedInPrevious ||
+    input.wasScorerOfPrevious ||
+    input.scorerOfCurrent === 'mine' ||
+    input.hasNoticeAboutPrevious;
+  return { showRow: show, showFixButton: show };
 }

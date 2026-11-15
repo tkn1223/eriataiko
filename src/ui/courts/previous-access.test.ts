@@ -54,9 +54,9 @@ describe('previousRowAccess（1つ前の行と［訂正］を出す相手）', (
     ).toEqual({ showRow: false, showFixButton: false });
   });
 
-  test('出す相手でなくても、その試合について知らせが残っている選手には、知らせのために行だけ出す（［訂正］は出さない）', () => {
+  test('出す相手でなくても、その試合について知らせが残っている選手には、行も［訂正］も出す（エラー文が「先に『訂正』を押して」と言うので）', () => {
     expect(
       previousRowAccess({ ...base, scorerOfCurrent: 'other', hasNoticeAboutPrevious: true })
-    ).toEqual({ showRow: true, showFixButton: false });
+    ).toEqual({ showRow: true, showFixButton: true });
   });
 });

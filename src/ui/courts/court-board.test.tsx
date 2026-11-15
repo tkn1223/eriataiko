@@ -418,7 +418,7 @@ describe('1つ前の［訂正］を出す相手', () => {
 });
 
 describe('1つ前の知らせ', () => {
-  test('出す相手でない選手でも、その試合の保存の知らせが残っていれば、知らせのために行だけ出す（［訂正］は出さない）', () => {
+  test('出す相手でない選手でも、その試合の保存の知らせが残っていれば、行も［訂正］も出す', () => {
     function Harness() {
       const { finishSheetOf } = useFinishSheets(null);
       return (
@@ -453,7 +453,7 @@ describe('1つ前の知らせ', () => {
 
     const row = screen.getByTestId('previous-match-1');
     expect(within(row).getByRole('status')).toHaveTextContent('終了した試合です。');
-    expect(within(row).queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: '訂正' })).toBeInTheDocument();
   });
 });
 

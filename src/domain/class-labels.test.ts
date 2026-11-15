@@ -120,9 +120,9 @@ describe('teamPanelClasses（得点板の枠の色）', () => {
     const panels = [1, 2, 3, 4].map(teamPanelClasses);
     for (const [index, panel] of panels.entries()) {
       const n = index + 1;
-      expect(panel.border).toContain(`border-t-team-${n}`);
-      expect(panel.tint).toContain(`team-${n}`);
-      expect(panel.text).toContain(`team-${n}`);
+      expect(panel.border).toContain(`border-team-${n}`);
+      expect(panel.tint).toBe(`bg-team-${n}-bg`);
+      expect(panel.text).toBe(`text-team-${n}`);
     }
     expect(new Set(panels.map((panel) => panel.border)).size).toBe(4);
   });

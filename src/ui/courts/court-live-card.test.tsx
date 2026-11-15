@@ -148,8 +148,8 @@ describe('CourtLiveCard', () => {
     });
 
     const panel = screen.getByTestId('team-panel-A');
-    expect(panel).toHaveClass('border-t-gray-300');
-    expect(panel).not.toHaveClass('border-t-team-1');
+    expect(panel).toHaveClass('border-gray-300');
+    expect(panel).not.toHaveClass('border-team-1');
   });
 
   test('両ペアの選手名が、1 人 1 行で出る', () => {
@@ -230,17 +230,17 @@ describe('CourtLiveCard', () => {
     expect(screen.queryByRole('button', { name: '次のゲームに進む' })).not.toBeInTheDocument();
   });
 
-  test('自分の試合中のコートは枠がオレンジで囲まれる（「あなたの試合」の文字は出さない）', () => {
+  test('自分の試合中のコートは枠が太い金色で囲まれる（「あなたの試合」の文字は出さない）', () => {
     renderLiveCard({ live: { ...baseLive, isMine: true } });
 
-    expect(screen.getByTestId('court-card-3')).toHaveClass('border-accent');
+    expect(screen.getByTestId('court-card-3')).toHaveClass('border-gold');
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
-  test('自分の試合でないコートは、オレンジの枠にならない', () => {
+  test('自分の試合でないコートは、太い金の枠にならない', () => {
     renderLiveCard({ live: { ...baseLive, isMine: false } });
 
-    expect(screen.getByTestId('court-card-3')).not.toHaveClass('border-accent');
+    expect(screen.getByTestId('court-card-3')).not.toHaveClass('border-gold');
   });
 
   function nextMatch(
@@ -340,7 +340,7 @@ describe('CourtLiveCard', () => {
 
       expect(screen.getByText('1部')).toBeInTheDocument();
       expect(within(screen.getByTestId('team-panel-A')).getByText('山田')).toBeInTheDocument();
-      expect(screen.getByTestId('team-panel-A')).toHaveClass('border-t-team-3');
+      expect(screen.getByTestId('team-panel-A')).toHaveClass('border-team-3');
     });
   });
 
@@ -829,7 +829,7 @@ describe('直し中と1つ前', () => {
       renderCard({ court: { previous: previousMatch } });
 
       const row = screen.getByTestId('previous-match-3');
-      expect(within(row).getByText('1つ前')).toBeInTheDocument();
+      expect(within(row).getByText('1つ前の試合')).toBeInTheDocument();
       // 1 行で「両ペア（ここではチーム名が無いので選手名）と、取ったゲーム数」。
       // 0 対 0 の枠（プレーされていないゲーム）は数えない
       expect(row).toHaveTextContent('山本・清水 1-0 松田・井上');
@@ -1456,7 +1456,7 @@ describe('CourtLiveCard の入力の担当', () => {
     other.unmount();
 
     renderLiveCard({ scorer: scorerControl({ kind: 'mine' }) });
-    expect(screen.getByRole('button', { name: '担当をやめる' })).toHaveClass('min-h-12');
+    expect(screen.getByRole('button', { name: '担当をやめる' })).toHaveClass('min-h-11');
   });
 });
 

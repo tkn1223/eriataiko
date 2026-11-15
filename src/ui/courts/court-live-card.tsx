@@ -13,6 +13,7 @@ import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring'
 import { ClassChip } from '@/ui/components/class-chip';
 import { RetiredNote } from '@/ui/components/retired-note';
 import { teamBgClass, teamPanelClasses } from '@/domain/class-labels';
+import { ClockIcon, CrossIcon, FlagIcon } from '@/ui/icons';
 import type {
   Court,
   CourtTeam,
@@ -261,7 +262,7 @@ function VacantScorerBanner({ canInput, onClaim }: { canInput: boolean; onClaim:
       type="button"
       aria-label="入力を担当する"
       onClick={onClaim}
-      className="border-live text-live flex min-h-[60px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed bg-white px-3 py-2"
+      className="border-live text-live flex min-h-[60px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed bg-red-50 px-3 py-2"
     >
       <span className="text-[16px] font-extrabold">入力を担当する</span>
       <span className="mt-0.5 text-[11px] font-bold">入力担当がまだいません</span>
@@ -285,15 +286,15 @@ function OtherScorerBanner({
   const [sheetOpen, setSheetOpen] = useState(false);
   if (!canInput) return null;
   return (
-    <div className="flex items-center gap-2 rounded-xl bg-gray-100 py-2 pr-2 pl-3">
+    <div className="border-gold-edge bg-gold-soft flex items-center gap-2 rounded-xl border py-2 pr-2 pl-3">
       <div className="min-w-0 flex-1">
-        <p className="text-[13px] leading-snug font-bold break-words">{`${name}さん`}</p>
-        <p className="text-[11px] font-semibold text-gray-500">が入力しています</p>
+        <p className="text-[12px] leading-snug font-semibold break-words">{`${name}さん`}</p>
+        <p className="text-[12px] font-semibold text-gray-500">が入力しています</p>
       </div>
       <button
         type="button"
         onClick={() => setSheetOpen(true)}
-        className="border-ink min-h-11 shrink-0 rounded-[10px] border-[1.5px] bg-white px-3.5 text-[14px] font-extrabold"
+        className="border-btn-dark min-h-11 shrink-0 rounded-[9px] border bg-white px-3 text-[14px] font-bold"
       >
         入力を引き継ぐ
       </button>
@@ -367,20 +368,23 @@ function teamLabel(team: CourtTeam): string {
 
 type StatusTone = 'live' | 'waiting' | 'fixing' | 'finished';
 
-const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
-  live: 'bg-green-100 text-green-800',
-  waiting: 'bg-yellow-100 text-yellow-800',
-  fixing: 'bg-accent-soft text-accent',
-  finished: 'bg-gray-100 text-gray-500',
+/** 札の枠・地・文字・点の色。試合中＝緑・呼出待ち＝黄・直し中＝金・終了＝灰で、互いに見分けがつく。 */
+const STATUS_TONE_CLASSES: Record<StatusTone, { pill: string; dot: string }> = {
+  live: { pill: 'bg-status-live text-green-800', dot: 'bg-green-600' },
+  waiting: { pill: 'bg-status-wait text-yellow-800', dot: 'bg-yellow-500' },
+  fixing: { pill: 'bg-gold-soft text-ink', dot: 'bg-gold' },
+  finished: { pill: 'bg-gray-100 text-gray-500', dot: 'bg-gray-400' },
 };
 
-/** カードの右上の状態の札。色は、試合中＝緑・呼出待ち＝黄・直し中＝オレンジ・終了＝灰で、互いに見分けがつく。 */
+/** カードの右上の状態の札。「● 試合中」のように、点つきの枠囲み。 */
 function StatusPill({ tone, label, testId }: { tone: StatusTone; label: string; testId?: string }) {
+  const classes = STATUS_TONE_CLASSES[tone];
   return (
     <span
       data-testid={testId}
-      className={`ml-auto shrink-0 rounded-full px-3 py-1 text-[13px] font-bold whitespace-nowrap ${STATUS_TONE_CLASSES[tone]}`}
+      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold whitespace-nowrap ${classes.pill}`}
     >
+      <span aria-hidden="true" className={`size-2 rounded-full ${classes.dot}`} />
       {label}
     </span>
   );
@@ -398,8 +402,8 @@ function CourtHeader({
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[22px] font-black tracking-[0.02em]">コート{courtNumber}</span>
-      {classLabel && <ClassChip classLabel={classLabel} />}
+      <span className="text-[23px] font-extrabold tracking-[0.02em]">コート{courtNumber}</span>
+      {classLabel && <ClassChip classLabel={classLabel} outlined />}
       <StatusPill {...status} />
     </div>
   );
@@ -413,7 +417,7 @@ function EarlierGameChips({ games }: { games: GameScore[] }) {
       {games.map((score) => (
         <li
           key={score.gameNumber}
-          className="tabular rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-bold text-gray-600"
+          className="tabular border-beige-chip-line bg-beige-chip rounded-lg border px-3.5 py-0.5 text-[12px] font-semibold text-gray-800"
         >
           {/* 数字は左の枠（A 側）- 右の枠（B 側）の順。勝ったチーム名は出さない（短さを優先） */}
           {`第${score.gameNumber}G：${score.sideAScore}-${score.sideBScore}`}
@@ -424,17 +428,30 @@ function EarlierGameChips({ games }: { games: GameScore[] }) {
 }
 
 /** 得点板の枠 1 枚。上からチーム名（チームの色の文字）・選手名（1 人 1 行）・大きな点数。 */
-function TeamPanel({ testId, team, score }: { testId: string; team: CourtTeam; score: number }) {
+function TeamPanel({
+  testId,
+  team,
+  score,
+  emphasized,
+}: {
+  testId: string;
+  team: CourtTeam;
+  score: number;
+  /** 自分の試合は点数を大きく（48px）、ほかは 38px。 */
+  emphasized: boolean;
+}) {
   const colors = teamPanelClasses(team.teamNumber);
   return (
     <div
       data-testid={testId}
-      className={`min-w-0 rounded-xl border-t-[5px] px-1.5 pt-2.5 pb-2 text-center ${colors.border} ${colors.tint}`}
+      className={`min-w-0 overflow-hidden rounded-xl border text-center ${colors.border} ${colors.tint}`}
     >
       {team.teamName && (
-        <p className={`text-[12px] font-extrabold break-words ${colors.text}`}>{team.teamName}</p>
+        <p className={`px-1 pt-1.5 pb-0.5 text-[12px] font-bold break-words ${colors.text}`}>
+          {team.teamName}
+        </p>
       )}
-      <div className="mt-0.5 text-[15px] leading-[1.35] font-extrabold">
+      <div className="px-1 text-[14px] leading-[1.3] font-bold">
         {team.players.length > 0 ? (
           team.players.map((name, index) => (
             <p key={index} className="break-words">
@@ -445,7 +462,13 @@ function TeamPanel({ testId, team, score }: { testId: string; team: CourtTeam; s
           <p className="break-words">{team.slotLabel ?? ''}</p>
         )}
       </div>
-      <p className="tabular mt-1 text-[48px] leading-[1.1] font-black">{score}</p>
+      <p
+        className={`tabular pt-0.5 pb-2 leading-[1.05] font-extrabold tracking-[-0.02em] ${
+          emphasized ? 'text-[48px]' : 'text-[38px]'
+        }`}
+      >
+        {score}
+      </p>
     </div>
   );
 }
@@ -455,7 +478,7 @@ function TeamPanel({ testId, team, score }: { testId: string; team: CourtTeam; s
  * 押したときの名前（aria-label）は昔のまま（画面テストが使っている）。
  */
 const SCORE_BUTTON_CLASSES =
-  'flex h-12 min-w-0 flex-1 items-center justify-center rounded-xl border-[1.5px] text-[26px] font-extrabold';
+  'flex h-11 min-w-0 flex-1 items-center justify-center rounded-[9px] border text-[27px] leading-none font-bold';
 
 function ScoreButtons({
   team,
@@ -475,7 +498,7 @@ function ScoreButtons({
         type="button"
         onClick={onDecrement}
         aria-label={`${name}の第${gameNumber}ゲームの得点を1減らす`}
-        className={`${SCORE_BUTTON_CLASSES} border-gray-300 bg-white`}
+        className={`${SCORE_BUTTON_CLASSES} border-line bg-white`}
       >
         −
       </button>
@@ -483,7 +506,7 @@ function ScoreButtons({
         type="button"
         onClick={onIncrement}
         aria-label={`${name}の第${gameNumber}ゲームの得点を1増やす`}
-        className={`${SCORE_BUTTON_CLASSES} border-ink bg-ink text-white`}
+        className={`${SCORE_BUTTON_CLASSES} border-btn-dark bg-btn-dark text-white`}
       >
         ＋
       </button>
@@ -515,7 +538,7 @@ function GameLabelRow({
           ‹
         </button>
       )}
-      <span className="text-[12px] font-bold text-gray-500">{`第${shownGame}ゲーム`}</span>
+      <span className="text-[12px] font-bold">{`第${shownGame}ゲーム`}</span>
       {onChange && (
         <button
           type="button"
@@ -543,6 +566,7 @@ function ScoreBoard({
   shownGame,
   onShownGameChange,
   canScore,
+  emphasized,
   onIncrement,
   onDecrement,
 }: {
@@ -553,6 +577,8 @@ function ScoreBoard({
   shownGame: number;
   onShownGameChange: (gameNumber: number) => void;
   canScore: boolean;
+  /** 自分の試合か（点数を大きく出す）。 */
+  emphasized: boolean;
   onIncrement: (gameNumber: number, side: 'A' | 'B') => void;
   onDecrement: (gameNumber: number, side: 'A' | 'B') => void;
 }) {
@@ -566,8 +592,18 @@ function ScoreBoard({
       />
       <EarlierGameChips games={earlierPlayedGames(scores, shownGame)} />
       <div className="grid grid-cols-2 gap-2">
-        <TeamPanel testId="team-panel-A" team={teamA} score={shown.sideAScore} />
-        <TeamPanel testId="team-panel-B" team={teamB} score={shown.sideBScore} />
+        <TeamPanel
+          testId="team-panel-A"
+          team={teamA}
+          score={shown.sideAScore}
+          emphasized={emphasized}
+        />
+        <TeamPanel
+          testId="team-panel-B"
+          team={teamB}
+          score={shown.sideBScore}
+          emphasized={emphasized}
+        />
         {canScore && (
           <>
             <ScoreButtons
@@ -604,6 +640,11 @@ function useShownGame(matchId: string, scores: GameScore[], maxGameCount: number
     shownGame,
     chooseGame: (gameNumber: number) => setChosen({ matchId, gameNumber }),
   };
+}
+
+/** カードの枠。自分の試合は太い金の枠、ほかは細い薄い金の枠（色は globals.css の @theme）。 */
+function cardBorderClasses(isMine: boolean): string {
+  return isMine ? 'border-[1.5px] border-gold' : 'border border-line';
 }
 
 /** 1 つ前の試合について、カードに出す保存の知らせ（取り消し中・取り消せなかった・送れていない点）。 */
@@ -747,10 +788,8 @@ export function CourtLiveCard({
   return (
     <div
       data-testid={`court-card-${court.courtNumber}`}
-      // 自分の試合は枠をブランド色（オレンジ）で囲む。ほかは同じ太さの透明な枠で、並べたときに大きさが揃う
-      className={`flex flex-col gap-2 rounded-[18px] border-2 bg-white p-3.5 ${
-        live.isMine ? 'border-accent' : 'border-transparent'
-      }`}
+      // 自分の試合は太い金の枠、ほかは細い金の枠
+      className={`flex flex-col gap-2 rounded-[18px] bg-white p-3 ${cardBorderClasses(live.isMine)}`}
     >
       <CourtHeader
         courtNumber={court.courtNumber}
@@ -766,6 +805,7 @@ export function CourtLiveCard({
         shownGame={finished ? defaultShownGame(scores, live.maxGameCount) : shownGame}
         onShownGameChange={chooseGame}
         canScore={canScore && !finished}
+        emphasized={live.isMine}
         onIncrement={(gameNumber, side) => {
           setNotice(null);
           onIncrement(gameNumber, side);
@@ -812,15 +852,17 @@ export function CourtLiveCard({
             <button
               type="button"
               onClick={handleFinishClick}
-              className="bg-ink min-h-12 rounded-xl text-[14px] font-extrabold text-white"
+              className="bg-btn-dark border-gold flex min-h-11 items-center justify-center gap-2 rounded-[9px] border-[1.5px] text-[14px] font-bold text-white"
             >
+              <FlagIcon className="text-gold size-5" />
               試合終了
             </button>
             <button
               type="button"
               onClick={scorer.onRelease}
-              className="min-h-12 rounded-xl border-[1.5px] border-gray-300 bg-white text-[14px] font-extrabold"
+              className="border-line flex min-h-11 items-center justify-center gap-2 rounded-[9px] border bg-white text-[14px] font-bold"
             >
+              <CrossIcon className="size-5" />
               担当をやめる
             </button>
           </div>
@@ -876,7 +918,7 @@ function IdleCourtCard({
   return (
     <div
       data-testid={`court-card-${court.courtNumber}`}
-      className="flex flex-col gap-2 rounded-[18px] border-2 border-transparent bg-white p-3.5"
+      className={`flex flex-col gap-2 rounded-[18px] bg-white p-3 ${cardBorderClasses(false)}`}
     >
       <CourtHeader
         courtNumber={court.courtNumber}
@@ -987,7 +1029,7 @@ function FixingPanel({
     <section
       data-testid={`fixing-match-${courtNumber}`}
       aria-label="直し中の試合"
-      className="border-accent flex flex-col gap-2 rounded-[14px] border-2 border-dashed p-2.5"
+      className="border-gold flex flex-col gap-2 rounded-[14px] border-2 border-dashed p-2.5"
     >
       <div className="flex items-center gap-2">
         <ClassChip classLabel={match.classLabel} />
@@ -1002,6 +1044,7 @@ function FixingPanel({
         shownGame={finishing ? defaultShownGame(match.scores, match.maxGameCount) : shownGame}
         onShownGameChange={chooseGame}
         canScore={canScore && !finishing}
+        emphasized={match.isMine}
         onIncrement={(gameNumber, side) => {
           setNotice(null);
           fix?.onIncrement(match.matchId, gameNumber, side);
@@ -1039,15 +1082,17 @@ function FixingPanel({
             <button
               type="button"
               onClick={handleFinishClick}
-              className="bg-ink min-h-12 rounded-xl text-[14px] font-extrabold text-white"
+              className="bg-btn-dark border-gold flex min-h-11 items-center justify-center gap-2 rounded-[9px] border-[1.5px] text-[14px] font-bold text-white"
             >
+              <FlagIcon className="text-gold size-5" />
               もう一度終了する
             </button>
             <button
               type="button"
               onClick={scorer.onRelease}
-              className="min-h-12 rounded-xl border-[1.5px] border-gray-300 bg-white text-[14px] font-extrabold"
+              className="border-line flex min-h-11 items-center justify-center gap-2 rounded-[9px] border bg-white text-[14px] font-bold"
             >
+              <CrossIcon className="size-5" />
               担当をやめる
             </button>
           </div>
@@ -1120,29 +1165,28 @@ function PreviousRow({
   return (
     <div
       data-testid={`previous-match-${courtNumber}`}
-      className="mt-1 flex flex-col gap-1.5 border-t border-dashed border-gray-200 pt-2.5"
+      className="border-line mt-1 flex flex-col gap-1 rounded-xl border px-2.5 py-2"
     >
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 rounded-[5px] bg-gray-400 px-1.5 py-0.5 text-[11px] font-extrabold whitespace-nowrap text-white">
-          1つ前
-        </span>
-        <span className="tabular min-w-0 flex-1 truncate text-[12px] font-bold">
-          <TeamDot team={previous.teamA} />
-          {`${teamLabel(previous.teamA)} ${scoreText} `}
-          <TeamDot team={previous.teamB} />
-          {teamLabel(previous.teamB)}
-        </span>
+      <div className="flex items-center gap-1.5">
+        <ClockIcon className="text-gold size-4 shrink-0" />
+        <span className="text-[13px] font-extrabold">1つ前の試合</span>
         {showFixButton && canInput && fix && (
           <button
             type="button"
             disabled={reopenState?.pending ?? false}
             onClick={() => setSheetOpen(true)}
-            className="min-h-11 shrink-0 rounded-[10px] border-[1.5px] border-gray-300 bg-white px-3.5 text-[13px] font-extrabold disabled:text-gray-400"
+            className="border-line ml-auto min-h-11 min-w-14 shrink-0 rounded-[9px] border bg-white px-3 text-[14px] font-bold disabled:text-gray-400"
           >
             訂正
           </button>
         )}
       </div>
+      <p className="tabular bg-gold-soft border-gold-edge mt-0.5 truncate rounded-lg border px-2.5 py-1 text-center text-[12px] font-bold text-gray-800">
+        <TeamDot team={previous.teamA} />
+        {teamLabel(previous.teamA)} <b className="mx-3 font-extrabold">{scoreText}</b>{' '}
+        <TeamDot team={previous.teamB} />
+        {teamLabel(previous.teamB)}
+      </p>
 
       {/* 棄権は点数と勝ちが逆になりうるので、勝ちと理由を添える（普通の試合には出さない） */}
       {summary.retiredNames.length > 0 && summary.matchWinnerName && (

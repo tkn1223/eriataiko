@@ -904,9 +904,7 @@ describe('CourtsPage', () => {
       const card = screen.getByTestId('court-card-1');
       expect(within(card).getByRole('status')).toHaveTextContent('終了を送っています');
       expect(within(card).getByText('終了')).toBeInTheDocument();
-      expect(
-        within(card).queryByRole('button', { name: '試合終了' })
-      ).not.toBeInTheDocument();
+      expect(within(card).queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
       expect(calledUrls()).toEqual(['/api/matches/match-1/result']);
     });
 
@@ -1494,7 +1492,7 @@ describe('CourtsPage', () => {
       renderPage({ board: boardWithPrevious() });
 
       const row = screen.getByTestId('previous-match-1');
-      expect(within(row).getByText('1つ前')).toBeInTheDocument();
+      expect(within(row).getByText('1つ前の試合')).toBeInTheDocument();
       expect(row).toHaveTextContent('山本・清水 21-19 松田・井上');
       expect(within(row).getByRole('button', { name: '訂正' })).toBeInTheDocument();
     });
@@ -2039,9 +2037,7 @@ describe('CourtsPage', () => {
         expect(within(card).getByText('入力担当がまだいません')).toBeInTheDocument();
         expect(within(card).getByRole('button', { name: '入力を担当する' })).toBeInTheDocument();
         expect(plusOf(card)).not.toBeInTheDocument();
-        expect(
-          within(card).queryByRole('button', { name: '試合終了' })
-        ).not.toBeInTheDocument();
+        expect(within(card).queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
       });
 
       test('担当は試合に付く。ほかの試合（自分が担当）は ＋ − が出たまま', () => {
@@ -2156,9 +2152,7 @@ describe('CourtsPage', () => {
         expect(within(card).getByText('愛知北のじろうさん')).toBeInTheDocument();
         expect(within(card).getByRole('button', { name: '入力を引き継ぐ' })).toBeInTheDocument();
         expect(plusOf(card)).not.toBeInTheDocument();
-        expect(
-          within(card).queryByRole('button', { name: '試合終了' })
-        ).not.toBeInTheDocument();
+        expect(within(card).queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
       });
 
       test('「入力を引き継ぐ」→ 確認 → OK で、引き継ぐと明示して送られ、自分に ＋ − が出る', async () => {
@@ -2446,7 +2440,9 @@ describe('CourtsPage', () => {
         const card = screen.getByTestId('court-card-1');
 
         expect(within(card).queryByText(/じろう/)).not.toBeInTheDocument();
-        expect(within(card).queryByRole('button', { name: '入力を引き継ぐ' })).not.toBeInTheDocument();
+        expect(
+          within(card).queryByRole('button', { name: '入力を引き継ぐ' })
+        ).not.toBeInTheDocument();
 
         deliver(scorerChange('match-1', 'p-me'));
         expect(within(card).queryByText(/たろう/)).not.toBeInTheDocument();

@@ -699,7 +699,7 @@ for (const width of [375, 390]) {
       const card = courtCard(mine.page, LIVE_COURT);
       await takeScorer(card);
 
-      // ［−］［＋］の 4 つは同じ幅・同じ高さで、どれも 48px 以上。各チームの枠の真下に並ぶ
+      // ［−］［＋］の 4 つは同じ幅・同じ高さで、どれも 44px 以上。各チームの枠の真下に並ぶ
       const plusMinus = await card
         .getByRole('button', { name: /得点を1(増やす|減らす)/ })
         .evaluateAll((buttons) =>
@@ -710,7 +710,7 @@ for (const width of [375, 390]) {
         );
       expect(plusMinus).toHaveLength(4);
       for (const box of plusMinus) {
-        expect(box.h).toBeGreaterThanOrEqual(48);
+        expect(box.h).toBeGreaterThanOrEqual(44);
         expect(box.w).toBeGreaterThanOrEqual(44);
         expect(Math.abs(box.w - plusMinus[0].w)).toBeLessThanOrEqual(1);
         expect(box.h).toBe(plusMinus[0].h);

@@ -45,39 +45,22 @@ export function teamBgClass(teamNumber: number | null): string {
 }
 
 /**
- * 結果LIVE の得点板の枠（チーム名・選手名・点数を入れる 1 枚）の色。
- * - border: 上の太い線（チームの色そのまま）
- * - tint: 全体の薄い塗り（チームの色を 15% だけ混ぜる。Tailwind の `/15` は color-mix で作られる）
- * - text: チーム名の文字（薄い塗りの上で読めるよう、チームの色に黒を 3 割混ぜて少し暗くする。
- *   黄色のチームは、そのままだと薄い黄色の上で読めない）
+ * 試合速報の得点板の枠（チーム名・選手名・点数を入れる 1 枚）の色。
+ * - border: チームの色の枠線（1px）
+ * - tint: 枠の地（チームの色の淡色。globals.css の `--color-team-N-bg`）
+ * - text: チーム名の文字（チームの色そのまま）
  * チームが決まっていない側・1〜4 に無い番号は灰色。
  * クラス名は上の表と同じ理由（Tailwind が文字列で探す）で、完全な形で書く。
  */
 const TEAM_PANEL_CLASSES: Record<TeamNumber, { border: string; tint: string; text: string }> = {
-  1: {
-    border: 'border-t-team-1',
-    tint: 'bg-team-1/15',
-    text: 'text-[color-mix(in_srgb,var(--color-team-1)_70%,black)]',
-  },
-  2: {
-    border: 'border-t-team-2',
-    tint: 'bg-team-2/15',
-    text: 'text-[color-mix(in_srgb,var(--color-team-2)_70%,black)]',
-  },
-  3: {
-    border: 'border-t-team-3',
-    tint: 'bg-team-3/15',
-    text: 'text-[color-mix(in_srgb,var(--color-team-3)_70%,black)]',
-  },
-  4: {
-    border: 'border-t-team-4',
-    tint: 'bg-team-4/15',
-    text: 'text-[color-mix(in_srgb,var(--color-team-4)_70%,black)]',
-  },
+  1: { border: 'border-team-1', tint: 'bg-team-1-bg', text: 'text-team-1' },
+  2: { border: 'border-team-2', tint: 'bg-team-2-bg', text: 'text-team-2' },
+  3: { border: 'border-team-3', tint: 'bg-team-3-bg', text: 'text-team-3' },
+  4: { border: 'border-team-4', tint: 'bg-team-4-bg', text: 'text-team-4' },
 };
 
 const NO_TEAM_PANEL_CLASSES = {
-  border: 'border-t-gray-300',
+  border: 'border-gray-300',
   tint: 'bg-gray-100',
   text: 'text-gray-500',
 };

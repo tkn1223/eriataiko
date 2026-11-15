@@ -31,7 +31,31 @@
   --color-accent-soft: #fdede6;
 
   /* いちばん濃い色。見出しの文字・選ばれているボタン・優勝の帯・シートの暗幕（ink/45） */
-  --color-ink: #17150f;
+  --color-ink: #171717;
+
+  /* 全画面の色合い（黒・金・白。docs/specs/2026-11-15-courts-redesign.md）。
+     背景・上の帯・下のメニュー・試合速報のカードの色は、ここの変数だけから取る（ばらばらに色を書かない）。
+     黒い帯は「帯の色」であって、ダークモードではない（ダークモードは使わない） */
+  --color-page: #ffffff;
+  /* 上の帯・下のメニュー */
+  --color-bar: #171c23;
+  --color-bar-sub: #c9c4b9;
+  --color-bar-muted: #d8d3c8;
+  --color-nav-active: #262c35;
+  /* 金（自分の試合の枠・下のメニューで開いている項目・旗の印）と、その淡い地・淡い枠 */
+  --color-gold: #d5a23c;
+  --color-gold-soft: #fff4df;
+  --color-gold-edge: #f1ddb4;
+  /* 通常の枠線（カード・ボタン） */
+  --color-line: #e2deda;
+  /* ＋・［試合終了］の黒 */
+  --color-btn-dark: #242424;
+  /* 状態の札の地 */
+  --color-status-live: #def3e3;
+  --color-status-wait: #fff0d1;
+  /* 終わったゲームの札 */
+  --color-beige-chip: #f5f1e8;
+  --color-beige-chip-line: #ddd5c4;
 
   /* 入場画面の下地・枠線・薄い文字。運用中のアプリ（badminton-app）の
      入場画面から実測した色。**body には敷かない**（Konsta の配色と喧嘩して
@@ -45,10 +69,15 @@
   --color-self-row: #fff8ec;
 
   /* チームの色分け（1〜4 の 4 色のみ）。myページのアバターの背景に使う */
-  --color-team-1: #c0392b;
-  --color-team-2: #3f8f5f;
-  --color-team-3: #2f6fd0;
-  --color-team-4: #d8a72b;
+  --color-team-1: #c82929;
+  --color-team-2: #177734;
+  --color-team-3: #1769cc;
+  --color-team-4: #b87a00;
+  /* 試合速報の得点板の枠の地（チームの色の淡色） */
+  --color-team-1-bg: #fbe6e6;
+  --color-team-2-bg: #e2f3e7;
+  --color-team-3-bg: #dfecff;
+  --color-team-4-bg: #fff0ca;
 
   /* Web フォントは読み込まない。体育館の電波が細いことがあるのと、
      日本語は端末標準（iOS: ヒラギノ / Android: Noto Sans CJK）で十分きれいに出るため。 */

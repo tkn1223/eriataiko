@@ -148,8 +148,17 @@ describe('得点板のカード', () => {
   test('枠の色は、そのチームの色（class-labels.ts の色）になっている', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByTestId('team-panel-A').className).toContain('border-t-team-1');
-    expect(screen.getByTestId('team-panel-B').className).toContain('border-t-team-2');
+    expect(screen.getByTestId('team-panel-A').className).toContain('border-team-1');
+    expect(screen.getByTestId('team-panel-B').className).toContain('border-team-2');
+  });
+
+  test('点数は、自分の試合では大きく（48px）、ほかの試合では 38px', () => {
+    const { unmount } = renderCard({ court: { live: { ...live, isMine: true } } });
+    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('text-[48px]');
+    unmount();
+
+    renderCard({ court: { live } });
+    expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toHaveClass('text-[38px]');
   });
 
   test('「コートN」と部の札が 1 行目に出て、「結果LIVE」の LIVE の点滅は出ない', () => {
@@ -226,17 +235,17 @@ describe('得点板のカード', () => {
     });
   });
 
-  test('自分の試合のカードは枠がオレンジで囲まれ、「あなたの試合」の文字は出ない', () => {
+  test('自分の試合のカードは枠が太い金色で囲まれ、「あなたの試合」の文字は出ない', () => {
     renderCard({ court: { live: { ...live, isMine: true } } });
 
-    expect(screen.getByTestId('court-card-1').className).toContain('border-accent');
+    expect(screen.getByTestId('court-card-1')).toHaveClass('border-gold');
     expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
   });
 
   test('自分の試合でないカードは、オレンジの枠にならない', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByTestId('court-card-1').className).not.toContain('border-accent');
+    expect(screen.getByTestId('court-card-1')).not.toHaveClass('border-gold');
   });
 
   test('進行中のカードに「次」の行は出ない', () => {
@@ -283,8 +292,8 @@ describe('担当の欄', () => {
       button.className.split(' ').filter((name) => /^(min-h|h|w|min-w|flex)-/.test(name));
     for (const button of buttons) expect(sizeClasses(button)).toEqual(sizeClasses(buttons[0]));
     // ＋は黒地に白、−は白地
-    expect(buttons[1].className).toContain('bg-ink');
-    expect(buttons[0].className).not.toContain('bg-ink');
+    expect(buttons[1].className).toContain('bg-btn-dark');
+    expect(buttons[0].className).not.toContain('bg-btn-dark');
 
     fireEvent.click(buttons[1]);
     expect(onIncrement).toHaveBeenCalledWith(1, 'A');
@@ -293,7 +302,7 @@ describe('担当の欄', () => {
   test('自分が担当のとき、［−］［＋］の下に［試合を終了する］と［担当をやめる］が出る', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('bg-ink');
+    expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('bg-btn-dark');
     expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
   });
 
@@ -329,7 +338,7 @@ describe('1つ前の［直す］を出す相手', () => {
     });
 
     const row = screen.getByTestId('previous-match-1');
-    expect(within(row).getByText('1つ前')).toBeInTheDocument();
+    expect(within(row).getByText('1つ前の試合')).toBeInTheDocument();
     expect(row).toHaveTextContent('愛知北 21-15 愛知西');
     expect(within(row).getByRole('button', { name: '訂正' })).toBeInTheDocument();
   });

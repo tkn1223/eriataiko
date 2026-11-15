@@ -37,4 +37,16 @@ describe('BottomNav', () => {
     expect(screen.getByRole('link', { name: /対戦表/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: /試合速報/ })).not.toHaveAttribute('aria-current');
   });
+
+  test('黒地で、開いている項目だけ金色。どの項目にも印（SVG）が付く', () => {
+    mockPathname.mockReturnValue('/courts');
+    render(<BottomNav />);
+
+    expect(screen.getByRole('navigation', { name: 'メインメニュー' })).toHaveClass('bg-bar');
+    expect(screen.getByRole('link', { name: /試合速報/ })).toHaveClass('text-gold');
+    expect(screen.getByRole('link', { name: /進行表/ })).not.toHaveClass('text-gold');
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.querySelector('svg')).not.toBeNull();
+    }
+  });
 });

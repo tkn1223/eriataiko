@@ -262,12 +262,14 @@ test('上の 1 行に、大会名と「予選リーグ ◯/◯ 試合」が並�
   );
   await expect(progress).toBeVisible();
 
-  // 大会名と同じ 1 行（縦の位置がほぼ同じ）
+  // 上の帯の中で、大会名の下に並ぶ（同じ帯の 2 行）
+  const bar = page.getByRole('banner');
+  await expect(bar).toContainText('予選リーグ');
   const titleBox = (await title.boundingBox())!;
   const progressBox = (await progress.boundingBox())!;
-  expect(
-    Math.abs(titleBox.y + titleBox.height / 2 - (progressBox.y + progressBox.height / 2))
-  ).toBeLessThan(12);
+  expect(progressBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 1);
+  const barBox = (await bar.boundingBox())!;
+  expect(progressBox.y + progressBox.height).toBeLessThanOrEqual(barBox.y + barBox.height);
 
   await expect(page.getByText('結果LIVE')).toHaveCount(0);
   await expect(page.getByText('コートの状況')).toHaveCount(0);
@@ -301,10 +303,10 @@ test.describe('自分の試合', () => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
-    await expect(courtCard(page, 1)).toHaveClass(/border-accent/);
+    await expect(courtCard(page, 1)).toHaveClass(/(^|\s)border-gold(\s|$)/);
     await expect(page.getByText('あなたの試合')).toHaveCount(0);
     // ほかのコートはオレンジの枠にならない
-    await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/border-accent/);
+    await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/(^|\s)border-gold(\s|$)/);
   });
 
   test('観戦者には、どのカードもオレンジの枠にならない', async ({ page }) => {
@@ -312,7 +314,7 @@ test.describe('自分の試合', () => {
     await page.goto('/courts');
 
     await expect(courtCard(page, 1)).toBeVisible();
-    await expect(page.locator('[data-testid^="court-card-"].border-accent')).toHaveCount(0);
+    await expect(page.locator('[data-testid^="court-card-"].border-gold')).toHaveCount(0);
   });
 });
 

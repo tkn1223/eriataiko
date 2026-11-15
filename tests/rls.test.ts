@@ -31,17 +31,25 @@ describe('書き込み記録（write_logs）', () => {
 });
 
 /**
- * 大会データの表（11 表）。
+ * 大会データの表（12 表）。
  *
  * ここが破れると、URL を知っている人なら誰でも得点や組み合わせを書き換えられる。
  *
- * 判定のしかたに 2 つ決まりがある。
+ * 判定のしかたに 3 つ決まりがある。
  *
- * 1. **エラーの有無で判定しない。** RLS で対象行が 0 件になると、エラーを返さず
- *    何もしない場合がある。かならず admin で読み直して確かめる。
+ * 1. **エラーの有無だけで判定しない。** 書き換え・削除は RLS で対象行が 0 件になると、
+ *    エラーを返さず何もしない場合がある。かならず admin で読み直して確かめる。
+ *    追加だけは弾かれると必ずエラー（42501 = 権限が無い）を返すので、その中身も確かめる。
+ *    重複や参照切れのエラーで落ちていたら、RLS を確かめられていないことになるため。
  * 2. **行数を数えない。** テストファイルは同じデータベースに対して同時に走るので、
  *    別のファイルが行を足すと数がずれて、原因の分からない失敗になる（実際になった）。
  *    「狙った 1 行があるか / 変わっていないか」だけを見る。
+ * 3. **狙う行は、ほかのファイルが触らない行にする。** ほかのファイルは自分用の試合を
+ *    作って出場者を足し、終わったら消す。「先頭の 1 行」「出場者のいない試合」のように
+ *    探して選ぶと、その途中の行を拾ってしまう。拾った試合に向こうが出場者を 3 人足して
+ *    「anon が足した行が 3 行ある」と落ちたことがある（anon の追加はちゃんと弾かれていた）。
+ *    そこで、追加を試す試合はこのファイルで作り、書き換え・削除を試す行は
+ *    サンプルデータ（いちばん古い行）から選ぶ。
  */
 describe('大会データの表は anon から読めるが書けない', () => {
   type Case = {
@@ -57,12 +65,24 @@ describe('大会データの表は anon から読めるが書けない', () => {
 
   const cases: Record<string, Case> = {};
   let sparePlayerId = '';
-  /** チームの追加を試す先。サンプルの大会はチーム 1〜4 が埋まっていて、空き番号が無い。 */
+  /**
+   * このファイル専用の空の大会。チームの追加を試す先であり、出場者・得点の追加を試す試合の置き場。
+   * サンプルの大会はチーム 1〜4 が埋まっていて、空き番号が無い。
+   */
   let spareCompetitionId = '';
 
   beforeAll(async () => {
+    // いちばん古い行＝サンプルデータを選ぶ。並びを指定しないと、ほかのファイルが
+    // 作ってすぐ消す行が先頭に来ることがあり、「消せないはずの行が消えた」と落ちる。
+    // サンプルは同じ時刻に入るので、id で並びを固定する。
     const one = async (table: string, columns = 'id') => {
-      const { data, error } = await admin.from(table).select(columns).limit(1).single();
+      const { data, error } = await admin
+        .from(table)
+        .select(columns)
+        .order('created_at')
+        .order('id')
+        .limit(1)
+        .single();
       expect(error, `${table} にサンプルデータが必要: ${error?.message}`).toBeNull();
       return data as unknown as Record<string, string>;
     };
@@ -99,13 +119,35 @@ describe('大会データの表は anon から読めるが書けない', () => {
       .single();
     spareCompetitionId = spareCompetition.data!.id;
 
-    // 出場者がまだ 1 人もいない試合を探す（決勝の枠はこれに当たる）。
+    // 出場者も得点もまだ無い試合を、このファイル専用に作る（決まり 3）。
     // 埋まっている試合を狙うと、RLS ではなく重複で落ちて意味が無くなる。
-    const { data: allMatches } = await admin.from('matches').select('id');
-    const { data: taken } = await admin.from('match_players').select('match_id');
-    const takenIds = new Set((taken ?? []).map((r) => r.match_id));
-    const emptyMatch = (allMatches ?? []).find((m) => !takenIds.has(m.id))!;
-    expect(emptyMatch, '出場者のいない試合がサンプルデータに必要').toBeDefined();
+    // 探して選ぶと、ほかのファイルが作った途中の試合を拾うことがある。
+    // 置き場は専用の空の大会なので、ほかのファイルの集計にも混ざらない。
+    const insertOne = async (table: string, row: Record<string, unknown>) => {
+      const { data, error } = await admin.from(table).insert(row).select('id').single();
+      expect(error, `${table} の準備に失敗: ${error?.message}`).toBeNull();
+      return (data as { id: string }).id;
+    };
+    const ownDivisionId = await insertOne('divisions', {
+      competition_id: spareCompetitionId,
+      name: 'rls-テスト用',
+    });
+    const ownStageId = await insertOne('stages', {
+      competition_id: spareCompetitionId,
+      name: 'rls-テスト用',
+      format: 'league',
+    });
+    const ownMatchupId = await insertOne('matchups', {
+      stage_id: ownStageId,
+      round_name: 'rls-テスト用',
+      side_a_slot_label: 'あ',
+      side_b_slot_label: 'い',
+    });
+    const ownEmptyMatchId = await insertOne('matches', {
+      matchup_id: ownMatchupId,
+      division_id: ownDivisionId,
+      order_in_matchup: 1,
+    });
 
     // 出場者の書き換え用に、その試合に出ていない参加を 1 つ探す
     const { data: usedParticipants } = await admin
@@ -184,18 +226,18 @@ describe('大会データの表は anon から読めるが書けない', () => {
     };
     cases.match_players = {
       insert: {
-        match_id: emptyMatch.id,
+        match_id: ownEmptyMatchId,
         side: 'a',
         participant_id: participant.id,
         order_in_pair: 1,
       },
-      findInserted: { match_id: emptyMatch.id },
+      findInserted: { match_id: ownEmptyMatchId },
       update: { id: matchPlayer.id, column: 'participant_id', value: spareParticipant!.id },
       keepId: matchPlayer.id,
     };
     cases.game_scores = {
-      insert: { match_id: emptyMatch.id, game_number: 99 },
-      findInserted: { match_id: emptyMatch.id, game_number: 99 },
+      insert: { match_id: ownEmptyMatchId, game_number: 99 },
+      findInserted: { match_id: ownEmptyMatchId, game_number: 99 },
       update: { id: gameScore.id, column: 'side_a_score', value: 999 },
       keepId: gameScore.id,
     };
@@ -210,6 +252,7 @@ describe('大会データの表は anon から読めるが書けない', () => {
   afterAll(async () => {
     if (sparePlayerId) await admin.from('players').delete().eq('id', sparePlayerId);
     if (spareCompetitionId) {
+      // 中に作った部・段階・対戦・試合も、大会ごと連鎖して消える
       await admin.from('competitions').delete().eq('id', spareCompetitionId);
     }
   });
@@ -238,7 +281,13 @@ describe('大会データの表は anon から読めるが書けない', () => {
   test.each(tables)('%s は追加できない', async (table) => {
     const { insert, findInserted } = cases[table];
 
-    await anon.from(table).insert(insert);
+    const { error } = await anon.from(table).insert(insert);
+    // 権限が無いこと（42501）で弾かれているか。重複や参照切れで落ちているなら、
+    // 中身の値が間違っていて RLS を確かめられていない（決まり 1）
+    expect(
+      error?.code,
+      `権限が無いことで弾かれるはず（実際: ${error?.message ?? 'エラー無し＝追加できてしまった'}）`
+    ).toBe('42501');
 
     const { data } = await admin.from(table).select('id').match(findInserted);
     expect(data ?? [], 'anon が追加した行が入ってしまっている').toEqual([]);
@@ -278,8 +327,11 @@ describe('試合の入力担当の列は anon から読めるが書けない', (
   const scoredAt = '2027-01-22T10:00:00.000Z';
 
   beforeAll(async () => {
-    const { data: match } = await admin.from('matches').select('id').limit(1).single();
-    const { data: participant } = await admin.from('participants').select('id').limit(1).single();
+    // サンプルデータ（いちばん古い行）を選ぶ。ほかのファイルが作ってすぐ消す試合を拾わないため
+    const oldest = (table: string) =>
+      admin.from(table).select('id').order('created_at').order('id').limit(1).single();
+    const { data: match } = await oldest('matches');
+    const { data: participant } = await oldest('participants');
     matchId = match!.id;
     participantId = participant!.id;
     await admin

@@ -194,7 +194,7 @@ describe('得点板のカード', () => {
     renderCard({ court: { live } });
 
     expect(screen.getByText('第1ゲーム')).toBeInTheDocument();
-    expect(screen.queryByText(/の勝ち/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/第\dG：/)).not.toBeInTheDocument();
   });
 
   describe('第2ゲーム以降', () => {
@@ -207,11 +207,11 @@ describe('得点板のカード', () => {
       ],
     };
 
-    test('「第2ゲーム」と、終わったゲームの「第1ゲーム 21-15 愛知南の勝ち」が出る', () => {
+    test('「第2ゲーム」と、終わったゲームの「第1G：21-15」が出る', () => {
       renderCard({ court: { live: final } });
 
       expect(screen.getByText('第2ゲーム')).toBeInTheDocument();
-      expect(screen.getByText('第1ゲーム 21-15 愛知南の勝ち')).toBeInTheDocument();
+      expect(screen.getByText('第1G：21-15')).toBeInTheDocument();
       // 枠に出ているのは、いま入れている第2ゲームの点
       expect(within(screen.getByTestId('team-panel-A')).getByText('14')).toBeInTheDocument();
     });
@@ -222,7 +222,7 @@ describe('得点板のカード', () => {
       });
 
       expect(screen.getByText('第1ゲーム')).toBeInTheDocument();
-      expect(screen.queryByText(/の勝ち/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/第\dG：/)).not.toBeInTheDocument();
     });
   });
 
@@ -248,11 +248,11 @@ describe('得点板のカード', () => {
 });
 
 describe('担当の欄', () => {
-  test('担当がいない試合で、選手には赤い点線の［得点を入力する］と「入力担当がまだいません」が出る', () => {
+  test('担当がいない試合で、選手には赤い点線の［入力を担当する］と「入力担当がまだいません」が出る', () => {
     const onClaim = vi.fn();
     renderCard({ court: { live }, scorer: scorerControl({ kind: 'vacant' }, { onClaim }) });
 
-    const claim = screen.getByRole('button', { name: '得点を入力する' });
+    const claim = screen.getByRole('button', { name: '入力を担当する' });
     expect(claim.className).toContain('border-dashed');
     expect(claim.className).toContain('border-live');
     expect(within(claim).getByText('入力担当がまだいません')).toBeInTheDocument();
@@ -263,7 +263,7 @@ describe('担当の欄', () => {
   test('担当がいない試合でも、観戦者には何も出ない', () => {
     renderCard({ court: { live }, canInput: false, scorer: scorerControl({ kind: 'vacant' }) });
 
-    expect(screen.queryByRole('button', { name: '得点を入力する' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '入力を担当する' })).not.toBeInTheDocument();
     expect(screen.queryByText('入力担当がまだいません')).not.toBeInTheDocument();
     expect(screen.queryByText(/入力する人がいません/)).not.toBeInTheDocument();
   });
@@ -290,11 +290,11 @@ describe('担当の欄', () => {
     expect(onIncrement).toHaveBeenCalledWith(1, 'A');
   });
 
-  test('自分が担当のとき、［−］［＋］の下に［試合を終了する］と［入力をやめる］が出る', () => {
+  test('自分が担当のとき、［−］［＋］の下に［試合を終了する］と［担当をやめる］が出る', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByRole('button', { name: '試合を終了する' }).className).toContain('bg-ink');
-    expect(screen.getByRole('button', { name: '入力をやめる' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '試合終了' }).className).toContain('bg-ink');
+    expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
   });
 
   test('ほかの人が担当の試合で、選手には担当の名前（チーム名つき）と［引き継ぐ］が出る', () => {
@@ -305,7 +305,7 @@ describe('担当の欄', () => {
 
     expect(screen.getByText('愛知北のじろうさん')).toBeInTheDocument();
     expect(screen.getByText('が入力しています')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '引き継ぐ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '入力を引き継ぐ' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /得点を1増やす/ })).not.toBeInTheDocument();
   });
 
@@ -317,7 +317,7 @@ describe('担当の欄', () => {
     });
 
     expect(screen.queryByText(/じろう/)).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '引き継ぐ' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '入力を引き継ぐ' })).not.toBeInTheDocument();
   });
 });
 
@@ -331,7 +331,7 @@ describe('1つ前の［直す］を出す相手', () => {
     const row = screen.getByTestId('previous-match-1');
     expect(within(row).getByText('1つ前')).toBeInTheDocument();
     expect(row).toHaveTextContent('愛知北 21-15 愛知西');
-    expect(within(row).getByRole('button', { name: '直す' })).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: '訂正' })).toBeInTheDocument();
   });
 
   test('複数ゲーム制の 1つ前は、点数ではなく取ったゲーム数を出す', () => {
@@ -359,7 +359,7 @@ describe('1つ前の［直す］を出す相手', () => {
     renderCard({ court: { live, previous }, scorer: scorerControl({ kind: 'mine' }) });
 
     expect(
-      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '直す' })
+      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '訂正' })
     ).toBeInTheDocument();
   });
 
@@ -368,7 +368,7 @@ describe('1つ前の［直す］を出す相手', () => {
       const { unmount } = renderCard({ court: { live, previous }, scorer: scorerControl(view) });
 
       expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: '直す' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
       unmount();
     }
   });
@@ -416,7 +416,7 @@ describe('1つ前の知らせ', () => {
 
     const row = screen.getByTestId('previous-match-1');
     expect(within(row).getByRole('status')).toHaveTextContent('終了した試合です。');
-    expect(within(row).queryByRole('button', { name: '直す' })).not.toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: '訂正' })).not.toBeInTheDocument();
   });
 });
 
@@ -426,7 +426,7 @@ describe('試合が全部終わったコート', () => {
 
     expect(screen.getByTestId('court-card-1')).toBeInTheDocument();
     expect(
-      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '直す' })
+      within(screen.getByTestId('previous-match-1')).getByRole('button', { name: '訂正' })
     ).toBeInTheDocument();
     expect(screen.queryByText('このコートの試合は終わりました')).not.toBeInTheDocument();
   });

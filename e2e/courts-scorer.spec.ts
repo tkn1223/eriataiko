@@ -126,22 +126,22 @@ async function openCourtsAs(
 }
 
 test.describe('取る', () => {
-  test('担当がいない進行中の試合に「入力する人がいません」と「得点を入力する」が出る。押すと自分が担当になり、＋ − と「試合を終了する」が出る', async ({
+  test('担当がいない進行中の試合に「入力担当がまだいません」と「入力を担当する」が出る。押すと自分が担当になり、＋ − と「試合終了」が出る', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
     const card = courtCard(mine.page, LIVE_COURT);
 
-    await expect(card.getByText('⚠ 入力する人がいません')).toBeVisible();
+    await expect(card.getByText('入力担当がまだいません')).toBeVisible();
     await expect(plusButton(card, LIVE_A)).toHaveCount(0);
-    await expect(card.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: '試合終了' })).toHaveCount(0);
 
-    await card.getByRole('button', { name: '得点を入力する' }).click();
+    await card.getByRole('button', { name: '入力を担当する' }).click();
 
     await expect(plusButton(card, LIVE_A)).toBeVisible();
-    await expect(card.getByRole('button', { name: '試合を終了する' })).toBeVisible();
-    await expect(card.getByRole('button', { name: '入力をやめる' })).toBeVisible();
-    await expect(card.getByText(/入力する人がいません/)).toHaveCount(0);
+    await expect(card.getByRole('button', { name: '試合終了' })).toBeVisible();
+    await expect(card.getByRole('button', { name: '担当をやめる' })).toBeVisible();
+    await expect(card.getByText('入力担当がまだいません')).toHaveCount(0);
 
     // データベースの担当が自分になり、記録が残る
     const participantId = await findParticipantId(MINAMI.team, MINAMI.name);
@@ -153,35 +153,35 @@ test.describe('取る', () => {
 
     // 担当は試合に付く。ほかのコートの試合は担当がいないまま
     await expect(
-      courtCard(mine.page, OTHER_COURT).getByText('⚠ 入力する人がいません')
+      courtCard(mine.page, OTHER_COURT).getByText('入力担当がまだいません')
     ).toBeVisible();
 
     await mine.context.close();
   });
 
-  test('ほかの人の画面には「愛知南のたろうさんが入力しています」（チーム名つき）と「引き継ぐ」がその場で出る（読み直さない）', async ({
+  test('ほかの人の画面には「愛知南のたろうさんが入力しています」（チーム名つき）と「入力を引き継ぐ」がその場で出る（読み直さない）', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
     const other = await openCourtsAs(browser, KITA);
     const cardOnOther = courtCard(other.page, LIVE_COURT);
-    await expect(cardOnOther.getByText('⚠ 入力する人がいません')).toBeVisible();
+    await expect(cardOnOther.getByText('入力担当がまだいません')).toBeVisible();
 
     await takeScorer(courtCard(mine.page, LIVE_COURT));
 
-    await expect(cardOnOther.getByText(`${MINAMI_LABEL}さんが入力しています`)).toBeVisible({
+    await expect(cardOnOther.getByText(`${MINAMI_LABEL}さん`)).toBeVisible({
       timeout: 5000,
     });
-    await expect(cardOnOther.getByRole('button', { name: '引き継ぐ' })).toBeVisible();
+    await expect(cardOnOther.getByRole('button', { name: '入力を引き継ぐ' })).toBeVisible();
     await expect(plusButton(cardOnOther, LIVE_A)).toHaveCount(0);
-    await expect(cardOnOther.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+    await expect(cardOnOther.getByRole('button', { name: '試合終了' })).toHaveCount(0);
     expect(other.refreshes.count).toBe(0);
 
     await mine.context.close();
     await other.context.close();
   });
 
-  test('呼出待ちのコートも、先に「得点を入力する」を押す。最初の 1 点で LIVE になる', async ({
+  test('呼出待ちのコートも、先に「入力を担当する」を押す。最初の 1 点で「試合中」になる', async ({
     browser,
   }) => {
     await createMatchesScenario([
@@ -204,10 +204,10 @@ test.describe('取る', () => {
     await expect(card.getByText('呼出待ち')).toBeVisible();
     await expect(plusButton(card, LIVE_A)).toHaveCount(0);
 
-    await card.getByRole('button', { name: '得点を入力する' }).click();
+    await card.getByRole('button', { name: '入力を担当する' }).click();
     await plusButton(card, LIVE_A).click();
 
-    await expect(card.getByText('LIVE')).toBeVisible();
+    await expect(card.getByTestId('court-status')).toHaveText('試合中');
     await expect.poll(async () => (await findMatchResult(matchIds.waiting))?.status).toBe('live');
     await expect
       .poll(() => findSavedGameScore(matchIds.waiting, 1))
@@ -225,7 +225,7 @@ test.describe('取る', () => {
     const card = courtCard(mine.page, LIVE_COURT);
     await mine.page.route('**/api/matches/*/scorer', (route) => route.abort());
 
-    await card.getByRole('button', { name: '得点を入力する' }).click();
+    await card.getByRole('button', { name: '入力を担当する' }).click();
     await expect(card.getByRole('status')).toContainText('入力の担当を取れていません');
     await plusButton(card, LIVE_A).click();
 
@@ -245,15 +245,15 @@ test.describe('取る', () => {
 });
 
 test.describe('引き継ぐ', () => {
-  test('「引き継ぐ」→ 確認「◯◯さんが入れています。引き継ぎますか？」→ OK で担当が移る。戻るなら移らない', async ({
+  test('「入力を引き継ぐ」→ 確認「◯◯さんが入れています。引き継ぎますか？」→ OK で担当が移る。戻るなら移らない', async ({
     browser,
   }) => {
     await setMatchScorerDirectly(matchIds.live, await findParticipantId(KITA.team, KITA.name), 1);
     const mine = await openCourtsAs(browser, MINAMI);
     const card = courtCard(mine.page, LIVE_COURT);
-    await expect(card.getByText(`${KITA_LABEL}さんが入力しています`)).toBeVisible();
+    await expect(card.getByText(`${KITA_LABEL}さん`)).toBeVisible();
 
-    await card.getByRole('button', { name: '引き継ぐ' }).click();
+    await card.getByRole('button', { name: '入力を引き継ぐ' }).click();
     await expect(
       mine.page.getByText(`${KITA_LABEL}さんが入れています。引き継ぎますか？`)
     ).toBeVisible();
@@ -263,7 +263,7 @@ test.describe('引き継ぐ', () => {
       await findParticipantId(KITA.team, KITA.name)
     );
 
-    await card.getByRole('button', { name: '引き継ぐ' }).click();
+    await card.getByRole('button', { name: '入力を引き継ぐ' }).click();
     await mine.page.getByRole('button', { name: 'OK' }).click();
 
     await expect(plusButton(card, LIVE_A)).toBeVisible();
@@ -300,7 +300,7 @@ test.describe('引き継ぐ', () => {
     expect(await findSavedGameScore(matchIds.live, 1)).toEqual({ sideAScore: 5, sideBScore: 3 });
 
     // 読み直しで、画面もいまの担当の表示に変わる。知らせは「閉じる」まで残り、閉じると消える
-    await expect(previousCard.getByText(`${KITA_LABEL}さんが入力しています`)).toBeVisible({
+    await expect(previousCard.getByText(`${KITA_LABEL}さん`)).toBeVisible({
       timeout: 10_000,
     });
     await expect(plusButton(previousCard, LIVE_A)).toHaveCount(0);
@@ -312,7 +312,7 @@ test.describe('引き継ぐ', () => {
     await takeScorer(courtCard(previous.page, OTHER_COURT));
 
     // 前の人も引き継ぎ直せる
-    await previousCard.getByRole('button', { name: '引き継ぐ' }).click();
+    await previousCard.getByRole('button', { name: '入力を引き継ぐ' }).click();
     await previous.page.getByRole('button', { name: 'OK' }).click();
     await expect
       .poll(async () => (await findMatchScorer(matchIds.live)).participantId)
@@ -337,9 +337,7 @@ test.describe('引き継ぐ', () => {
       timeout: 5000,
     });
     // 前の人の画面は、いまの担当の名前を出し、＋ は出ない
-    await expect(
-      courtCard(previous.page, LIVE_COURT).getByText(`${KITA_LABEL}さんが入力しています`)
-    ).toBeVisible();
+    await expect(courtCard(previous.page, LIVE_COURT).getByText(`${KITA_LABEL}さん`)).toBeVisible();
 
     await previous.context.close();
     await next.context.close();
@@ -347,23 +345,23 @@ test.describe('引き継ぐ', () => {
 });
 
 test.describe('5 分たった担当', () => {
-  test('最後に点を入れてから 5 分たつと、ほかの人の画面が「入力する人がいません」に変わり、確認なしで取れる', async ({
+  test('最後に点を入れてから 5 分たつと、ほかの人の画面が「入力担当がまだいません」に変わり、確認なしで取れる', async ({
     browser,
   }) => {
     const kitaId = await findParticipantId(KITA.team, KITA.name);
     await setMatchScorerDirectly(matchIds.live, kitaId, 1);
     const mine = await openCourtsAs(browser, MINAMI);
     const card = courtCard(mine.page, LIVE_COURT);
-    await expect(card.getByText(`${KITA_LABEL}さんが入力しています`)).toBeVisible();
-    await expect(card.getByRole('button', { name: '引き継ぐ' })).toBeVisible();
+    await expect(card.getByText(`${KITA_LABEL}さん`)).toBeVisible();
+    await expect(card.getByRole('button', { name: '入力を引き継ぐ' })).toBeVisible();
 
     // データベースの時刻をずらして「5 分たった」を作る（4 分前では、まだ変わらない）
     await shiftMatchScorerTime(matchIds.live, 4);
-    await expect(card.getByText(`${KITA_LABEL}さんが入力しています`)).toBeVisible();
+    await expect(card.getByText(`${KITA_LABEL}さん`)).toBeVisible();
     await shiftMatchScorerTime(matchIds.live, 6);
-    await expect(card.getByText('⚠ 入力する人がいません')).toBeVisible({ timeout: 5000 });
+    await expect(card.getByText('入力担当がまだいません')).toBeVisible({ timeout: 5000 });
 
-    await card.getByRole('button', { name: '得点を入力する' }).click();
+    await card.getByRole('button', { name: '入力を担当する' }).click();
 
     // 確認の画面は出ない。そのまま担当になる
     await expect(mine.page.getByRole('dialog')).toHaveCount(0);
@@ -402,23 +400,23 @@ test.describe('5 分たった担当', () => {
   });
 });
 
-test.describe('入力をやめる', () => {
-  test('「入力をやめる」で担当が外れ、ほかの人の画面に「入力する人がいません」が出る', async ({
+test.describe('担当をやめる', () => {
+  test('「担当をやめる」で担当が外れ、ほかの人の画面に「入力担当がまだいません」が出る', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
     const other = await openCourtsAs(browser, KITA);
     await takeScorer(courtCard(mine.page, LIVE_COURT));
-    await expect(
-      courtCard(other.page, LIVE_COURT).getByText(`${MINAMI_LABEL}さんが入力しています`)
-    ).toBeVisible({ timeout: 5000 });
+    await expect(courtCard(other.page, LIVE_COURT).getByText(`${MINAMI_LABEL}さん`)).toBeVisible({
+      timeout: 5000,
+    });
 
-    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '入力をやめる' }).click();
+    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '担当をやめる' }).click();
 
     await expect(
-      courtCard(mine.page, LIVE_COURT).getByText('⚠ 入力する人がいません')
+      courtCard(mine.page, LIVE_COURT).getByText('入力担当がまだいません')
     ).toBeVisible();
-    await expect(courtCard(other.page, LIVE_COURT).getByText('⚠ 入力する人がいません')).toBeVisible(
+    await expect(courtCard(other.page, LIVE_COURT).getByText('入力担当がまだいません')).toBeVisible(
       {
         timeout: 5000,
       }
@@ -434,15 +432,15 @@ test.describe('入力をやめる', () => {
 });
 
 test.describe('試合の終了は担当だけ', () => {
-  test('担当でない人には「試合を終了する」が出ない。入口を直接叩いても断られ、試合は終わらない', async ({
+  test('担当でない人には「試合終了」が出ない。入口を直接叩いても断られ、試合は終わらない', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
     await takeScorer(courtCard(mine.page, LIVE_COURT));
     const other = await openCourtsAs(browser, KITA);
     const cardOnOther = courtCard(other.page, LIVE_COURT);
-    await expect(cardOnOther.getByText(`${MINAMI_LABEL}さんが入力しています`)).toBeVisible();
-    await expect(cardOnOther.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+    await expect(cardOnOther.getByText(`${MINAMI_LABEL}さん`)).toBeVisible();
+    await expect(cardOnOther.getByRole('button', { name: '試合終了' })).toHaveCount(0);
 
     const response = await other.page.request.post(`/api/matches/${matchIds.live}/result`);
 
@@ -451,7 +449,7 @@ test.describe('試合の終了は担当だけ', () => {
     expect((await findMatchResult(matchIds.live))?.status).toBe('live');
 
     // 担当の人は終了できる
-    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '試合を終了する' }).click();
+    await courtCard(mine.page, LIVE_COURT).getByRole('button', { name: '試合終了' }).click();
     await mine.page.getByRole('button', { name: 'OK' }).click();
     await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
 
@@ -461,33 +459,51 @@ test.describe('試合の終了は担当だけ', () => {
 });
 
 test.describe('直す', () => {
-  test('1 つ前の「直す」は誰でも押せて、押した人がその試合の担当になる。ほかの人の画面には名前が映る', async ({
+  // コート 13 は、終わった試合（杉本・柳田 対 桃井・栗原）だけ。画面は、1つ前を出す相手を絞る
+  // （その試合に出た選手と、そのコートのいまの担当。入口は絞らない）
+  const DONE_PLAYER = { team: '愛知北', name: '杉本' } as const;
+  const DONE_PLAYER_LABEL = '愛知北の杉本';
+
+  test('全部終わったコートは、その試合に出ていない選手には「このコートの試合は終わりました」だけで、「訂正」は出ない', async ({
     browser,
   }) => {
     const mine = await openCourtsAs(browser, MINAMI);
+    const doneCard = courtCard(mine.page, DONE_COURT);
+
+    await expect(doneCard.getByText('このコートの試合は終わりました')).toBeVisible();
+    await expect(mine.page.getByTestId(`previous-match-${DONE_COURT}`)).toHaveCount(0);
+    await expect(doneCard.getByRole('button', { name: '訂正' })).toHaveCount(0);
+
+    await mine.context.close();
+  });
+
+  test('1 つ前の「訂正」は、その試合に出た選手に出る。押した人がその試合の担当になり、ほかの人の画面には名前が映る', async ({
+    browser,
+  }) => {
+    const mine = await openCourtsAs(browser, DONE_PLAYER);
     const watcher = await openCourtsAs(browser, KITA);
     await expect(mine.page.getByTestId(`previous-match-${DONE_COURT}`)).toBeVisible();
 
     await mine.page
       .getByTestId(`previous-match-${DONE_COURT}`)
-      .getByRole('button', { name: '直す' })
+      .getByRole('button', { name: '訂正' })
       .click();
     await mine.page.getByRole('button', { name: 'OK' }).click();
 
     const fixing = mine.page.getByTestId(`fixing-match-${DONE_COURT}`);
     await expect(fixing.getByText('直し中')).toBeVisible();
-    // 押した人は、そのまま直せる（「得点を入力する」を押さなくてよい）
+    // 押した人は、そのまま直せる（「入力を担当する」を押さなくてよい）
     await expect(
       fixing.getByRole('button', { name: '杉本・柳田の第1ゲームの得点を1増やす' })
     ).toBeVisible();
     await expect(fixing.getByRole('button', { name: 'もう一度終了する' })).toBeVisible();
     await expect
       .poll(async () => (await findMatchScorer(matchIds.done)).participantId)
-      .toBe(await findParticipantId(MINAMI.team, MINAMI.name));
+      .toBe(await findParticipantId(DONE_PLAYER.team, DONE_PLAYER.name));
 
     // ほかの人の画面には、直している人の名前が出る
     const fixingOnWatcher = watcher.page.getByTestId(`fixing-match-${DONE_COURT}`);
-    await expect(fixingOnWatcher.getByText(`${MINAMI_LABEL}さんが入力しています`)).toBeVisible({
+    await expect(fixingOnWatcher.getByText(`${DONE_PLAYER_LABEL}さん`)).toBeVisible({
       timeout: 5000,
     });
     await expect(fixingOnWatcher.getByRole('button', { name: 'もう一度終了する' })).toHaveCount(0);
@@ -578,28 +594,22 @@ test.describe('送れていない点があるまま、別の人として入り�
 });
 
 test.describe('観戦者', () => {
-  test('「得点を入力する」「引き継ぐ」は出ない。担当の名前と、いないことは見える', async ({
+  test('「入力を担当する」「入力を引き継ぐ」は出ない。担当の名前も、いないことも出さない', async ({
     browser,
   }) => {
     await setMatchScorerDirectly(matchIds.live, await findParticipantId(MINAMI.team, MINAMI.name));
     const viewer = await openCourtsAs(browser, 'viewer');
 
-    await expect(
-      courtCard(viewer.page, LIVE_COURT).getByText(`${MINAMI_LABEL}さんが入力しています`)
-    ).toBeVisible();
-    await expect(
-      courtCard(viewer.page, OTHER_COURT).getByText('⚠ 入力する人がいません')
-    ).toBeVisible();
-    await expect(viewer.page.getByRole('button', { name: '得点を入力する' })).toHaveCount(0);
-    await expect(viewer.page.getByRole('button', { name: '引き継ぐ' })).toHaveCount(0);
+    await expect(courtCard(viewer.page, OTHER_COURT)).toBeVisible();
+    await expect(courtCard(viewer.page, LIVE_COURT).getByText(MINAMI_LABEL)).toHaveCount(0);
+    await expect(viewer.page.getByText('入力担当がまだいません')).toHaveCount(0);
+    await expect(viewer.page.getByText('が入力しています')).toHaveCount(0);
+    await expect(viewer.page.getByRole('button', { name: '入力を担当する' })).toHaveCount(0);
+    await expect(viewer.page.getByRole('button', { name: '入力を引き継ぐ' })).toHaveCount(0);
 
-    // 担当の変化はその場で映る
+    // 担当が変わっても、何も出ない
     await clearMatchScorerDirectly(matchIds.live);
-    await expect(
-      courtCard(viewer.page, LIVE_COURT).getByText('⚠ 入力する人がいません')
-    ).toBeVisible({
-      timeout: 5000,
-    });
+    await expect(viewer.page.getByText('入力担当がまだいません')).toHaveCount(0);
 
     await viewer.context.close();
   });
@@ -672,22 +682,42 @@ for (const width of [375, 390]) {
 
       // 担当がいない（コート 11）と、ほかの人が担当中（コート 12）
       await expect(
-        courtCard(mine.page, LIVE_COURT).getByText('⚠ 入力する人がいません')
+        courtCard(mine.page, LIVE_COURT).getByText('入力担当がまだいません')
       ).toBeVisible();
-      await expect(
-        courtCard(mine.page, OTHER_COURT).getByText(`${KITA_LABEL}さんが入力しています`)
-      ).toBeVisible();
+      await expect(courtCard(mine.page, OTHER_COURT).getByText(`${KITA_LABEL}さん`)).toBeVisible();
       await expectNoOverflow(mine.page, '担当がいない・ほかの人が担当中');
       expect(await tooSmallButtons(cards.locator('button'))).toEqual([]);
 
       // 引き継ぎの確認画面
-      await courtCard(mine.page, OTHER_COURT).getByRole('button', { name: '引き継ぐ' }).click();
+      await courtCard(mine.page, OTHER_COURT)
+        .getByRole('button', { name: '入力を引き継ぐ' })
+        .click();
       expect(await tooSmallButtons(mine.page.getByRole('dialog').locator('button'))).toEqual([]);
       await mine.page.getByRole('button', { name: '戻る' }).click();
 
       // 自分が担当（コート 11）と、断られた知らせ
       const card = courtCard(mine.page, LIVE_COURT);
       await takeScorer(card);
+
+      // ［−］［＋］の 4 つは同じ幅・同じ高さで、どれも 48px 以上。各チームの枠の真下に並ぶ
+      const plusMinus = await card
+        .getByRole('button', { name: /得点を1(増やす|減らす)/ })
+        .evaluateAll((buttons) =>
+          buttons.map((button) => {
+            const rect = button.getBoundingClientRect();
+            return { w: Math.round(rect.width), h: Math.round(rect.height), top: rect.top };
+          })
+        );
+      expect(plusMinus).toHaveLength(4);
+      for (const box of plusMinus) {
+        expect(box.h).toBeGreaterThanOrEqual(48);
+        expect(box.w).toBeGreaterThanOrEqual(44);
+        expect(Math.abs(box.w - plusMinus[0].w)).toBeLessThanOrEqual(1);
+        expect(box.h).toBe(plusMinus[0].h);
+      }
+      const panelBottom = (await card.getByTestId('team-panel-A').boundingBox())!;
+      expect(plusMinus[0].top).toBeGreaterThanOrEqual(panelBottom.y + panelBottom.height);
+
       await mine.page.route('**/api/matches/*/scores', (route) =>
         route.fulfill({
           status: 409,

@@ -11,11 +11,11 @@ test.beforeEach(async ({ page }) => {
   await enterAsViewer(page);
 });
 
-test('トップを開くと「結果LIVE」に飛ぶ', async ({ page }) => {
+test('トップを開くと「試合速報」に飛ぶ', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/courts$/);
   // メニューと URL が対応していることの確認でもある
-  await expect(page.getByRole('link', { name: /結果LIVE/ })).toHaveAttribute('href', '/courts');
+  await expect(page.getByRole('link', { name: /試合速報/ })).toHaveAttribute('href', '/courts');
 });
 
 test('ヘッダーと下のメニューが出る', async ({ page }) => {
@@ -23,7 +23,7 @@ test('ヘッダーと下のメニューが出る', async ({ page }) => {
   // ヘッダーの大会名は表（competitions.name）から読む。決め打ちの控えの文字
   // （src/config/tournament.ts）が出ていたら、表につながっていないということ。
   await expect(page.getByRole('heading', { name: 'えりあ太鼓カップ 2027' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /結果LIVE/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /試合速報/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /myページ/ })).toBeVisible();
 });
 
@@ -49,7 +49,7 @@ test('メニューは画面の一番下に貼り付いている', async ({ page 
   expect(menuBox.y + menuBox.height).toBe(viewportHeight);
 
   // 汗ばんだ指でも押せる大きさか（Apple / Google の指針が 44px 以上）
-  const linkBox = (await page.getByRole('link', { name: /結果LIVE/ }).boundingBox())!;
+  const linkBox = (await page.getByRole('link', { name: /試合速報/ }).boundingBox())!;
   expect(linkBox.height).toBeGreaterThanOrEqual(44);
 });
 
@@ -57,7 +57,7 @@ test('スクロールしてもメニューは消えない', async ({ page }) => 
   await page.goto('/');
 
   await page.evaluate(() => window.scrollBy(0, 500));
-  await expect(page.getByRole('link', { name: /結果LIVE/ })).toBeInViewport();
+  await expect(page.getByRole('link', { name: /試合速報/ })).toBeInViewport();
 });
 
 test('メニューを押すと画面が切り替わる', async ({ page }) => {

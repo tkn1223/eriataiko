@@ -8,7 +8,7 @@
  * （体育館の電波が細いので、追加の通信を増やさない）。
  */
 export const TABS = [
-  { href: '/courts', label: '結果LIVE', icon: '🔴' },
+  { href: '/courts', label: '試合速報', icon: '🔴' },
   { href: '/matches', label: '進行表', icon: '🕐' },
   { href: '/bracket', label: '対戦表', icon: '🏸' },
   { href: '/me', label: 'myページ', icon: '👤' },

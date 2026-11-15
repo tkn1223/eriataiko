@@ -471,7 +471,7 @@ test.describe('選手として入った人', () => {
 // 2 台のブラウザ: 結果LIVE の操作が、開き直さなくても進行表に映る
 // ---------------------------------------------------------------------
 
-test.describe('結果LIVE の操作が、別のブラウザの進行表にその場で映る', () => {
+test.describe('試合速報 の操作が、別のブラウザの進行表にその場で映る', () => {
   // 点・終了・試合を書き換えるので、次のテストでは作り直す
   test.beforeEach(markScenarioChanged);
 
@@ -491,7 +491,7 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     await page.goto('/courts');
     await caughtUp;
     await expect(courtCard(page, LIVE_COURT)).toBeVisible();
-    // ＋ − と「試合を終了する」は担当にだけ出る。先に「得点を入力する」を 1 度押す
+    // ＋ − と「試合終了」は担当にだけ出る。先に「入力を担当する」を 1 度押す
     await takeScorer(courtCard(page, LIVE_COURT));
     return { context, page };
   }
@@ -502,7 +502,7 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     });
   }
 
-  test('結果LIVE で ＋ を押すと、別のブラウザで開いている進行表に数秒で同じ点数が出る（開き直さない）', async ({
+  test('試合速報 で ＋ を押すと、別のブラウザで開いている進行表に数秒で同じ点数が出る（開き直さない）', async ({
     browser,
   }) => {
     const watcher = await openMatchesAs(browser, 'viewer');
@@ -519,7 +519,7 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     await watcher.context.close();
   });
 
-  test('結果LIVE で試合を終了すると、進行表のそのコートの「現在◯試合目」「残り◯試合」が変わる', async ({
+  test('試合速報 で試合を終了すると、進行表のそのコートの「現在◯試合目」「残り◯試合」が変わる', async ({
     browser,
   }) => {
     const watcher = await openMatchesAs(browser, 'viewer');
@@ -527,9 +527,7 @@ test.describe('結果LIVE の操作が、別のブラウザの進行表にその
     await expect(courtHeading(watcher.page, LIVE_COURT)).toContainText('残り2試合');
     const operator = await openCourtsAsPlayer(browser);
 
-    await courtCard(operator.page, LIVE_COURT)
-      .getByRole('button', { name: '試合を終了する' })
-      .click();
+    await courtCard(operator.page, LIVE_COURT).getByRole('button', { name: '試合終了' }).click();
     await operator.page.getByRole('button', { name: 'OK' }).click();
 
     await expect(courtHeading(watcher.page, LIVE_COURT)).toContainText('残り1試合', {
@@ -691,7 +689,7 @@ function trackLiveChannels(page: Page) {
   };
 }
 
-test.describe('結果LIVE と進行表を行き来する', () => {
+test.describe('試合速報 と進行表を行き来する', () => {
   // 点・終了・試合を書き換えるので、次のテストでは作り直す
   test.beforeEach(markScenarioChanged);
 
@@ -724,7 +722,7 @@ test.describe('結果LIVE と進行表を行き来する', () => {
 
     await expect.poll(() => channels.joinedTopics().length).toBe(1);
     for (let round = 0; round < 3; round += 1) {
-      await moveTo('結果LIVE', () =>
+      await moveTo('試合速報', () =>
         expect(page.getByTestId(`court-card-${LIVE_COURT}`)).toBeVisible()
       );
       await moveTo('進行表', () => expect(courtHeading(page, LIVE_COURT)).toBeVisible());

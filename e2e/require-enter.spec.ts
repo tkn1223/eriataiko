@@ -44,7 +44,7 @@ test.describe('入場したあと', () => {
     await page.goto('/courts');
 
     await expect(page).toHaveURL(/\/courts$/);
-    await expect(page.getByRole('heading', { name: '結果LIVE' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /試合速報/ })).toBeVisible();
   });
 
   test('名前で入った人もそのまま見られる', async ({ page }) => {
@@ -59,7 +59,7 @@ test.describe('入場したあと', () => {
     await page.goto('/courts');
 
     await expect(page).toHaveURL(/\/courts$/);
-    await expect(page.getByRole('heading', { name: '結果LIVE' })).toBeVisible();
+    await expect(page.getByRole('link', { name: /試合速報/ })).toBeVisible();
   });
 
   test('退場すると、また入場画面へ送られる', async ({ page }) => {

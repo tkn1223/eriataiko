@@ -259,11 +259,11 @@ function VacantScorerBanner({ canInput, onClaim }: { canInput: boolean; onClaim:
   return (
     <button
       type="button"
-      aria-label="得点を入力する"
+      aria-label="入力を担当する"
       onClick={onClaim}
       className="border-live text-live flex min-h-[60px] w-full flex-col items-center justify-center rounded-xl border-2 border-dashed bg-white px-3 py-2"
     >
-      <span className="text-[16px] font-extrabold">得点を入力する</span>
+      <span className="text-[16px] font-extrabold">入力を担当する</span>
       <span className="mt-0.5 text-[11px] font-bold">入力担当がまだいません</span>
     </button>
   );
@@ -295,7 +295,7 @@ function OtherScorerBanner({
         onClick={() => setSheetOpen(true)}
         className="border-ink min-h-11 shrink-0 rounded-[10px] border-[1.5px] bg-white px-3.5 text-[14px] font-extrabold"
       >
-        引き継ぐ
+        入力を引き継ぐ
       </button>
       <TakeOverConfirmSheet
         open={sheetOpen}
@@ -406,35 +406,19 @@ function CourtHeader({
 }
 
 /** 終わったゲームの札（「第1ゲーム 21-15 愛知南の勝ち」）。ゲームごとに 1 つ。 */
-function EarlierGameChips({
-  games,
-  teamA,
-  teamB,
-}: {
-  games: GameScore[];
-  teamA: CourtTeam;
-  teamB: CourtTeam;
-}) {
+function EarlierGameChips({ games }: { games: GameScore[] }) {
   if (games.length === 0) return null;
   return (
     <ul className="flex flex-wrap justify-center gap-1.5">
-      {games.map((score) => {
-        const winner = winnerOfGame(score);
-        const winnerText =
-          winner === 'A'
-            ? `${teamLabel(teamA)}の勝ち`
-            : winner === 'B'
-              ? `${teamLabel(teamB)}の勝ち`
-              : '引き分け';
-        return (
-          <li
-            key={score.gameNumber}
-            className="tabular rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-bold text-gray-600"
-          >
-            {`第${score.gameNumber}ゲーム ${score.sideAScore}-${score.sideBScore} ${winnerText}`}
-          </li>
-        );
-      })}
+      {games.map((score) => (
+        <li
+          key={score.gameNumber}
+          className="tabular rounded-full bg-gray-100 px-2.5 py-0.5 text-[11px] font-bold text-gray-600"
+        >
+          {/* 数字は左の枠（A 側）- 右の枠（B 側）の順。勝ったチーム名は出さない（短さを優先） */}
+          {`第${score.gameNumber}G：${score.sideAScore}-${score.sideBScore}`}
+        </li>
+      ))}
     </ul>
   );
 }
@@ -580,7 +564,7 @@ function ScoreBoard({
         maxGameCount={maxGameCount}
         onChange={canScore && maxGameCount > 1 ? onShownGameChange : undefined}
       />
-      <EarlierGameChips games={earlierPlayedGames(scores, shownGame)} teamA={teamA} teamB={teamB} />
+      <EarlierGameChips games={earlierPlayedGames(scores, shownGame)} />
       <div className="grid grid-cols-2 gap-2">
         <TeamPanel testId="team-panel-A" team={teamA} score={shown.sideAScore} />
         <TeamPanel testId="team-panel-B" team={teamB} score={shown.sideBScore} />
@@ -830,14 +814,14 @@ export function CourtLiveCard({
               onClick={handleFinishClick}
               className="bg-ink min-h-12 rounded-xl text-[14px] font-extrabold text-white"
             >
-              試合を終了する
+              試合終了
             </button>
             <button
               type="button"
               onClick={scorer.onRelease}
               className="min-h-12 rounded-xl border-[1.5px] border-gray-300 bg-white text-[14px] font-extrabold"
             >
-              入力をやめる
+              担当をやめる
             </button>
           </div>
 
@@ -1064,7 +1048,7 @@ function FixingPanel({
               onClick={scorer.onRelease}
               className="min-h-12 rounded-xl border-[1.5px] border-gray-300 bg-white text-[14px] font-extrabold"
             >
-              入力をやめる
+              担当をやめる
             </button>
           </div>
 
@@ -1155,7 +1139,7 @@ function PreviousRow({
             onClick={() => setSheetOpen(true)}
             className="min-h-11 shrink-0 rounded-[10px] border-[1.5px] border-gray-300 bg-white px-3.5 text-[13px] font-extrabold disabled:text-gray-400"
           >
-            直す
+            訂正
           </button>
         )}
       </div>

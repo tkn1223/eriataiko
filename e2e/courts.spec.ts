@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { enterAsPlayer, enterAsViewer } from './helpers/enter';
-import { takeScorer } from './helpers/scorer';
+import { showGame, takeScorer } from './helpers/scorer';
 import {
   BASE_COURT_NUMBERS,
   BASE_LEAGUE_COMPLETED_MATCHES,
@@ -146,9 +146,15 @@ test('本物の試合が出る。見本の名前（佐々木・井上など）�
 
   const card = courtCard(page, 1);
   await expect(card.getByText('2部')).toBeVisible();
-  await expect(card.getByText('予選 1回戦')).toBeVisible();
-  await expect(card.getByText('たろう・いとう')).toBeVisible();
-  await expect(card.getByText('やまもと・まつもと')).toBeVisible();
+  // チーム名と、選手名（1 人 1 行）が、左右の枠に出る
+  const left = card.getByTestId('team-panel-A');
+  const right = card.getByTestId('team-panel-B');
+  await expect(left.getByText('愛知南')).toBeVisible();
+  await expect(left.getByText('たろう', { exact: true })).toBeVisible();
+  await expect(left.getByText('いとう', { exact: true })).toBeVisible();
+  await expect(right.getByText('愛知中央')).toBeVisible();
+  await expect(right.getByText('やまもと', { exact: true })).toBeVisible();
+  await expect(right.getByText('まつもと', { exact: true })).toBeVisible();
 
   await expect(page.getByText('佐々木・井上')).toHaveCount(0);
 });
@@ -175,8 +181,8 @@ test('9・10 番のコートの試合も出る（次の大会は 10 面）', asy
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  await expect(courtCard(page, COURT_9_NUMBER).getByText('LIVE')).toBeVisible();
-  await expect(courtCard(page, COURT_10_NUMBER).getByText('呼出待ち')).toBeVisible();
+  await expect(courtCard(page, COURT_9_NUMBER).getByTestId('court-status')).toHaveText('試合中');
+  await expect(courtCard(page, COURT_10_NUMBER).getByTestId('court-status')).toHaveText('呼出待ち');
 });
 
 test('番号が飛んでいても飛んだまま出す（試合の無い番号のカードは作らない）', async ({ page }) => {
@@ -191,14 +197,14 @@ test('番号が飛んでいても飛んだまま出す（試合の無い番号�
   await expect(page.getByText('予定なし')).toHaveCount(0);
 });
 
-test('進行中のコートにLIVEと部・回戦・両ペアの名前が出る', async ({ page }) => {
+test('進行中のコートの右上に「試合中」の札と、部が出る（回戦は出さない）', async ({ page }) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
   const card = courtCard(page, 1);
-  await expect(card.getByText('LIVE')).toBeVisible();
+  await expect(card.getByTestId('court-status')).toHaveText('試合中');
   await expect(card.getByText('2部')).toBeVisible();
-  await expect(card.getByText('予選 1回戦')).toBeVisible();
+  await expect(card.getByText('予選 1回戦')).toHaveCount(0);
 });
 
 test('枠の数がmax_game_countどおりで、保存済みの得点が枠に入っている', async ({ page }) => {
@@ -213,15 +219,14 @@ test('枠の数がmax_game_countどおりで、保存済みの得点が枠に入
   await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideB), { exact: true })).toBeVisible();
 });
 
-test('次の試合（部・ペア名）が出る。次が無ければ出ない', async ({ page }) => {
+test('進行中のカードに「次」の行は出ない（進行表で見る）', async ({ page }) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  await expect(courtCard(page, 1).getByText('次')).toBeVisible();
-  await expect(courtCard(page, 1).getByText('さとう・いとう vs わたなべ・まつもと')).toBeVisible();
-
-  // コート2（courts-scenario の得点シナリオ）は進行中はあるが次は無い
-  await expect(courtCard(page, SCORE_COURT_NUMBER).getByText('次')).toHaveCount(0);
+  await expect(courtCard(page, 1)).toBeVisible();
+  await expect(courtCard(page, 1).getByText('次', { exact: true })).toHaveCount(0);
+  // コート1 の次の試合（さとう・いとう 対 わたなべ・まつもと）は出ない
+  await expect(courtCard(page, 1).getByText('さとう')).toHaveCount(0);
 });
 
 test('進行中が無く次があるコートには「呼出待ち」が出る', async ({ page }) => {
@@ -229,8 +234,8 @@ test('進行中が無く次があるコートには「呼出待ち」が出る',
   await page.goto('/courts');
 
   const card = courtCard(page, SLOT_LABEL_COURT_NUMBER);
-  await expect(card.getByText('呼出待ち')).toBeVisible();
-  await expect(card.getByText('LIVE')).toHaveCount(0);
+  await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
+  await expect(card.getByText('試合中')).toHaveCount(0);
 });
 
 test('相手がまだ決まっていない対戦は、名前の代わりに空枠ラベルが出る', async ({ page }) => {
@@ -238,19 +243,34 @@ test('相手がまだ決まっていない対戦は、名前の代わりに空�
   await page.goto('/courts');
 
   const card = courtCard(page, SLOT_LABEL_COURT_NUMBER);
-  await expect(
-    card.getByText(`${SLOT_TEAM_A_NAMES.join('・')} vs ${SLOT_LABEL_TEXT}`)
-  ).toBeVisible();
+  await expect(card.getByTestId('team-panel-B').getByText(SLOT_LABEL_TEXT)).toBeVisible();
+  for (const name of SLOT_TEAM_A_NAMES) {
+    await expect(card.getByTestId('team-panel-A').getByText(name, { exact: true })).toBeVisible();
+  }
 });
 
-test('「予選リーグ」のラベルと、いまの段の試合消化数が出る', async ({ page }) => {
+test('上の 1 行に、大会名と「予選リーグ ◯/◯ 試合」が並び、「結果LIVE」「コートの状況」の見出しは出ない', async ({
+  page,
+}) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
-  await expect(page.getByText('予選リーグ')).toBeVisible();
-  await expect(
-    page.getByText(`${BASE_LEAGUE_COMPLETED_MATCHES}/${BASE_LEAGUE_TOTAL_MATCHES} 試合消化`)
-  ).toBeVisible();
+  const title = page.getByRole('heading', { level: 1 });
+  await expect(title).toHaveCount(1);
+  const progress = page.getByText(
+    `予選リーグ ${BASE_LEAGUE_COMPLETED_MATCHES}/${BASE_LEAGUE_TOTAL_MATCHES} 試合`
+  );
+  await expect(progress).toBeVisible();
+
+  // 大会名と同じ 1 行（縦の位置がほぼ同じ）
+  const titleBox = (await title.boundingBox())!;
+  const progressBox = (await progress.boundingBox())!;
+  expect(
+    Math.abs(titleBox.y + titleBox.height / 2 - (progressBox.y + progressBox.height / 2))
+  ).toBeLessThan(12);
+
+  await expect(page.getByText('結果LIVE')).toHaveCount(0);
+  await expect(page.getByText('コートの状況')).toHaveCount(0);
 });
 
 test('選手にも「試合の終了はまだ記録されません」の帯は出ない（終了が記録されるようになった）', async ({
@@ -273,41 +293,37 @@ test('観戦者には帯が出ない', async ({ page }) => {
   ).toHaveCount(0);
 });
 
-test.describe('あなたの試合', () => {
-  test('選手として入った人が出る進行中の試合に「あなたの試合」が出る', async ({ page }) => {
+test.describe('自分の試合', () => {
+  test('選手として入った人が出る進行中の試合は、枠がオレンジで囲まれ、「あなたの試合」の文字は出ない', async ({
+    page,
+  }) => {
     // 愛知南のたろう（#3）は seed のコート1 進行中の試合（たろう・いとう 対 やまもと・まつもと）に出ている
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
-    await expect(courtCard(page, 1).getByText('あなたの試合')).toBeVisible();
+    await expect(courtCard(page, 1)).toHaveClass(/border-accent/);
+    await expect(page.getByText('あなたの試合')).toHaveCount(0);
+    // ほかのコートはオレンジの枠にならない
+    await expect(courtCard(page, SCORE_COURT_NUMBER)).not.toHaveClass(/border-accent/);
   });
 
-  test('選手として入った人が出る次の試合の名前もaccent色で強調される', async ({ page }) => {
-    // 愛知南のさとう（#1）は seed のコート1 次の試合（さとう・いとう 対 わたなべ・まつもと）に出ている
-    await enterAsPlayer(page, '愛知南', 'さとう');
-    await page.goto('/courts');
-
-    await expect(courtCard(page, 1).getByText('さとう・いとう vs わたなべ・まつもと')).toHaveClass(
-      /text-accent/
-    );
-  });
-
-  test('観戦者には「あなたの試合」が出ない', async ({ page }) => {
+  test('観戦者には、どのカードもオレンジの枠にならない', async ({ page }) => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
-    await expect(page.getByText('あなたの試合')).toHaveCount(0);
+    await expect(courtCard(page, 1)).toBeVisible();
+    await expect(page.locator('[data-testid^="court-card-"].border-accent')).toHaveCount(0);
   });
 });
 
 test.describe('観戦者', () => {
-  test('「−」「＋」「試合を終了する」が出ない', async ({ page }) => {
+  test('「−」「＋」「試合終了」が出ない', async ({ page }) => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
     await expect(page.getByRole('button', { name: /得点を1増やす/ })).toHaveCount(0);
     await expect(page.getByRole('button', { name: /得点を1減らす/ })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '試合終了' })).toHaveCount(0);
   });
 
   test('得点は数字で見える', async ({ page }) => {
@@ -347,7 +363,7 @@ test.describe('選手として入った人の操作', () => {
     await expect(card.getByText('0', { exact: true })).toBeVisible();
   });
 
-  test('0対0のコートで「試合を終了する」を押すと「まだ点が入っていません」と出て、確認画面は出ない', async ({
+  test('0対0のコートで「試合終了」を押すと「まだ点が入っていません」と出て、確認画面は出ない', async ({
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
@@ -355,19 +371,19 @@ test.describe('選手として入った人の操作', () => {
 
     const card = courtCard(page, ZERO_SCORE_COURT_NUMBER);
     await takeScorer(card);
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
 
     await expect(card.getByText('まだ点が入っていません')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('「試合を終了する」→確認画面の「OK」で試合が終了する', async ({ page }) => {
+  test('「試合終了」→確認画面の「OK」で試合が終了する', async ({ page }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
     await takeScorer(card);
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
     await expect(page.getByText('この試合を終了します')).toBeVisible();
 
     await page.getByRole('button', { name: 'OK' }).click();
@@ -375,11 +391,11 @@ test.describe('選手として入った人の操作', () => {
     // データベースの試合が終了になり、開き直しても終了のまま
     const matchId = await findMatchIdByCourtNumber(SCORE_COURT_NUMBER);
     await expect.poll(() => findMatchStatus(matchId)).toBe('done');
-    await expect(card.getByText('LIVE')).toHaveCount(0);
-    await expect(card.getByRole('button', { name: '試合を終了する' })).toHaveCount(0);
+    await expect(card.getByText('試合中')).toHaveCount(0);
+    await expect(card.getByRole('button', { name: '試合終了' })).toHaveCount(0);
 
     await page.reload();
-    await expect(courtCard(page, SCORE_COURT_NUMBER).getByText('LIVE')).toHaveCount(0);
+    await expect(courtCard(page, SCORE_COURT_NUMBER).getByText('試合中')).toHaveCount(0);
     expect(await findMatchStatus(matchId)).toBe('done');
   });
 
@@ -389,11 +405,11 @@ test.describe('選手として入った人の操作', () => {
 
     const card = courtCard(page, SCORE_COURT_NUMBER);
     await takeScorer(card);
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
     await page.getByRole('button', { name: '戻る' }).click();
 
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(card.getByText('LIVE')).toBeVisible();
+    await expect(card.getByTestId('court-status')).toHaveText('試合中');
   });
 
   test('確認画面は背景タップでもEscでも閉じる', async ({ page }) => {
@@ -403,11 +419,11 @@ test.describe('選手として入った人の操作', () => {
     const card = courtCard(page, SCORE_COURT_NUMBER);
     await takeScorer(card);
 
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
     await page.getByRole('button', { name: '背景' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
@@ -451,7 +467,7 @@ test('確認画面の「OK」「戻る」はどちらも44px以上', async ({ pa
   await page.goto('/courts');
 
   await takeScorer(courtCard(page, SCORE_COURT_NUMBER));
-  await courtCard(page, SCORE_COURT_NUMBER).getByRole('button', { name: '試合を終了する' }).click();
+  await courtCard(page, SCORE_COURT_NUMBER).getByRole('button', { name: '試合終了' }).click();
 
   const tooSmall = await page
     .getByRole('dialog')
@@ -504,11 +520,13 @@ for (const width of [375, 390]) {
     await page.goto('/courts');
 
     const card = courtCard(page, LONG_NAME_COURT_NUMBER);
-    // 進行中（両ペア）と「次」の行の両方に、同じ長い名前が出ている前提を先に確かめる
-    await expect(card.getByText(LONG_TEAM_A_NAMES.join('・'), { exact: true })).toBeVisible();
-    await expect(
-      card.getByText(`${LONG_TEAM_A_NAMES.join('・')} vs ${LONG_TEAM_B_NAMES.join('・')}`)
-    ).toBeVisible();
+    // 長い名前が、左右の枠に 1 人 1 行で出ている前提を先に確かめる
+    for (const name of LONG_TEAM_A_NAMES) {
+      await expect(card.getByTestId('team-panel-A').getByText(name, { exact: true })).toBeVisible();
+    }
+    for (const name of LONG_TEAM_B_NAMES) {
+      await expect(card.getByTestId('team-panel-B').getByText(name, { exact: true })).toBeVisible();
+    }
 
     const stickingOut = await card.evaluate((element) => {
       const cardRect = element.getBoundingClientRect();
@@ -526,8 +544,8 @@ for (const width of [375, 390]) {
       await personNamesSplitAcrossLines(card, [...LONG_TEAM_A_NAMES, ...LONG_TEAM_B_NAMES])
     ).toEqual([]);
 
-    // 2 桁の得点が枠（w-7）からはみ出さない
-    const tooNarrow = await card.locator('span.tabular').evaluateAll((boxes) =>
+    // 2 桁の得点が枠からはみ出さない
+    const tooNarrow = await card.locator('.tabular').evaluateAll((boxes) =>
       boxes
         .map((box) => {
           const range = document.createRange();
@@ -572,21 +590,36 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await enterAsViewer(page);
     await page.goto('/courts');
 
-    // 「決勝トーナメント 準決勝」（回戦名）も同じ文字列を含むので、段の見出しは完全一致で見る
-    await expect(page.getByText('決勝トーナメント', { exact: true })).toBeVisible();
     await expect(
-      page.getByText(`${FINAL_KNOCKOUT_COMPLETED_MATCHES}/${FINAL_KNOCKOUT_TOTAL_MATCHES} 試合消化`)
+      page.getByText(
+        `決勝トーナメント ${FINAL_KNOCKOUT_COMPLETED_MATCHES}/${FINAL_KNOCKOUT_TOTAL_MATCHES} 試合`
+      )
     ).toBeVisible();
   });
 
-  test('上限ゲーム数ぶんの枠が「第Nゲーム」として並ぶ', async ({ page }) => {
+  test('いま入れている第2ゲームが出て、終わった第1ゲームが札で出る。矢印で第3ゲームまで動かせる', async ({
+    page,
+  }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
     await page.goto('/courts');
 
     const card = courtCard(page, FINAL_COURT_NUMBER);
-    await expect(card.getByText('第1ゲーム')).toBeVisible();
-    await expect(card.getByText('第2ゲーム')).toBeVisible();
-    await expect(card.getByText('第3ゲーム')).toBeVisible();
+    await expect(card.getByText('第2ゲーム', { exact: true })).toBeVisible();
+    await expect(card.getByText('第1G：21-19')).toBeVisible();
+
+    await takeScorer(card);
+    await showGame(card, 3);
+    await expect(card.getByText('第3ゲーム', { exact: true })).toBeVisible();
+  });
+
+  test('第1ゲームを出しているあいだは、終わったゲームの札は出ない', async ({ page }) => {
+    await enterAsPlayer(page, '愛知南', 'たろう');
+    await page.goto('/courts');
+
+    const card = courtCard(page, FINAL_COURT_NUMBER);
+    await takeScorer(card);
+    await showGame(card, 1);
+    await expect(card.getByText(/^第\dG：/)).toHaveCount(0);
   });
 
   test('決勝の第2ゲームに入れた点は、第2ゲームとして保存される（第1ゲームは変わらない）', async ({
@@ -606,7 +639,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
     expect(await findSavedGameScore(matchId, 1)).toEqual({ sideAScore: 21, sideBScore: 19 });
   });
 
-  test('同点（勝ちゲーム数が同数）のコートで「試合を終了する」を押すと「同点では終了できません」と出る', async ({
+  test('同点（勝ちゲーム数が同数）のコートで「試合終了」を押すと「同点では終了できません」と出る', async ({
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
@@ -614,7 +647,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
     const card = courtCard(page, FINAL_COURT_NUMBER);
     await takeScorer(card);
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
 
     await expect(card.getByText('同点では終了できません')).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -628,10 +661,11 @@ test.describe('決勝トーナメントが始まったとき', () => {
     const teamAName = FINAL_TEAM_A_NAMES.join('・');
 
     await takeScorer(card);
+    await showGame(card, 3);
     await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
     await expect(card.getByText('同点では終了できません')).toHaveCount(0);
 
-    await card.getByRole('button', { name: '試合を終了する' }).click();
+    await card.getByRole('button', { name: '試合終了' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByText(/2-1/)).toBeVisible();
 
@@ -642,7 +676,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
     await expect
       .poll(() => findSavedGameScore(matchId, 3))
       .toEqual({ sideAScore: 1, sideBScore: 0 });
-    await expect(card.getByText('LIVE')).toHaveCount(0);
+    await expect(card.getByText('試合中')).toHaveCount(0);
   });
 
   for (const width of [375, 390]) {
@@ -655,7 +689,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
 
       const card = courtCard(page, FINAL_COURT_NUMBER);
 
-      const tooNarrow = await card.locator('span.tabular').evaluateAll((boxes) =>
+      const tooNarrow = await card.locator('.tabular').evaluateAll((boxes) =>
         boxes
           .map((box) => {
             const range = document.createRange();
@@ -694,8 +728,9 @@ test.describe('決勝トーナメントが始まったとき', () => {
       const card = courtCard(page, FINAL_COURT_NUMBER);
       const teamAName = FINAL_TEAM_A_NAMES.join('・');
       await takeScorer(card);
+      await showGame(card, 3);
       await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
-      await card.getByRole('button', { name: '試合を終了する' }).click();
+      await card.getByRole('button', { name: '試合終了' }).click();
 
       const splitAcrossLines = await chunksSplitAcrossLines(
         page.getByRole('dialog').locator('span, h2')
@@ -711,11 +746,12 @@ test.describe('決勝トーナメントが始まったとき', () => {
       const card = courtCard(page, FINAL_COURT_NUMBER);
       const teamAName = FINAL_TEAM_A_NAMES.join('・');
       await takeScorer(card);
+      await showGame(card, 3);
       await card.getByRole('button', { name: `${teamAName}の第3ゲームの得点を1増やす` }).click();
       // 終了が記録されると次の試合に切り替わってしまうので、終了を送れないようにして、
       // 「終了を送っています」の終わった見た目のまま測る
       await page.route('**/api/matches/*/result', (route) => route.abort());
-      await card.getByRole('button', { name: '試合を終了する' }).click();
+      await card.getByRole('button', { name: '試合終了' }).click();
       await page.getByRole('button', { name: 'OK' }).click();
       await expect(card.getByText('終了', { exact: true })).toBeVisible();
 
@@ -755,7 +791,7 @@ test.describe('保存（1-b）', () => {
   test.beforeEach(createSaveScenario);
   test.afterAll(deleteSaveScenario);
 
-  test('呼出待ちのコートに次の試合の枠が出て、最初の1点でLIVEになり、保存される。開き直してもLIVEのまま', async ({
+  test('呼出待ちのコートに次の試合の枠が出て、最初の1点で「試合中」になり、保存される。開き直しても「試合中」のまま', async ({
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
@@ -763,14 +799,14 @@ test.describe('保存（1-b）', () => {
 
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
-    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
     await expect(card.getByText('第1ゲーム')).toBeVisible();
 
-    // 呼出待ちの試合も、先に「得点を入力する」を 1 度押す（そのあとの最初の 1 点で LIVE になる）
+    // 呼出待ちの試合も、先に「入力を担当する」を 1 度押す（そのあとの最初の 1 点で「試合中」になる）
     await takeScorer(card);
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
 
-    await expect(card.getByText('LIVE')).toBeVisible();
+    await expect(card.getByTestId('court-status')).toHaveText('試合中');
     await expect(card.getByText('呼出待ち')).toHaveCount(0);
 
     const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
@@ -784,7 +820,7 @@ test.describe('保存（1-b）', () => {
 
     await page.reload();
     const reloadedCard = courtCard(page, WAITING_ONLY_COURT_NUMBER);
-    await expect(reloadedCard.getByText('LIVE')).toBeVisible();
+    await expect(reloadedCard.getByTestId('court-status')).toHaveText('試合中');
     await expect(reloadedCard.getByText('1', { exact: true })).toBeVisible();
   });
 
@@ -809,7 +845,7 @@ test.describe('保存（1-b）', () => {
 
     // － を押しても 0 より下にはならない（A 側も 0 なので、B 側の数字を「－」のとなりで見る）
     await minus.click();
-    await expect(minus.locator('xpath=following-sibling::span[1]')).toHaveText('0');
+    await expect(card.getByTestId('team-panel-B').locator('.tabular')).toHaveText('0');
     await expect.poll(() => findSavedGameScore(matchId, 1).then((s) => s?.sideBScore)).toBe(0);
 
     await tapTenTimesAtOnce(plus);
@@ -955,7 +991,7 @@ test.describe('保存（1-b）', () => {
         .toEqual({ sideAScore: 1, sideBScore: 0 });
     });
 
-    test('別の画面にいる間に保存できたら、結果LIVEに戻ったとき「保存できていません」は出ていない', async ({
+    test('別の画面にいる間に保存できたら、試合速報に戻ったとき「保存できていません」は出ていない', async ({
       page,
     }) => {
       await pressPlusWhileOffline(page);
@@ -968,28 +1004,28 @@ test.describe('保存（1-b）', () => {
         .poll(() => findSavedGameScore(matchId, 1), { timeout: 20_000 })
         .toEqual({ sideAScore: 1, sideBScore: 0 });
 
-      await goToTab(page, '結果LIVE');
+      await goToTab(page, '試合速報');
       await expect(page).toHaveURL(/\/courts$/);
 
       const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
-      await expect(card.getByText('LIVE')).toBeVisible();
+      await expect(card.getByTestId('court-status')).toHaveText('試合中');
       await expect(card.getByText('1', { exact: true })).toBeVisible();
       await expect(card.getByRole('status')).toHaveCount(0);
     });
 
-    test('送れていない点があるまま結果LIVEに戻ると、押した数字のまま出て「保存できていません」が出ている', async ({
+    test('送れていない点があるまま試合速報に戻ると、押した数字のまま出て「保存できていません」が出ている', async ({
       page,
     }) => {
       await pressPlusWhileOffline(page);
 
       await goToTab(page, 'myページ');
       await expect(page).toHaveURL(/\/me$/);
-      await goToTab(page, '結果LIVE');
+      await goToTab(page, '試合速報');
       await expect(page).toHaveURL(/\/courts$/);
 
       // サーバーにはまだ届いていない（読み直した数字は 0 対 0 の呼出待ちのまま）
       const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
-      await expect(card.getByText('LIVE')).toBeVisible();
+      await expect(card.getByTestId('court-status')).toHaveText('試合中');
       await expect(card.getByText('1', { exact: true })).toBeVisible();
       await expect(card.getByRole('status')).toContainText('保存できていません');
 
@@ -1016,7 +1052,7 @@ test.describe('保存（1-b）', () => {
       await enterAsViewer(page);
       await page.goto('/courts');
       await goToTab(page, 'myページ');
-      await goToTab(page, '結果LIVE');
+      await goToTab(page, '試合速報');
       await expect(page).toHaveURL(/\/courts$/);
 
       await expect(courtCard(page, WAITING_ONLY_COURT_NUMBER)).toBeVisible();
@@ -1025,7 +1061,7 @@ test.describe('保存（1-b）', () => {
   });
 
   /**
-   * 送れていない点がある試合で「試合を終了する」を押しても、案内を残す（仕様 2026-10-04 の決めたこと 4）。
+   * 送れていない点がある試合で「試合終了」を押しても、案内を残す（仕様 2026-10-04 の決めたこと 4）。
    * 進行中のコート（`REJECT_COURT_NUMBER`。作った時点では 2-0 の進行中。名前の「REJECT」は
    * 別のテストが終了済みにして断られる状況を作るのに使うため。ここでは断らせない）を使う。
    */
@@ -1043,7 +1079,7 @@ test.describe('保存（1-b）', () => {
       await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
       await expect(card.getByRole('status')).toContainText('保存できていません');
 
-      await card.getByRole('button', { name: '試合を終了する' }).click();
+      await card.getByRole('button', { name: '試合終了' }).click();
       await page.getByRole('button', { name: 'OK' }).click();
       await expect(card.getByText('終了', { exact: true })).toBeVisible();
       return card;

@@ -19,10 +19,10 @@ test('無い URL を開くと「ページがありません」と日本語で出
   await expect(page.getByText('ページがありません')).toBeVisible();
 });
 
-test('「結果LIVE へ戻る」を押すと結果LIVE に戻る', async ({ page }) => {
+test('「試合速報 へ戻る」を押すと試合速報 に戻る', async ({ page }) => {
   await page.goto('/nothing-here');
 
-  const backLink = page.getByRole('link', { name: /結果LIVE/ });
+  const backLink = page.getByRole('link', { name: /試合速報/ });
   // 体育館で汗ばんだ指でも押せる大きさか（Apple / Google の指針が 44px 以上）
   const box = (await backLink.boundingBox())!;
   expect(box.height).toBeGreaterThanOrEqual(44);

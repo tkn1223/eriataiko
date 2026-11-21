@@ -211,7 +211,12 @@ function FinalBox({ match, selfTeamNumber }: { match: KoMatch; selfTeamNumber?: 
         </div>
       )}
       <div className="grid grid-cols-[1fr_72px_1fr] items-center text-center">
-        <FinalSide slot={match.slotA} winner={winner === 'a'} selfTeamNumber={selfTeamNumber} />
+        <FinalSide
+          slot={match.slotA}
+          winner={winner === 'a'}
+          loser={winner === 'b'}
+          selfTeamNumber={selfTeamNumber}
+        />
         <div className="tabular text-[28px] leading-none font-extrabold tracking-[-1px]">
           {hasScore ? (
             <>
@@ -223,7 +228,12 @@ function FinalBox({ match, selfTeamNumber }: { match: KoMatch; selfTeamNumber?: 
             <span className="text-muted-ink text-[18px] tracking-normal">vs</span>
           )}
         </div>
-        <FinalSide slot={match.slotB} winner={winner === 'b'} selfTeamNumber={selfTeamNumber} />
+        <FinalSide
+          slot={match.slotB}
+          winner={winner === 'b'}
+          loser={winner === 'a'}
+          selfTeamNumber={selfTeamNumber}
+        />
       </div>
     </div>
   );
@@ -232,22 +242,24 @@ function FinalBox({ match, selfTeamNumber }: { match: KoMatch; selfTeamNumber?: 
 function FinalSide({
   slot,
   winner,
+  loser,
   selfTeamNumber,
 }: {
   slot: KoSlot;
   winner: boolean;
+  loser: boolean;
   selfTeamNumber?: number;
 }) {
   const panel = teamPanelClasses(slot.isDecided ? (slot.teamNumber ?? null) : null);
   const isSelf =
     slot.isDecided && slot.teamNumber !== undefined && slot.teamNumber === selfTeamNumber;
+  // 負けた側はチーム色の文字をやめて薄い字にする（準決勝の箱と同じ見え方。上の色の線は残す）
+  const nameColor = !slot.isDecided ? 'text-gray-400' : loser ? 'text-gray-500' : panel.text;
 
   return (
     <div className={`min-w-0 border-t-[3px] pt-2 ${panel.border}`}>
       <span
-        className={`block text-[13px] break-words ${winner ? 'font-black' : 'font-bold'} ${
-          slot.isDecided ? panel.text : 'text-gray-400'
-        }`}
+        className={`block text-[13px] break-words ${winner ? 'font-black' : 'font-bold'} ${nameColor}`}
       >
         {slot.label}
       </span>

@@ -222,6 +222,51 @@ describe('KoBracket', () => {
     expect(within(finalBox).getByText('愛知南').className).not.toContain('font-black');
   });
 
+  test('終わった準決勝は、勝った側の行が金色の地で、負けた側は名前も数字も薄い字になる', () => {
+    const data: KoBracketData = {
+      ...beforeLeagueEnds,
+      semifinals: [
+        koMatch('semi-1', {
+          slotA: team('愛知南', 1),
+          slotB: team('愛知西', 4),
+          status: 'done',
+          scoreA: 1,
+          scoreB: 2,
+        }),
+        beforeLeagueEnds.semifinals[1],
+      ],
+    };
+    render(<KoBracket data={data} />);
+
+    const box = screen.getByTestId('ko-match-semi-1');
+    const winnerName = within(box).getByText('愛知西');
+    const loserName = within(box).getByText('愛知南');
+    expect(winnerName.closest('.bg-gold-soft')).not.toBeNull();
+    expect(loserName.closest('.bg-gold-soft')).toBeNull();
+    expect(loserName).toHaveClass('text-gray-500');
+    expect(winnerName).not.toHaveClass('text-gray-500');
+    expect(within(box).getByTestId('ko-score-a')).toHaveClass('text-gray-500');
+    expect(within(box).getByTestId('ko-score-b')).not.toHaveClass('text-gray-500');
+  });
+
+  test('終わった決勝は、負けた側の名前が薄い字になり、勝った側はチームの色のまま', () => {
+    const data: KoBracketData = {
+      ...beforeLeagueEnds,
+      final: koMatch('final', {
+        slotA: team('愛知南', 1),
+        slotB: team('愛知北', 3),
+        status: 'done',
+        scoreA: 0,
+        scoreB: 2,
+      }),
+    };
+    render(<KoBracket data={data} />);
+
+    const finalBox = screen.getByTestId('ko-match-final');
+    expect(within(finalBox).getByText('愛知南')).toHaveClass('text-gray-500');
+    expect(within(finalBox).getByText('愛知北')).not.toHaveClass('text-gray-500');
+  });
+
   test('終わった対戦が引き分けなら、どちらの名前も太字にしない', () => {
     const data: KoBracketData = {
       ...beforeLeagueEnds,

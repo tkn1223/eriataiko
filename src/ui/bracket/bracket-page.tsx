@@ -28,9 +28,20 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
   const [tab, setTab] = useState<Tab>('league');
   const [selectedCard, setSelectedCard] = useState<LeagueCard | null>(null);
 
+  // 「自分のチーム」は順位表の自分の行（isSelf）から求める。観戦者・チームなしはどの行も false で、無い。
+  const selfTeamNumber = standings.find((row) => row.isSelf)?.teamNumber;
+  const selfTeamName = teams.find((team) => team.number === selfTeamNumber)?.name;
+
   return (
-    <div className="mx-auto max-w-md px-4 py-4">
-      <h1 className="mb-[14px] text-[18px] font-black">対戦表</h1>
+    <div className="mx-auto max-w-md px-3 py-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h1 className="text-[22px] font-black">対戦表</h1>
+        {selfTeamName !== undefined && (
+          <span className="text-gold-ink bg-gold-soft border-gold-mine rounded-md border px-2 py-[5px] text-[11px] font-bold">
+            自分：{selfTeamName}
+          </span>
+        )}
+      </div>
 
       {truncated && (
         <p
@@ -41,7 +52,7 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
         </p>
       )}
 
-      <div className="bg-segment mb-5 flex gap-1 rounded-full p-1">
+      <div className="bg-fill-tabs mb-3.5 grid grid-cols-2 gap-1 rounded-[14px] p-1">
         <TabButton label="予選リーグ" active={tab === 'league'} onClick={() => setTab('league')} />
         <TabButton
           label="決勝トーナメント"
@@ -52,26 +63,40 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
 
       {tab === 'league' ? (
         <>
-          <LeagueMatrix teams={teams} cards={leagueCards} onSelectCard={setSelectedCard} />
+          <LeagueMatrix
+            teams={teams}
+            cards={leagueCards}
+            onSelectCard={setSelectedCard}
+            selfTeamNumber={selfTeamNumber}
+          />
           <StandingsTable teams={teams} rows={standings} />
         </>
       ) : (
-        <KoBracketOrNotice view={koBracket} />
+        <KoBracketOrNotice view={koBracket} selfTeamNumber={selfTeamNumber} />
       )}
 
-      <CardDetailSheet card={selectedCard} teams={teams} onClose={() => setSelectedCard(null)} />
+      <CardDetailSheet
+        card={selectedCard}
+        teams={teams}
+        selfTeamNumber={selfTeamNumber}
+        onClose={() => setSelectedCard(null)}
+      />
     </div>
   );
 }
 
 /** 勝ち上がり表を出せないときの案内。真っ白のままだと「壊れている？」と思われるため。 */
-function KoBracketOrNotice({ view }: { view: KoBracketView }) {
-  if (view.kind === 'ready') return <KoBracket data={view.data} />;
+function KoBracketOrNotice({
+  view,
+  selfTeamNumber,
+}: {
+  view: KoBracketView;
+  selfTeamNumber?: number;
+}) {
+  if (view.kind === 'ready') return <KoBracket data={view.data} selfTeamNumber={selfTeamNumber} />;
 
   return (
-    <p className="mb-5 rounded-2xl border border-gray-200 bg-white p-[14px] text-[14px] font-bold">
-      {koNoticeText(view)}
-    </p>
+    <p className="court-card mb-3 rounded-[18px] p-3 text-[14px] font-bold">{koNoticeText(view)}</p>
   );
 }
 
@@ -100,8 +125,8 @@ function TabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`min-h-11 flex-1 rounded-full text-[14px] font-extrabold ${
-        active ? 'bg-ink text-white' : 'text-ink'
+      className={`min-h-11 rounded-[11px] border text-[13px] font-bold ${
+        active ? 'tab-on border-gold-line' : 'text-ink-3 border-transparent'
       }`}
     >
       {label}

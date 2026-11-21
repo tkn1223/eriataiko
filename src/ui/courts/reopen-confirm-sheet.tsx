@@ -28,7 +28,7 @@ export function ReopenConfirmSheet({ open, games, teamAName, teamBName, onOk, on
       onClose={onClose}
       header={
         <h2 id="reopen-confirm-sheet-title" className="text-[16px] font-black">
-          この試合を直します
+          この試合を訂正します
         </h2>
       }
     >
@@ -48,7 +48,7 @@ export function ReopenConfirmSheet({ open, games, teamAName, teamBName, onOk, on
       </ul>
 
       <p className="text-[13px] text-gray-500">
-        終了をいったん取り消して、点を直せる状態に戻します。直したら「もう一度終了する」を押してください。
+        終了をいったん取り消して、点を訂正できる状態に戻します。訂正したら「もう一度終了する」を押してください。
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-2">

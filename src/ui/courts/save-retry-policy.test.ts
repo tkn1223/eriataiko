@@ -60,10 +60,10 @@ describe('rejectionMessage', () => {
       ok: false,
       kind: 'http',
       status: 409,
-      message: '終了した試合です。先に「終了を取り消す」を押してください。',
+      message: '終了した試合です。先に「訂正」を押して、終了を取り消してください。',
     };
     expect(rejectionMessage(result)).toBe(
-      '終了した試合です。先に「終了を取り消す」を押してください。'
+      '終了した試合です。先に「訂正」を押して、終了を取り消してください。'
     );
   });
 

@@ -1,26 +1,26 @@
 import { expect, type Locator, type Response } from '@playwright/test';
 
 /**
- * 結果LIVE のカードで「得点を入力する」を押して、この画面の人を担当にする
+ * 結果LIVE のカードで「入力を担当する」を押して、この画面の人を担当にする
  * （docs/specs/2026-10-14-match-scorer.md）。
  *
- * ＋ − や「試合を終了する」は担当にだけ出るので、点を入れる前にこれを呼ぶ。
- * - もう自分が担当（「入力をやめる」が出ている）なら、何も押さない
- * - ほかの人が担当中なら、「引き継ぐ」→ 確認の「OK」まで押す
- * - 担当がいなければ「得点を入力する」を押す
+ * ＋ − や「試合終了」は担当にだけ出るので、点を入れる前にこれを呼ぶ。
+ * - もう自分が担当（「担当をやめる」が出ている）なら、何も押さない
+ * - ほかの人が担当中なら、「入力を引き継ぐ」→ 確認の「OK」まで押す
+ * - 担当がいなければ「入力を担当する」を押す
  *
  * 担当を決める仕組みそのものを確かめるテストは、この部品を使わずに自分で押す。
  *
  * 押したら、**入口が担当を受け付けた返事まで**待ってから返す。画面は返事を待たずに
- * 「入力をやめる」を出す（電波が悪くても入力を止めない、仕様 ⑤）ので、それだけを見て返すと、
+ * 「担当をやめる」を出す（電波が悪くても入力を止めない、仕様 ⑤）ので、それだけを見て返すと、
  * 取る操作がまだ入口に届いていない。そのあとテストが裏で試合を終了にすると、遅れて届いた取る操作は
  * 「終了した試合です」と断られ、画面は担当を外して ＋ が消える（正しいふるまい）。開発サーバーが
  * 遅い CI で、押そうとした ＋ が消えて落ちた（実際に起きた）。
  */
 export async function takeScorer(card: Locator) {
-  const claim = card.getByRole('button', { name: '得点を入力する' }).first();
-  const takeOver = card.getByRole('button', { name: '引き継ぐ' }).first();
-  const stop = card.getByRole('button', { name: '入力をやめる' }).first();
+  const claim = card.getByRole('button', { name: '入力を担当する' }).first();
+  const takeOver = card.getByRole('button', { name: '入力を引き継ぐ' }).first();
+  const stop = card.getByRole('button', { name: '担当をやめる' }).first();
   const page = card.page();
 
   // 画面が出そろうまで待つ（読み込み直後は、担当の欄がまだ描かれていないことがある）
@@ -58,4 +58,16 @@ export async function takeScorer(card: Locator) {
   }).toPass({ timeout: 15_000 });
 
   if (claimAccepted) await claimAccepted;
+}
+
+/**
+ * カードが出しているゲームを、ゲームのタブ（［第1］［第2］［第3］）で目的のゲームに合わせる。
+ * 複数ゲーム制のカードは、いま入れている 1 ゲームだけを出す（docs/specs/2026-11-15-courts-redesign.md）ので、
+ * 別のゲームの点を押す前にこれを呼ぶ。タブは担当（点を入れる人）にだけ出るので、`takeScorer` のあとに呼ぶ。
+ */
+export async function showGame(card: Locator, gameNumber: number) {
+  const tab = card.getByRole('tab', { name: `第${gameNumber}`, exact: true });
+  await tab.click();
+  await expect(tab).toHaveAttribute('aria-selected', 'true');
+  await expect(card.getByText(`第${gameNumber}ゲーム`, { exact: true })).toBeVisible();
 }

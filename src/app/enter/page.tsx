@@ -4,6 +4,7 @@ import { isPasscodeRequired } from '@/config/env.server';
 import { TOURNAMENT_NAME } from '@/config/tournament';
 import { getSession, type Session } from '@/server/session';
 import { createSupabaseServerClient } from '@/db/server';
+import { redirect } from 'next/navigation';
 
 // 入場状態（Cookie）を見るので常に動的レンダリング
 export const dynamic = 'force-dynamic';
@@ -88,6 +89,11 @@ export default async function EnterPage() {
     loadError = error instanceof Error ? error.message : String(error);
   }
 
+  // 入場済みの人に「入場中」の画面は出さない。用は済んでいるので大会の画面へ送る。
+  // 入り直したい人は、マイページのボタンで退場してから来る（src/ui/enter/reenter-button.tsx）。
+  // try の外で呼ぶ（redirect は例外を投げて止める作りなので、catch に拾われないように）。
+  if (session) redirect('/');
+
   if (loadError) {
     return (
       <div className="bg-paper min-h-dvh px-4 py-8">
@@ -103,7 +109,6 @@ export default async function EnterPage() {
       teams={teams}
       divisions={divisions}
       passcodeRequired={passcodeRequired}
-      session={session}
     />
   );
 }

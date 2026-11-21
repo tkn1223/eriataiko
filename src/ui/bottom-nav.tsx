@@ -2,13 +2,21 @@
 
 import NextLink from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Tabbar, TabbarLink } from 'konsta/react';
 import { TABS } from '@/config/tabs';
+import { CalendarIcon, LiveIcon, TreeIcon, UserIcon } from '@/ui/icons';
+
+const ICONS = {
+  live: LiveIcon,
+  calendar: CalendarIcon,
+  tree: TreeIcon,
+  user: UserIcon,
+} as const;
 
 /**
- * 画面下のメニュー。
+ * 画面下のメニュー。ほぼ黒の縦のにじみで、いま開いている項目だけ金色の文字と下に光る金の線、ほかは薄い灰色
+ * （色は globals.css の @theme。docs/specs/2026-11-15-courts-redesign.md）。
  *
- * 片手・汗ばんだ指で押されるので、親指の届く下側に置く。
+ * 片手・汗ばんだ指で押されるので、親指の届く下側に置き、1 項目の高さは 52px（44px 以上）。
  * 画面に貼り付けて（fixed）スクロールしても消えないようにする。
  * メニューの増減は src/config/tabs.ts を直す。
  */
@@ -16,36 +24,29 @@ export function BottomNav() {
   const pathname = usePathname();
 
   return (
-    <Tabbar
-      labels
-      icons
-      // 読み上げで「メニュー」として拾えるように div ではなく nav で出す
-      component="nav"
+    <nav
       aria-label="メインメニュー"
-      className="fixed bottom-0 left-0 z-20"
-      // Konsta の既定の高さ（iOS 50px）だと汗ばんだ指には狭いので広げる
-      innerClassName="min-h-16"
+      className="app-nav fixed bottom-0 left-0 z-20 grid w-full grid-cols-4 px-1 pt-2.5 pb-[calc(18px+env(safe-area-inset-bottom))]"
     >
       {TABS.map((tab) => {
         const isCurrent = pathname === tab.href;
+        const Icon = ICONS[tab.icon];
 
         return (
-          <TabbarLink
+          <NextLink
             key={tab.href}
-            component={NextLink}
-            active={isCurrent}
-            // href のようなリンク側の属性は linkProps でまとめて渡す決まり。
-            // aria-current は、色だけでは現在地が伝わらない人のための印。
-            linkProps={{ href: tab.href, 'aria-current': isCurrent ? 'page' : undefined }}
-            icon={
-              <span aria-hidden="true" className="text-xl leading-none">
-                {tab.icon}
-              </span>
-            }
-            label={tab.label}
-          />
+            href={tab.href}
+            // 色だけでは現在地が伝わらない人のための印
+            aria-current={isCurrent ? 'page' : undefined}
+            className={`relative flex min-h-[52px] flex-col items-center justify-center gap-1 text-[11.5px] font-semibold ${
+              isCurrent ? 'app-nav-active' : ''
+            }`}
+          >
+            <Icon className="size-6" />
+            {tab.label}
+          </NextLink>
         );
       })}
-    </Tabbar>
+    </nav>
   );
 }

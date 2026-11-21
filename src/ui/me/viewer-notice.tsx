@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { ReenterButton } from '@/ui/enter/reenter-button';
 
 /**
  * 観戦者が /me を開いたときの案内。
@@ -24,12 +24,8 @@ export function ViewerNotice() {
         </div>
       </div>
 
-      <Link
-        href="/enter"
-        className="flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 text-sm font-bold"
-      >
-        選手として入り直す
-      </Link>
+      {/* 押した時点で観戦をやめ、チームを選ぶ最初の画面へ移る */}
+      <ReenterButton label="選手として入り直す" />
     </div>
   );
 }

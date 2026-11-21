@@ -32,12 +32,14 @@ test('選手として入場すると、本物の名前・チーム名・成績�
   await expect(page.getByText('アリーナクラブ')).toHaveCount(0);
 });
 
-test('「別の人として入り直す」を押すと入場画面（/enter）に移る', async ({ page }) => {
+test('「別の人として入り直す」を押すと退場して、チームを選ぶ最初の画面に移る', async ({ page }) => {
   await enterAsPlayer(page, '愛知南', 'さとう');
   await page.goto('/me');
 
-  await page.getByRole('link', { name: '別の人として入り直す' }).click();
+  await page.getByRole('button', { name: '別の人として入り直す' }).click();
   await expect(page).toHaveURL(/\/enter$/);
+  await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
+  await expect(page.getByRole('button', { name: '退場する' })).toHaveCount(0);
 });
 
 test('観戦者で開くと「観戦モード」が出て、成績や試合一覧は出ない', async ({ page }) => {
@@ -52,22 +54,25 @@ test('観戦者の「選手として入り直す」を押すと入場画面（/e
   await enterAsViewer(page);
   await page.goto('/me');
 
-  await page.getByRole('link', { name: '選手として入り直す' }).click();
+  await page.getByRole('button', { name: '選手として入り直す' }).click();
   await expect(page).toHaveURL(/\/enter$/);
+  await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
 });
 
 // 体育館で汗ばんだ指で押される。小さいと押し損ねるので、実際の高さを測る（AGENTS.md）。
-test('入り直すリンクは、指で押せる大きさ（高さ 44px 以上）がある', async ({ page }) => {
+test('入り直すボタンは、指で押せる大きさ（高さ 44px 以上）がある', async ({ page }) => {
   await enterAsPlayer(page, '愛知南', 'さとう');
   await page.goto('/me');
   const playerLink = (await page
-    .getByRole('link', { name: '別の人として入り直す' })
+    .getByRole('button', { name: '別の人として入り直す' })
     .boundingBox())!;
   expect(playerLink.height).toBeGreaterThanOrEqual(44);
 
   await enterAsViewer(page);
   await page.goto('/me');
-  const viewerLink = (await page.getByRole('link', { name: '選手として入り直す' }).boundingBox())!;
+  const viewerLink = (await page
+    .getByRole('button', { name: '選手として入り直す' })
+    .boundingBox())!;
   expect(viewerLink.height).toBeGreaterThanOrEqual(44);
 });
 

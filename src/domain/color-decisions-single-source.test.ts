@@ -27,8 +27,22 @@ function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
     if (statSync(path).isDirectory()) return sourceFiles(path);
-    return /\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name) ? [path] : [];
+    return /\.(ts|tsx|css)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name) ? [path] : [];
   });
+}
+
+/**
+ * 見張る中身。CSS は、色の値そのものを決める行（`--color-team-1: #c82929;` のような @theme の変数の定義）だけ外す。
+ * 定義は globals.css にしか置けないので外してよいが、`.foo { color: var(--color-team-1) }` のような
+ * 部品クラスで色を当てると、class-labels.ts を通らない抜け道になるので見張る。
+ */
+function watchedSource(path: string): string {
+  const source = readFileSync(path, 'utf8');
+  if (!path.endsWith('.css')) return source;
+  return source
+    .split('\n')
+    .filter((line) => !/^\s*--color-[\w-]+\s*:/.test(line))
+    .join('\n');
 }
 
 describe('見張りの網に穴が無い', () => {
@@ -59,8 +73,19 @@ describe('色の決めごとは 1 か所', () => {
     .map((path) => relative(process.cwd(), path))
     .filter((path) => path !== THE_ONE_PLACE);
 
+  test('globals.css も見張りの対象に入っている（部品クラスからの抜け道をふさぐ）', () => {
+    expect(files).toContain(join('src', 'app', 'globals.css'));
+  });
+
+  test('CSS の変数の定義の行は外し、それ以外で色を指していれば見つかる', () => {
+    const lines = ['  --color-team-1: #c82929;', '.foo { color: var(--color-team-1); }'];
+    const kept = lines.filter((line) => !/^\s*--color-[\w-]+\s*:/.test(line));
+    expect(kept).toEqual(['.foo { color: var(--color-team-1); }']);
+    expect(COLOR_CLASS.test(kept.join('\n'))).toBe(true);
+  });
+
   test('チーム色・部の色のクラス名は class-labels.ts 以外に書かれていない', () => {
-    const copies = files.filter((path) => COLOR_CLASS.test(readFileSync(path, 'utf8')));
+    const copies = files.filter((path) => COLOR_CLASS.test(watchedSource(path)));
     expect(copies).toEqual([]);
   });
 

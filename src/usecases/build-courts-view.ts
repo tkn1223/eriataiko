@@ -47,6 +47,8 @@ export type CourtsViewPlayerRow = { participantId: string; orderInPair: number; 
 export type CourtsViewSideRow = {
   /** `teams.team_number`（そのまま。色の対応は `src/domain/class-labels.ts`）。決まっていなければ null。 */
   teamNumber: number | null;
+  /** `teams.name`（カードの枠に出すチーム名）。決まっていなければ null。省略した値は null と同じに扱う。 */
+  teamName?: string | null;
   /** `matchups.side_x_slot_label`。決まっていれば null。 */
   slotLabel: string | null;
   players: CourtsViewPlayerRow[];
@@ -148,6 +150,7 @@ function isMineSide(side: CourtsViewSideRow, myParticipantId: string | null): bo
 function toCourtTeam(side: CourtsViewSideRow): CourtTeam {
   return {
     teamNumber: side.teamNumber,
+    teamName: side.teamName ?? null,
     players: [...side.players].sort((a, b) => a.orderInPair - b.orderInPair).map((p) => p.name),
     slotLabel: side.slotLabel,
   };

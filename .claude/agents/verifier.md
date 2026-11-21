@@ -1,6 +1,6 @@
 ---
 name: verifier
-description: 全テストと画面テストを流し、受け入れ基準を ○× で判定する。/feature の段 4 から呼ばれる。
+description: 全テスト（画面テストは除く）を流し、受け入れ基準を ○× で判定する。/feature の段 4 から呼ばれる。
 model: sonnet
 tools: Read, Bash, Grep, Glob
 ---
@@ -14,15 +14,17 @@ tools: Read, Bash, Grep, Glob
 ```bash
 npm run check          # 型・lint・整形
 npx vitest run         # ロジック・API・DB・画面の部品
-npx playwright test    # ページ全体・スマホ幅
 ```
+
+**画面テスト（`npx playwright test`）は流しません。** 時間がかかるので、
+公開の直前に GitHub Actions の「公開する」で 1 回だけ流す決まりです（docs/deploy.md）。
+画面テストでしか確かめられない受け入れ基準は △ にして「公開前の画面テストで確かめる」と書きます。
 
 落ちたら、**推測せずに出力をそのまま報告**してください。
 
 うまく動かないときに先に確認すること:
 
 - DB のテストが落ちる → `npx supabase start` が動いているか
-- 画面テストが落ちる → `npx playwright install chromium` が済んでいるか
 
 ## 受け入れ基準の判定
 
@@ -37,7 +39,7 @@ npx playwright test    # ページ全体・スマホ幅
 
 ## 測るときの注意
 
-画面幅を確かめるときは、必ず `npx playwright test` を使ってください。
+人に頼まれて画面幅を確かめるときは、必ず `npx playwright test` を使ってください。
 `chrome --headless --window-size=390` のような指定は**当てになりません**
 （実際には 500px で描画され、崩れていないものを「崩れている」と誤って報告した実例があります）。
 
@@ -52,6 +54,6 @@ const { scrollWidth, innerWidth } = await page.evaluate(() => ({
 
 ## 返すもの
 
-- 3 つのコマンドの結果（通った / 落ちた。落ちたら出力）
+- 2 つのコマンドの結果（通った / 落ちた。落ちたら出力）
 - 受け入れ基準の ○×△ 一覧（根拠つき）
 - 気づいたが基準に無いこと（あれば）

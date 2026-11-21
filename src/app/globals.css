@@ -95,6 +95,22 @@
   /* 順位表で自分のチームの行だけ敷く色 */
   --color-self-row: #fff8ec;
 
+  /* 対戦表（星取表・決勝トーナメント・詳細。見本は docs/specs/2026-11-21-bracket-redesign.png） */
+  /* 試合中のマスの枠 */
+  --color-cell-live-line: #acd3b7;
+  /* 準決勝と決勝をつなぐ線 */
+  --color-gold-connect: #cfb074;
+  /* 同じチーム同士のマスの斜めの縞 */
+  --color-stripe-a: #f8f7f4;
+  --color-stripe-b: #f0eee9;
+  --color-stripe-ink: #b9b4aa;
+  /* 優勝の点線の箱 */
+  --color-champion-bg: #f8f5ef;
+  --color-champion-line: #dbc89f;
+  --color-champion-ink: #897446;
+  /* 詳細の結果の箱の枠 */
+  --color-result-line: #e6d2a6;
+
   /* チームの色分け（1〜4 の 4 色のみ）。myページのアバターの背景に使う */
   --color-team-1: #c82929;
   --color-team-2: #177734;
@@ -278,4 +294,24 @@ body {
   border: 2px dashed var(--color-gold);
   background: linear-gradient(180deg, var(--color-gold-pale), var(--color-gold-soft));
   color: var(--color-gold-ink);
+}
+
+/* 対戦表: 同じチーム同士のマス（押せない。斜めの縞） */
+.cell-diag {
+  border-radius: 9px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-stripe-a),
+    var(--color-stripe-a) 5px,
+    var(--color-stripe-b) 5px,
+    var(--color-stripe-b) 6px
+  );
+  color: var(--color-stripe-ink);
+}
+
+/* 対戦表: 決勝の大きな箱（金の枠・上から下へ薄い金 → 白） */
+.ko-final-box {
+  border: 1.5px solid var(--color-gold-mine);
+  background: linear-gradient(180deg, var(--color-gold-pale), #fff);
+  box-shadow: 0 5px 14px rgb(201 154 62 / 0.09);
 }

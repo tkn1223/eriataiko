@@ -125,12 +125,36 @@ test.describe('星取表のマス', () => {
     await expect(cell(page, chuo, hoku)).not.toContainText(/\d-\d/);
   });
 
-  test('星取表の下に「○＝カード勝利、△＝引き分け…」の注記が出る', async ({ page }) => {
+  test('星取表の下に凡例「○ 勝ち ● 負け △ 引き分け 未 未実施」と数字の説明が出る', async ({
+    page,
+  }) => {
     await page.goto('/bracket');
 
-    await expect(
-      page.getByText('○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。')
-    ).toBeVisible();
+    await expect(page.getByText('○ 勝ち ● 負け △ 引き分け 未 未実施')).toBeVisible();
+    await expect(page.getByText('数字は、対戦内の勝ち試合数です。')).toBeVisible();
+  });
+
+  test('見出しの右に「<全部>対戦中 <終了>対戦終了」が、本物の対戦の数どおりに出る', async ({
+    page,
+  }) => {
+    await page.goto('/bracket');
+
+    // seed の予選 6 対戦のうち、終わっているのは 愛知北-愛知西・愛知南-愛知北・愛知南-愛知西 の 3 つ
+    await expect(page.getByText('6対戦中 3対戦終了')).toBeVisible();
+  });
+
+  test('選手として入った人には「自分：チーム名」の札と、星取表の「自分」が出る。観戦者には出ない', async ({
+    page,
+  }) => {
+    await page.goto('/bracket');
+    await expect(page.getByText(/自分：/)).toHaveCount(0);
+    await expect(page.getByRole('rowheader', { name: /自分/ })).toHaveCount(0);
+
+    await enterAsPlayer(page, hoku, 'なかむら');
+    await page.goto('/bracket');
+    await expect(page.getByText(`自分：${hoku}`)).toBeVisible();
+    await expect(page.getByRole('rowheader', { name: /自分/ })).toHaveCount(1);
+    await expect(page.getByRole('rowheader', { name: new RegExp(`${hoku}.*自分`) })).toBeVisible();
   });
 });
 
@@ -203,10 +227,12 @@ test.describe('棄権で終わった試合', () => {
     // 2 試合のうち 1 試合が愛知西の勝ちになるので、2-0 ではなく 1-1（引き分け）
     await cell(page, hoku, sei).click();
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByText(`予選リーグ：${hoku} 1-1 ${sei}`)).toBeVisible();
+    await expect(sheet.getByTestId('card-result-score')).toHaveText('1-1');
+    await expect(sheet.getByText('△ 引き分け')).toBeVisible();
     await expect(sheet.getByText(`（${HOKU_SEI_PAIR_NAMES.hoku.join('・')} 棄権）`)).toBeVisible();
     // 試合ごとのゲーム数は点数のまま（棄権でも変えない）
-    await expect(sheet.getByText('1-0')).toHaveCount(2);
+    await expect(sheet.getByTestId('games-a')).toHaveText(['1', '1']);
+    await expect(sheet.getByTestId('games-b')).toHaveText(['0', '0']);
   });
 });
 
@@ -220,15 +246,26 @@ test.describe('対戦の詳細', () => {
 
     const sheet = page.getByRole('dialog');
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByText(`予選リーグ：${hoku} 2-0 ${sei}`)).toBeVisible();
+    await expect(sheet.getByRole('heading', { name: '予選リーグ・対戦詳細' })).toBeVisible();
+    await expect(sheet.getByTestId('card-result-score')).toHaveText('2-0');
+    await expect(sheet.getByText(`○ ${hoku}の勝利`)).toBeVisible();
     await expect(sheet.getByText('1部')).toBeVisible();
     await expect(sheet.getByText('2部')).toBeVisible();
     // 名前は同じ 4 人が 2 試合に出ているので 2 行ずつ
     await expect(sheet.getByText(HOKU_SEI_PAIR_NAMES.hoku.join('・'))).toHaveCount(2);
     await expect(sheet.getByText(HOKU_SEI_PAIR_NAMES.sei.join('・'))).toHaveCount(2);
-    await expect(sheet.getByText('1-0')).toHaveCount(2);
+    await expect(sheet.getByTestId('games-a')).toHaveText(['1', '1']);
+    await expect(sheet.getByTestId('games-b')).toHaveText(['0', '0']);
 
     await page.getByRole('button', { name: /閉じる/ }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('「星取表に戻る」でも閉じる', async ({ page }) => {
+    await page.goto('/bracket');
+    await cell(page, hoku, sei).click();
+
+    await page.getByRole('button', { name: '星取表に戻る' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
@@ -240,7 +277,8 @@ test.describe('対戦の詳細', () => {
     await cell(page, chuo, hoku).click();
 
     const sheet = page.getByRole('dialog');
-    await expect(sheet.getByText(`予選リーグ：${chuo} vs ${hoku}`)).toBeVisible();
+    await expect(sheet.getByTestId('card-result-score')).toHaveText('vs');
+    await expect(sheet.getByText('まだの対戦')).toBeVisible();
     await expect(sheet.getByText('0-0')).toHaveCount(0);
   });
 });
@@ -272,7 +310,7 @@ test.describe('決勝トーナメント', () => {
     await expect(page.getByText('予選 1位')).toHaveCount(0);
   });
 
-  test('対戦の状態と数字が、中の試合どおりに出る（試合中は LIVE と 1-0、まだの対戦は数字なし）', async ({
+  test('対戦の状態と数字が、中の試合どおりに出る（試合中は「試合中」の札と 1-0、まだの対戦は数字なし）', async ({
     page,
   }) => {
     await page.goto('/bracket');
@@ -280,7 +318,7 @@ test.describe('決勝トーナメント', () => {
 
     const live = page.getByTestId(KO_BOX_TEST_IDS.semifinal2);
     await expect(live).toHaveAttribute('data-status', 'live');
-    await expect(live.getByText('LIVE')).toBeVisible();
+    await expect(live.getByText('試合中')).toBeVisible();
     await expect(live.getByTestId('ko-score-a')).toHaveText('1');
     await expect(live.getByTestId('ko-score-b')).toHaveText('0');
 
@@ -303,7 +341,7 @@ test.describe('決勝トーナメント', () => {
     await openTournamentTab(page);
 
     await expect(page.getByText(/🏆 優勝/)).toHaveCount(0);
-    await expect(page.getByText('優勝未定')).toBeVisible();
+    await expect(page.getByText('まだ決まっていません')).toBeVisible();
   });
 });
 
@@ -371,51 +409,75 @@ for (const width of [375, 390]) {
     expect(tournament.scrollWidth).toBe(width);
   });
 
-  test(`${width}px 幅で、星取表と順位表は枠からはみ出さない`, async ({ page }) => {
+  test(`${width}px 幅で、予選リーグのページ・星取表・順位表は横にはみ出さず、4 チーム目の列も画面の中`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/bracket');
 
-    // 星取表は、はみ出す分をその中だけで横に動かす。枠そのものは画面の幅に収まる
-    const matrixBox = (await page.getByTestId('league-matrix-scroll').boundingBox())!;
-    expect(matrixBox.x + matrixBox.width).toBeLessThanOrEqual(width);
+    for (const testId of ['league-matrix-scroll', 'standings-scroll']) {
+      const { scrollWidth, clientWidth } = await page
+        .getByTestId(testId)
+        .evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+      const box = (await page.getByTestId(testId).boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
 
-    // 順位表は引き分けの「◯分」が付いても、枠の中に収まる（横に動かない）
-    const { scrollWidth, clientWidth } = await page
-      .getByTestId('standings-scroll')
-      .evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
-    expect(scrollWidth).toBe(clientWidth);
+    // 4 チーム目（右端の列）のマスの右端が画面の中に入っている
+    const lastColumnCell = (await cell(page, nan, sei).boundingBox())!;
+    expect(lastColumnCell.x + lastColumnCell.width).toBeLessThanOrEqual(width);
+    // 4 チーム目の列の見出しも画面の中
+    const lastHeader = (await page
+      .getByRole('columnheader', { name: new RegExp(sei) })
+      .boundingBox())!;
+    expect(lastHeader.x + lastHeader.width).toBeLessThanOrEqual(width);
   });
 
-  test(`${width}px 幅で、星取表の注記（○・△の説明）が枠からはみ出さない`, async ({ page }) => {
+  test(`${width}px 幅で、星取表の凡例が枠からはみ出さない`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/bracket');
 
-    const note = page.getByText('○＝カード勝利、△＝引き分け', { exact: false });
-    await expect(note).toBeVisible();
-    const box = (await note.boundingBox())!;
-    expect(box.x + box.width).toBeLessThanOrEqual(width);
-    const { scrollWidth, clientWidth } = await note.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-    }));
-    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    for (const text of ['○ 勝ち ● 負け △ 引き分け 未 未実施', '数字は、対戦内の勝ち試合数です。']) {
+      const note = page.getByText(text);
+      await expect(note).toBeVisible();
+      const box = (await note.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      const { scrollWidth, clientWidth } = await note.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }));
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    }
   });
 
-  test(`${width}px 幅で、勝ち上がり表は枠の中だけで横に動き、ページ全体は動かない`, async ({
+  test(`${width}px 幅で、決勝トーナメントは横に動かさず、準決勝・決勝・優勝・3位決定戦が画面の幅の中に収まる`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/bracket');
     await openTournamentTab(page);
 
-    const box = (await page.getByTestId('ko-bracket-scroll').boundingBox())!;
-    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(scrollWidth).toBeLessThanOrEqual(width);
 
-    const { scrollWidth, clientWidth } = await page
-      .getByTestId('ko-bracket-scroll')
-      .evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
-    // 中身のほうが広い＝この枠の中でスクロールが起きる
-    expect(scrollWidth).toBeGreaterThan(clientWidth);
+    const testIds = [
+      KO_BOX_TEST_IDS.semifinal1,
+      KO_BOX_TEST_IDS.semifinal2,
+      KO_BOX_TEST_IDS.final,
+      'ko-champion-box',
+      KO_BOX_TEST_IDS.thirdPlace,
+    ];
+    for (const testId of testIds) {
+      const box = (await page.getByTestId(testId).boundingBox())!;
+      expect(box.x, testId).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width, testId).toBeLessThanOrEqual(width);
+      // 箱の中の文字も、箱からはみ出さない
+      const overflow = await page
+        .getByTestId(testId)
+        .evaluate((el) => el.scrollWidth > el.clientWidth);
+      expect(overflow, testId).toBe(false);
+    }
   });
 
   // マイページで実際に文字が消えたことがあるので、幅と高さを実測して見張る
@@ -440,8 +502,10 @@ for (const width of [375, 390]) {
 test('切り替え・マス・閉じるは、どれも高さ 44px 以上でタップできる', async ({ page }) => {
   await page.goto('/bracket');
 
-  const tabBox = (await page.getByRole('button', { name: '予選リーグ' }).boundingBox())!;
-  expect(tabBox.height).toBeGreaterThanOrEqual(44);
+  for (const name of ['予選リーグ', '決勝トーナメント']) {
+    const tabBox = (await page.getByRole('button', { name }).boundingBox())!;
+    expect(tabBox.height).toBeGreaterThanOrEqual(44);
+  }
 
   const cellBox = (await cell(page, hoku, sei).boundingBox())!;
   expect(cellBox.height).toBeGreaterThanOrEqual(44);
@@ -449,6 +513,9 @@ test('切り替え・マス・閉じるは、どれも高さ 44px 以上でタ�
   await cell(page, hoku, sei).click();
   const closeBox = (await page.getByRole('button', { name: /閉じる/ }).boundingBox())!;
   expect(closeBox.height).toBeGreaterThanOrEqual(44);
+
+  const backBox = (await page.getByRole('button', { name: '星取表に戻る' }).boundingBox())!;
+  expect(backBox.height).toBeGreaterThanOrEqual(44);
 });
 
 test('詳細を開いている間、暗い部分を指でなぞっても背後のページは動かない', async ({

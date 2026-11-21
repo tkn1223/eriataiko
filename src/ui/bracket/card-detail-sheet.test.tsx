@@ -62,54 +62,96 @@ describe('CardDetailSheet', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  test('見出しに「予選リーグ：A ◯-◯ B」が出る', () => {
+  test('見出し「予選リーグ・対戦詳細」が出る', () => {
     render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
 
-    expect(screen.getByText('予選リーグ：愛知南 2-1 愛知中央')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '予選リーグ・対戦詳細' })).toBeInTheDocument();
   });
 
-  test('引き分けの対戦の見出しにも数字が出る', () => {
+  test('終わった対戦は、状態「終了した対戦」・真ん中に「2-1」・「○ 愛知南の勝利」が出る', () => {
+    render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
+
+    const result = screen.getByTestId('card-result');
+    expect(within(result).getByText('終了した対戦')).toBeInTheDocument();
+    expect(within(result).getByText('愛知南')).toBeInTheDocument();
+    expect(within(result).getByText('愛知中央')).toBeInTheDocument();
+    expect(within(result).getByTestId('card-result-score')).toHaveTextContent('2-1');
+    expect(within(result).getByText('○ 愛知南の勝利')).toBeInTheDocument();
+  });
+
+  test('引き分けの対戦は「△ 引き分け」が出る', () => {
     render(<CardDetailSheet card={drawCard} teams={teams} onClose={() => {}} />);
 
-    expect(screen.getByText('予選リーグ：愛知南 1-1 愛知中央')).toBeInTheDocument();
+    const result = screen.getByTestId('card-result');
+    expect(within(result).getByTestId('card-result-score')).toHaveTextContent('1-1');
+    expect(within(result).getByText('△ 引き分け')).toBeInTheDocument();
   });
 
-  // 「0-0」と出すと「0 対 0 で終わった」と読めてしまうため（受け入れ基準には無いが当日の混乱のもと）
-  test('未実施の対戦の詳細を開いても、見出しにスコアは出ない（「愛知南 vs 愛知中央」と出る）', () => {
+  // 「0-0」と出すと「0 対 0 で終わった」と読めてしまうため
+  test('まだの対戦は、状態「まだの対戦」・真ん中は「vs」で、勝ち負けの一言は出ない', () => {
     render(<CardDetailSheet card={waitingCard} teams={teams} onClose={() => {}} />);
 
-    expect(screen.getByText('予選リーグ：愛知南 vs 愛知中央')).toBeInTheDocument();
+    const result = screen.getByTestId('card-result');
+    expect(within(result).getByText('まだの対戦')).toBeInTheDocument();
+    expect(within(result).getByTestId('card-result-score')).toHaveTextContent('vs');
+    expect(within(result).queryByText(/勝利|引き分け/)).not.toBeInTheDocument();
     expect(screen.queryByText(/0-0/)).not.toBeInTheDocument();
   });
 
-  test('その対戦の試合一覧が、部のラベル・両ペアの名前・ゲーム数つきで並ぶ', () => {
+  test('試合中の対戦は、状態「試合中の対戦」と今の数字が出る。勝ちの一言は出ない', () => {
+    const liveCard: LeagueCard = { ...doneCard, status: 'live', gamesWonA: 1, gamesWonB: 0 };
+    render(<CardDetailSheet card={liveCard} teams={teams} onClose={() => {}} />);
+
+    const result = screen.getByTestId('card-result');
+    expect(within(result).getByText('試合中の対戦')).toBeInTheDocument();
+    expect(within(result).getByTestId('card-result-score')).toHaveTextContent('1-0');
+    expect(within(result).queryByText(/勝利/)).not.toBeInTheDocument();
+  });
+
+  test('自分のチームの下にだけ「自分のチーム」が出る', () => {
+    const { unmount } = render(
+      <CardDetailSheet card={doneCard} teams={teams} selfTeamNumber={2} onClose={() => {}} />
+    );
+    const result = screen.getByTestId('card-result');
+    expect(within(result).getAllByText('自分のチーム')).toHaveLength(1);
+    unmount();
+
+    render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
+    expect(screen.queryByText('自分のチーム')).not.toBeInTheDocument();
+  });
+
+  test('部ごとのカードに、部の札・状態・両ペアの名前・ゲーム数が並ぶ', () => {
     render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
 
     const done = screen.getByTestId('card-match-m-1');
     expect(within(done).getByText('1部')).toBeInTheDocument();
+    expect(within(done).getByText('終了')).toBeInTheDocument();
     expect(within(done).getByText('佐藤・鈴木')).toBeInTheDocument();
     expect(within(done).getByText('山田・田中')).toBeInTheDocument();
-    expect(within(done).getByText('1-0')).toBeInTheDocument();
+    expect(within(done).getByTestId('games-a')).toHaveTextContent('1');
+    expect(within(done).getByTestId('games-b')).toHaveTextContent('0');
 
     const live = screen.getByTestId('card-match-m-2');
-    expect(within(live).getByText('0-1')).toBeInTheDocument();
+    expect(within(live).getByText('試合中')).toBeInTheDocument();
+    expect(within(live).getByTestId('games-a')).toHaveTextContent('0');
+    expect(within(live).getByTestId('games-b')).toHaveTextContent('1');
   });
 
-  test('まだの試合はゲーム数の代わりに「未」が出る', () => {
+  test('まだの試合は状態が「未実施」で、ゲーム数は数字の代わりに「―」が出る', () => {
     render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
 
     const waiting = screen.getByTestId('card-match-m-3');
-    expect(within(waiting).getByText('未')).toBeInTheDocument();
-    expect(within(waiting).queryByText(/\d+-\d+/)).not.toBeInTheDocument();
+    expect(within(waiting).getByText('未実施')).toBeInTheDocument();
+    expect(within(waiting).getByTestId('games-a')).toHaveTextContent('―');
+    expect(within(waiting).queryByText(/^\d+$/)).not.toBeInTheDocument();
   });
 
-  test('進行中の試合には LIVE が出る', () => {
-    render(<CardDetailSheet card={doneCard} teams={teams} onClose={() => {}} />);
+  test('黒いボタン「星取表に戻る」を押すと閉じる（onClose が呼ばれる）', () => {
+    const onClose = vi.fn();
+    render(<CardDetailSheet card={doneCard} teams={teams} onClose={onClose} />);
 
-    expect(within(screen.getByTestId('card-match-m-2')).getByText('LIVE')).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('card-match-m-1')).queryByText('LIVE')
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '星取表に戻る' }));
+    expect(onClose).toHaveBeenCalled();
   });
 
   test('「閉じる」を押すと閉じる（onClose が呼ばれる）', () => {
@@ -156,7 +198,8 @@ describe('CardDetailSheet と棄権', () => {
     const row = screen.getByTestId('card-match-m-1');
     expect(within(row).getByText('山田・田中')).toHaveClass('font-black');
     expect(within(row).getByText('佐藤・鈴木')).toHaveClass('text-gray-500');
-    expect(within(row).getByText('1-0')).toBeInTheDocument();
+    expect(within(row).getByTestId('games-a')).toHaveTextContent('1');
+    expect(within(row).getByTestId('games-b')).toHaveTextContent('0');
   });
 
   test('「（佐藤・鈴木 棄権）」と添えられる。棄権の無い試合には出ない', () => {

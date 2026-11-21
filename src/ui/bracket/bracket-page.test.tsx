@@ -111,6 +111,35 @@ describe('BracketPage', () => {
     expect(screen.getByText('対戦表')).toBeInTheDocument();
   });
 
+  test('チームに入っている人には、見出しの右に「自分：愛知中央」の札が出る', () => {
+    renderPage();
+
+    expect(screen.getByText('自分：愛知中央')).toBeInTheDocument();
+  });
+
+  test('観戦者（自分のチームが無い）には、その札が出ない', () => {
+    render(
+      <BracketPage
+        teams={teams}
+        leagueCards={leagueCards}
+        standings={standings.map((row) => ({ ...row, isSelf: false }))}
+        koBracket={{ kind: 'ready', data: koData }}
+        truncated={false}
+      />
+    );
+
+    expect(screen.queryByText(/自分：/)).not.toBeInTheDocument();
+  });
+
+  test('「星取表に戻る」でも、詳細が閉じる', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '愛知南 対 愛知中央 の対戦' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '星取表に戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   test('「予選リーグ」「決勝トーナメント」の切り替えが出て、押すと中身が入れ替わる', () => {
     renderPage();
 
@@ -135,7 +164,8 @@ describe('BracketPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '愛知南 対 愛知中央 の対戦' }));
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('予選リーグ：愛知南 2-1 愛知中央')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '予選リーグ・対戦詳細' })).toBeInTheDocument();
+    expect(screen.getByText('○ 愛知南の勝利')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /閉じる/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

@@ -45,18 +45,34 @@ test.describe('入場画面', () => {
     await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
   });
 
-  test('観戦の入口から、合言葉なしで見るだけの状態になれる', async ({ page }) => {
+  test('観戦の入口から、合言葉なしでそのまま大会の画面に入れる', async ({ page }) => {
     await page.goto('/enter');
     await page.getByRole('button', { name: /観戦の方はこちら/ }).click();
 
-    await expect(page.getByText('観戦中')).toBeVisible();
-    await expect(page.getByRole('button', { name: '観戦をやめる' })).toBeVisible();
-    // 合言葉は一度も聞かれない
-    await expect(page.getByPlaceholder('当日配布された合言葉')).toHaveCount(0);
+    // 「観戦中」の画面は挟まない
+    await expect(page).toHaveURL(/\/courts$/);
+    await expect(page.getByText('観戦中')).toHaveCount(0);
+  });
 
-    // 元に戻しておく（テストは直列に流れるので、次のテストに持ち越さない）
-    await page.getByRole('button', { name: '観戦をやめる' }).click();
-    await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
+  test('合言葉を入れて入場すると、「入場中」の画面を挟まずそのまま大会の画面に移る', async ({
+    page,
+  }) => {
+    const input = await openPasscodeSheet(page);
+    await input.fill('がんばれ2027');
+    await page.getByRole('button', { name: '入場する' }).click();
+
+    await expect(page).toHaveURL(/\/courts$/);
+    await expect(page.getByRole('link', { name: '大会の画面へ' })).toHaveCount(0);
+  });
+
+  test('入場済みで入場画面を開くと、大会の画面へ送られる', async ({ page }) => {
+    await page.goto('/enter');
+    await page.getByRole('button', { name: /観戦の方はこちら/ }).click();
+    await expect(page).toHaveURL(/\/courts$/);
+
+    await page.goto('/enter');
+
+    await expect(page).toHaveURL(/\/courts$/);
   });
 
   test('名前を押すと合言葉の入力が開く', async ({ page }) => {

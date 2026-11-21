@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
 import { RetiredNote } from '@/ui/components/retired-note';
-import Link from 'next/link';
+import { ReenterButton } from '@/ui/enter/reenter-button';
 import { hasTeamColor, teamBgClass } from '@/domain/class-labels';
 import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
 
@@ -58,12 +58,8 @@ export function MyPage({ profile, record, matches }: Props) {
   return (
     <div className="mx-auto max-w-md px-4 py-4">
       <div className="mb-4 flex justify-end">
-        <Link
-          href="/enter"
-          className="flex min-h-11 items-center rounded-lg border border-gray-300 px-4 text-sm font-bold"
-        >
-          別の人として入り直す
-        </Link>
+        {/* 押した時点で退場し、チームを選ぶ最初の画面へ移る */}
+        <ReenterButton label="別の人として入り直す" />
       </div>
 
       <div className="mb-5 flex items-center gap-3">

@@ -1,7 +1,10 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { MyPage } from '@/ui/me/my-page';
 import type { MyMatch, MyProfile, MyRecord } from '@/ui/me/types';
+
+// 「入り直す」ボタンが画面を移すのに使う。ここでは押したあとまでは見ない
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 const profile: MyProfile = {
   name: '佐々木 太郎',
@@ -203,11 +206,13 @@ describe('MyPage', () => {
     expect(within(screen.getByTestId('match-match-3')).getByText(/シングルス/)).toBeInTheDocument();
   });
 
-  test('「別の人として入り直す」を押すと入場画面（/enter）に移る', () => {
+  // 押したら退場まで済ませる（入場画面で「退場する」をもう一度押させない）。
+  // 押したあとの動きは src/ui/enter/reenter-button.test.tsx。
+  test('「別の人として入り直す」は、押すと退場するボタンになっている', () => {
     render(<MyPage profile={profile} record={record} matches={matches} />);
 
-    const link = screen.getByRole('link', { name: '別の人として入り直す' });
-    expect(link).toHaveAttribute('href', '/enter');
+    expect(screen.getByRole('button', { name: '別の人として入り直す' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '別の人として入り直す' })).not.toBeInTheDocument();
   });
 
   test('「準備中」の表示や「観戦モード」「新しい大会を作る」は出ない', () => {

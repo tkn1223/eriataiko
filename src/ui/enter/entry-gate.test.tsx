@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { EntryGate, type EnterDivision, type EnterTeam, type Entrant } from '@/ui/enter/entry-gate';
 import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 
-// 入場に成功すると router.refresh() で画面を描き直す作りなので、差し替えておく
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: () => {} }) }));
+// 入場に成功すると router.push('/') で大会の画面へ移る作りなので、差し替えておく
+const push = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
 
 const teams: EnterTeam[] = [
   { id: 't1', teamNumber: 1, name: '愛知南' },
@@ -41,7 +42,6 @@ function renderGate(overrides: Partial<Parameters<typeof EntryGate>[0]> = {}) {
       teams={teams}
       divisions={divisions}
       passcodeRequired={true}
-      session={null}
       {...overrides}
     />
   );
@@ -52,6 +52,7 @@ const VIEWER_BUTTON = /観戦の方はこちら/;
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  push.mockReset();
   fetchMock = vi.fn(async () => new Response(JSON.stringify({ session: null }), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -293,29 +294,37 @@ describe('観戦者の入口', () => {
 });
 
 describe('入場したあと', () => {
-  test('名前で入った人は、名前と番号が出て退場できる', () => {
-    renderGate({
-      session: {
-        role: 'player',
-        playerId: 'p1',
-        playerName: 'さとう',
-        playerNumber: 1,
-      },
+  test('名前で入れたら、「入場中」の画面を挟まずそのまま大会の画面（/）へ移る', async () => {
+    renderGate();
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
+    fireEvent.change(screen.getByPlaceholderText('当日配布された合言葉'), {
+      target: { value: 'がんばれ2027' },
     });
+    fireEvent.click(screen.getByRole('button', { name: '入場する' }));
 
-    expect(screen.getByText('入場中')).toBeInTheDocument();
-    expect(screen.getByText('#1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '退場する' })).toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/'));
+    expect(screen.queryByText('入場中')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '大会の画面へ' })).not.toBeInTheDocument();
   });
 
-  test('観戦者は「観戦中」と出て、書き込めないことが書いてある', () => {
-    renderGate({ session: { role: 'viewer' } });
+  test('観戦で入っても、そのまま大会の画面（/）へ移る', async () => {
+    renderGate();
+    fireEvent.click(screen.getByRole('button', { name: VIEWER_BUTTON }));
 
-    expect(screen.getByText('観戦中')).toBeInTheDocument();
-    expect(screen.getByText(/得点の書き込みはできません/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '観戦をやめる' })).toBeInTheDocument();
-    // 観戦中に観戦の入口をもう一度出さない
-    expect(screen.queryByRole('button', { name: VIEWER_BUTTON })).not.toBeInTheDocument();
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/'));
+  });
+
+  test('合言葉が違ったら、画面は移らない', async () => {
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ error: '合言葉が違います。' }), { status: 401 })
+    );
+    renderGate({ passcodeRequired: false });
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
+
+    await waitFor(() => expect(screen.getByText('合言葉が違います。')).toBeInTheDocument());
+    expect(push).not.toHaveBeenCalled();
   });
 
   test('参加者が 1 人もいないときは登録を促す', () => {
@@ -343,16 +352,6 @@ describe('入り直しを預かり場所に知らせる', () => {
 
     expect(begin).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(end).toHaveBeenCalledWith('e-p1'));
-  });
-
-  test('退場したら、入場者がいなくなった（null）と知らせる', async () => {
-    const end = vi.spyOn(appScoreSyncStore, 'endEntrantChange');
-    renderGate({
-      session: { role: 'player', playerId: 'p1', playerName: 'さとう', playerNumber: 1 },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '退場する' }));
-
-    await waitFor(() => expect(end).toHaveBeenCalledWith(null));
   });
 
   test('入り直せなかった（断られた・つながらない）ら、前の入場者のままにする', async () => {

@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import {
@@ -10,7 +9,6 @@ import {
   type ClassColorNumber,
 } from '@/domain/class-labels';
 import { BottomSheet } from '@/ui/components/bottom-sheet';
-import type { Session } from '@/server/session';
 import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 
 /** 入場画面の一覧に出す 1 人。いまの大会に参加している人だけが来る。 */
@@ -34,7 +32,6 @@ type Props = {
   teams: EnterTeam[];
   divisions: EnterDivision[];
   passcodeRequired: boolean;
-  session: Session | null;
 };
 
 /** チームが決まっていない人（試合に出ない入力係など）の置き場を指す目印。 */
@@ -117,6 +114,10 @@ function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
  *
  * 見るだけの人は、最初の画面の一番下から**合言葉なしで**入れる。
  *
+ * **入れたら、そのまま大会の画面（/）へ移る。** 「入場中」の画面は挟まない。
+ * 入場済みの人がこの画面を開いたときは、ページの側（src/app/enter/page.tsx）で大会の画面へ送る。
+ * 入り直したい人は、マイページのボタン（src/ui/enter/reenter-button.tsx）で退場してから来る。
+ *
  * ここで選んだ名前はあくまで「誰として入るか」の申告で、
  * 実際の検証（合言葉・参加者の実在確認・Cookie 発行）はすべて
  * /api/session の中でサーバーが行う。
@@ -127,7 +128,6 @@ export function EntryGate({
   teams,
   divisions,
   passcodeRequired,
-  session,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -152,25 +152,21 @@ export function EntryGate({
   const onFirstScreen = bucket === null || !teamStepShown;
 
   /**
-   * 入場・観戦・退場を送る。`nextParticipantId` は、うまくいったときの入場者（観戦・退場は null）。
+   * 入場・観戦を送る。`nextParticipantId` は、うまくいったときの入場者（観戦は null）。
    *
    * 結果LIVE で送れていない点が残っていると、預かり場所はそれを送り直し続けている。入場の返事と一緒に
    * Cookie が替わるので、その間は送るのを待たせ、替わったあとは「押した人と違う」点を送らないように、
    * 入り直しの始まりと終わりを預かり場所に知らせる（use-score-sync.ts、仕様 ⑪）。
    */
-  async function call(
-    method: 'POST' | 'DELETE',
-    body?: unknown,
-    nextParticipantId: string | null = null
-  ) {
+  async function call(body: unknown, nextParticipantId: string | null = null) {
     setError(null);
     setBusy(true);
     appScoreSyncStore.beginEntrantChange();
     try {
       const res = await fetch('/api/session', {
-        method,
-        headers: body ? { 'content-type': 'application/json' } : undefined,
-        body: body ? JSON.stringify(body) : undefined,
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
       });
       if (res.ok) appScoreSyncStore.endEntrantChange(nextParticipantId);
       else appScoreSyncStore.cancelEntrantChange();
@@ -179,9 +175,8 @@ export function EntryGate({
         setError(json.error ?? '通信に失敗しました。');
         return;
       }
-      setChosen(null);
-      setPasscode('');
-      startTransition(() => router.refresh());
+      // 読み込み直さずに移る。結果LIVE で送れていない点をこの端末から消さないため（仕様 ⑪）
+      startTransition(() => router.push('/'));
     } catch {
       setError('ネットワークに繋がりませんでした。電波を確認してください。');
     } finally {
@@ -195,11 +190,7 @@ export function EntryGate({
   function choose(entrant: Entrant) {
     setError(null);
     if (!passcodeRequired) {
-      void call(
-        'POST',
-        { as: 'player', playerId: entrant.playerId, passcode: '' },
-        entrant.participantId
-      );
+      void call({ as: 'player', playerId: entrant.playerId, passcode: '' }, entrant.participantId);
       return;
     }
     setPasscode('');
@@ -215,9 +206,7 @@ export function EntryGate({
         <h1 className="mt-1 text-[22px] leading-[1.6] font-black">{competitionName}</h1>
 
         <div className="mt-6">
-          {session ? (
-            <EnteredView session={session} working={working} onLeave={() => call('DELETE')} />
-          ) : entrants.length === 0 ? (
+          {entrants.length === 0 ? (
             <EmptyView />
           ) : bucket === null ? (
             <TeamStep buckets={buckets} onChoose={setTeamKey} disabled={working} />
@@ -233,18 +222,18 @@ export function EntryGate({
           )}
         </div>
 
-        {session === null && onFirstScreen && (
+        {onFirstScreen && (
           <button
             type="button"
             disabled={working}
-            onClick={() => call('POST', { as: 'viewer' })}
+            onClick={() => call({ as: 'viewer' })}
             className="border-hairline text-muted-ink mt-4 min-h-12 w-full rounded-xl border border-dashed text-[13px] font-bold disabled:opacity-50"
           >
             観戦の方はこちら（合言葉なし・見るだけ）
           </button>
         )}
 
-        {/* シートの外で起きた失敗（観戦・退場・合言葉なしの入場）はここに出す */}
+        {/* シートの外で起きた失敗（観戦・合言葉なしの入場）はここに出す */}
         {error && chosen === null && (
           <p role="alert" className="text-live mt-4 text-[13px] font-bold">
             {error}
@@ -286,7 +275,6 @@ export function EntryGate({
           onKeyDown={(event) => {
             if (event.key === 'Enter' && chosen && !working) {
               void call(
-                'POST',
                 { as: 'player', playerId: chosen.playerId, passcode },
                 chosen.participantId
               );
@@ -309,11 +297,7 @@ export function EntryGate({
           disabled={working}
           onClick={() =>
             chosen &&
-            call(
-              'POST',
-              { as: 'player', playerId: chosen.playerId, passcode },
-              chosen.participantId
-            )
+            call({ as: 'player', playerId: chosen.playerId, passcode }, chosen.participantId)
           }
           className="bg-ink mt-4 min-h-12 w-full rounded-xl text-[15px] font-extrabold text-white disabled:opacity-50"
         >
@@ -321,56 +305,6 @@ export function EntryGate({
         </button>
       </BottomSheet>
     </div>
-  );
-}
-
-function EnteredView({
-  session,
-  working,
-  onLeave,
-}: {
-  session: Session;
-  working: boolean;
-  onLeave: () => void;
-}) {
-  const viewing = session.role === 'viewer';
-
-  return (
-    <>
-      <h2 className="text-[17px] font-black">{viewing ? '観戦中' : '入場中'}</h2>
-      <div className="border-hairline mt-3 rounded-2xl border bg-white p-[18px]">
-        {viewing ? (
-          <p className="text-[18px] font-black">観戦者</p>
-        ) : (
-          <p className="text-[18px] font-black">
-            {session.playerName}
-            <span className="text-muted-ink tabular ml-2 text-[13px] font-bold">
-              #{session.playerNumber}
-            </span>
-          </p>
-        )}
-        <p className="text-muted-ink mt-2 text-[13px] leading-relaxed">
-          {viewing
-            ? '見るだけの状態です。得点の書き込みはできません。自分の試合を見るときは、いったんやめて名前を選んでください。'
-            : `この端末からの書き込みは「${session.playerName}」として記録されます。別の人に渡すときは退場してください。`}
-        </p>
-      </div>
-      {/* ここまで来たら用は済んでいる。行き先が無いと URL を打ち直すことになる。 */}
-      <Link
-        href="/"
-        className="bg-ink mt-4 flex min-h-12 w-full items-center justify-center rounded-xl text-[15px] font-extrabold text-white"
-      >
-        大会の画面へ
-      </Link>
-      <button
-        type="button"
-        onClick={onLeave}
-        disabled={working}
-        className="border-hairline mt-3 min-h-12 w-full rounded-xl border bg-white text-[15px] font-extrabold disabled:opacity-50"
-      >
-        {viewing ? '観戦をやめる' : '退場する'}
-      </button>
-    </>
   );
 }
 

@@ -1,6 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { ViewerNotice } from '@/ui/me/viewer-notice';
+
+// 「入り直す」ボタンが画面を移すのに使う。ここでは押したあとまでは見ない
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: () => {} }) }));
 
 describe('ViewerNotice', () => {
   test('「観戦モード」と、名前を登録すれば見られるという案内が出る', () => {
@@ -16,11 +19,11 @@ describe('ViewerNotice', () => {
     expect(screen.getByText('観')).toBeInTheDocument();
   });
 
-  test('「選手として入り直す」は /enter へのリンクになっている', () => {
+  // 観戦をやめてから入場画面へ移る（押したあとの動きは src/ui/enter/reenter-button.test.tsx）
+  test('「選手として入り直す」は、押すと観戦をやめるボタンになっている', () => {
     render(<ViewerNotice />);
 
-    const link = screen.getByRole('link', { name: '選手として入り直す' });
-    expect(link).toHaveAttribute('href', '/enter');
+    expect(screen.getByRole('button', { name: '選手として入り直す' })).toBeInTheDocument();
   });
 
   test('成績や試合一覧は出ない', () => {

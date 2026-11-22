@@ -130,6 +130,12 @@ function renderLiveCard({
 }
 
 describe('CourtLiveCard', () => {
+  test('カードに id="court-N" が付く（進行表の［コートNの試合速報を開く］の行き先）', () => {
+    const { container } = renderLiveCard();
+
+    expect(container.querySelector('#court-3')).toBe(screen.getByTestId('court-card-3'));
+  });
+
   test('進行中のコートに「試合中」と部が出る（回戦は出さない）', () => {
     renderLiveCard();
 

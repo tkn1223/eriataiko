@@ -1,100 +1,196 @@
+import Link from 'next/link';
 import { matchWinner, retiredSideOf } from '@/domain/match-rules';
-import { playedGameScores } from '@/domain/scoring';
-import { ClassChip } from '@/ui/components/class-chip';
-import { RetiredNote } from '@/ui/components/retired-note';
-import { YouTag } from '@/ui/components/you-tag';
+import { playedGameScores, type GameScore } from '@/domain/scoring';
+import { defaultShownGame } from '@/ui/courts/shown-game';
+import {
+  isUndecided,
+  MineDot,
+  pairNameOf,
+  RetiredBadge,
+  TeamNameTag,
+  TeamSwatch,
+} from '@/ui/matches/match-parts';
 import type { BoardMatch } from '@/ui/matches/types';
 
 type Props = {
   match: BoardMatch;
+  /** 行の上に出す場所（「コート1」）。探す画面（1c）で、どのコートの試合かを見せるのに使う。 */
+  location?: string;
 };
 
-/** 行の右側に出す得点。実際にプレーされたゲーム（0 対 0 の枠を除く）を連結する。 */
-function scoreTextOf(match: BoardMatch): string | null {
+/** 点の列の幅。終わった試合は 26px・15px、試合中は 34px・24px（design-README の 1b）。 */
+const DONE_SCORE_CELL = 'w-[26px] text-[15px]';
+const LIVE_SCORE_CELL = 'w-[34px] text-[24px]';
+
+/** 1 段ぶんの点の列。 */
+function ScoreLine({
+  testId,
+  match,
+  side,
+}: {
+  testId: string;
+  match: BoardMatch;
+  side: 'A' | 'B';
+}) {
+  if (match.status === 'waiting') {
+    return <div data-testid={testId} />;
+  }
+
+  if (match.status === 'live') {
+    const shown = defaultShownGame(match.scores, match.maxGameCount);
+    const frame = match.scores.find((score) => score.gameNumber === shown);
+    const value = side === 'A' ? (frame?.sideAScore ?? 0) : (frame?.sideBScore ?? 0);
+    return (
+      <div data-testid={testId} className="flex shrink-0 justify-end">
+        <span className={`tabular text-right font-black ${LIVE_SCORE_CELL}`}>{value}</span>
+      </div>
+    );
+  }
+
   const games = playedGameScores(match.scores);
-  if (games.length === 0) return null;
-  return games.map((game) => `${game.sideAScore}-${game.sideBScore}`).join(' / ');
+  return (
+    <div data-testid={testId} className="flex shrink-0 justify-end">
+      {games.map((game) => (
+        <span
+          key={game.gameNumber}
+          className={`tabular text-right ${DONE_SCORE_CELL} ${
+            gameWinnerOf(game) === side
+              ? 'font-extrabold text-[#171717]'
+              : 'font-medium text-[#a09a91]'
+          }`}
+        >
+          {side === 'A' ? game.sideAScore : game.sideBScore}
+        </span>
+      ))}
+    </div>
+  );
 }
 
-/** ペアの名前。まだ決まっていなければ空枠ラベル（例: 予選1位）、それも無ければ「未定」。 */
-function pairNameOf(team: BoardMatch['teamA']): string {
-  if (team.players.length > 0) return team.players.join('・');
-  return team.slotLabel ?? '未定';
+function gameWinnerOf(game: GameScore): 'A' | 'B' | null {
+  if (game.sideAScore > game.sideBScore) return 'A';
+  if (game.sideBScore > game.sideAScore) return 'B';
+  return null;
 }
 
-/** 勝った側は太字、負けた側はグレー。まだ勝ち負けが無ければそのまま。 */
-function nameClassOf(side: 'A' | 'B', winner: 'A' | 'B' | null): string {
-  if (winner === null) return '';
-  return winner === side ? 'font-black' : 'text-gray-500';
+/** チーム 1 段。■チーム色＋選手名＋チーム名（＋金の点・棄権の札）。点の列は右に別で並べる。 */
+function TeamLine({
+  testId,
+  team,
+  isMineSide,
+  retired,
+  lost,
+}: {
+  testId: string;
+  team: BoardMatch['teamA'];
+  isMineSide: boolean;
+  retired: boolean;
+  lost: boolean;
+}) {
+  return (
+    <div data-testid={testId} className="flex min-h-7 min-w-0 flex-1 items-center gap-1.5">
+      <TeamSwatch team={team} size={9} />
+      <span
+        className={`min-w-0 truncate text-[15px] ${
+          isUndecided(team)
+            ? 'font-semibold text-[#8a857d]'
+            : lost
+              ? 'font-semibold text-[#6b665f]'
+              : 'font-extrabold'
+        }`}
+      >
+        {pairNameOf(team)}
+      </span>
+      <TeamNameTag team={team} />
+      {isMineSide && <MineDot />}
+      {retired && <RetiredBadge />}
+    </div>
+  );
+}
+
+/** 行の上に出す小さな一言。試合中は緑、未定の枠は「◯◯ ・ 予選の結果で決まる」。 */
+function captionOf(match: BoardMatch, location: string | undefined): string | null {
+  if (match.status === 'live') {
+    const shown = defaultShownGame(match.scores, match.maxGameCount);
+    return `試合中 ・ ${location ? `${location} ・ ` : ''}第${shown}ゲーム`;
+  }
+  const undecided = isUndecided(match.teamA) || isUndecided(match.teamB);
+  if (undecided && match.status === 'waiting') return `${match.roundLabel} ・ 予選の結果で決まる`;
+  return location ?? null;
 }
 
 /**
- * コートカードの中の 1 試合の行。**見るだけで、押しても何も起きない**
- * （得点を入れる場所は結果LIVE だけ。docs/specs/2026-10-14-matches-real-data.md の「決めたこと」1・2）。
+ * 1 試合の行（1b・1c）。白い角丸の中に、左に「◯試合目」、中にチームごと 2 段（名前の折り返しを
+ * なくすため）、右にゲームごとの点と「›」。**押すと試合の詳しい画面が開く**。
  *
- * 勝った側は `matchWinner`（試合の勝ち負けを決める 1 か所）で決める。棄権は点数に関係なく相手の勝ち
- * なので、棄権した側には「（◯◯ 棄権）」を添えて、点数と勝ちが逆になっている理由を見せる。
+ * 勝ち負けは `matchWinner`（試合の勝ち負けを決める 1 か所）で決める。棄権は点数に関係なく
+ * 相手の勝ちなので、棄権した側には札「棄権」を付けて、点と勝ちが逆になっている理由を見せる。
  *
- * 印・部・「あなたの試合」を 1 行目、名前とスコアを 2 行目に分けている。
- * 3 ゲームの試合はスコアが長く（例: 16-21 / 21-23）、375px 幅では
- * 印・部・タグ・名前・スコアを 1 行に並べると横にはみ出すことが実測で分かったため。
+ * 仕様: docs/specs/2026-11-22-matches-redesign.md
  */
-export function MatchRow({ match }: Props) {
-  const winner =
-    match.status === 'done' ? matchWinner(match.scores, match.maxGameCount, match.ending) : null;
-  const retiredSide = match.status === 'done' ? retiredSideOf(match.ending) : null;
-  const scoreText = scoreTextOf(match);
+export function MatchRow({ match, location }: Props) {
+  const done = match.status === 'done';
+  const winner = done ? matchWinner(match.scores, match.maxGameCount, match.ending) : null;
+  const retiredSide = done ? retiredSideOf(match.ending) : null;
+  const caption = captionOf(match, location);
+  const testId = `match-row-${match.matchId}`;
 
   return (
     <li
-      data-testid={`match-row-${match.matchId}`}
-      className={`flex w-full items-center py-[9px] text-left ${
-        match.status === 'live' ? 'bg-accent-soft rounded-[10px] px-2' : ''
+      data-testid={testId}
+      className={`rounded-2xl bg-white ${
+        match.isMine
+          ? 'border-gold-mine border-[1.5px] shadow-[0_6px_16px_rgb(213_162_60/0.16)]'
+          : 'border-line border shadow-[0_1px_2px_rgb(0_0_0/0.04)]'
       }`}
     >
-      <div className="flex w-full flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="tabular flex min-w-[58px] shrink-0 items-center justify-center rounded-full bg-gray-100 px-2 py-1 text-[11px] font-extrabold text-gray-500">
-            {match.orderInCourt === null ? '順番未定' : `${match.orderInCourt}試合目`}
-          </span>
-          <ClassChip classLabel={match.classLabel} />
-          {match.isMine && <YouTag />}
+      <Link
+        href={`/matches/${match.matchId}`}
+        className="flex min-h-11 items-center gap-2 py-2.5 pr-2.5 pl-2"
+      >
+        <span className="flex w-[34px] shrink-0 flex-col items-center leading-tight">
+          <span className="tabular text-[17px] font-extrabold">{match.orderInCourt ?? '–'}</span>
+          <span className="text-[9.5px] font-bold text-[#999]">試合目</span>
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          {caption && (
+            <span
+              className={`mb-0.5 flex items-center gap-1.5 text-[11.5px] font-extrabold ${
+                match.status === 'live' ? 'text-status-live-ink' : 'text-[#666]'
+              }`}
+            >
+              {match.status === 'live' && (
+                <span aria-hidden="true" className="bg-status-live-dot size-2 rounded-full" />
+              )}
+              {caption}
+            </span>
+          )}
+          <div className="flex items-center gap-1">
+            <TeamLine
+              testId={`${testId}-line-A`}
+              team={match.teamA}
+              isMineSide={match.mySide === 'A'}
+              retired={retiredSide === 'A'}
+              lost={winner === 'B'}
+            />
+            <ScoreLine testId={`${testId}-scoreline-A`} match={match} side="A" />
+          </div>
+          <div className="flex items-center gap-1">
+            <TeamLine
+              testId={`${testId}-line-B`}
+              team={match.teamB}
+              isMineSide={match.mySide === 'B'}
+              retired={retiredSide === 'B'}
+              lost={winner === 'A'}
+            />
+            <ScoreLine testId={`${testId}-scoreline-B`} match={match} side="B" />
+          </div>
         </div>
 
-        <div className="flex items-start gap-2">
-          <span className="min-w-0 flex-1 text-left text-[14px] leading-snug font-bold break-words">
-            <span className={nameClassOf('A', winner)}>{pairNameOf(match.teamA)}</span>
-            {retiredSide === 'A' && (
-              <>
-                {' '}
-                <RetiredNote names={match.teamA.players} />
-              </>
-            )}
-            <span className="text-[11px] font-normal text-gray-400"> vs </span>
-            <span className={nameClassOf('B', winner)}>{pairNameOf(match.teamB)}</span>
-            {retiredSide === 'B' && (
-              <>
-                {' '}
-                <RetiredNote names={match.teamB.players} />
-              </>
-            )}
-          </span>
-
-          <span className="shrink-0 text-right">
-            {scoreText && (
-              <span className="tabular text-accent block text-[12px] font-extrabold">
-                {scoreText}
-              </span>
-            )}
-            {match.status === 'live' && (
-              <span className="text-live inline-flex items-center gap-1 text-[11px] font-extrabold tracking-[0.08em]">
-                <span aria-hidden="true" className="bg-live animate-blink size-1.5 rounded-full" />
-                LIVE
-              </span>
-            )}
-          </span>
-        </div>
-      </div>
+        <span aria-hidden="true" className="text-[20px] leading-none text-[#b5b0a8]">
+          ›
+        </span>
+      </Link>
     </li>
   );
 }

@@ -17,16 +17,20 @@ const NOT_FOUND_HEADING = '大会の情報が見つかりません';
 const NOT_FOUND_MESSAGE = '運営の方に確認してください。';
 
 /**
- * 「進行表」画面。コートごとに、終わった・進行中・これからの試合を見る。**見るだけ**
- * （得点を入れる場所は結果LIVE だけ）。
+ * 「進行表」画面。全コートのいま・次（1a）、コートの全試合（1b）、探す（1c）。
+ * 点を入れるのは試合速報だけで、ここからは終わった試合の訂正だけ（詳しい画面から）。
  *
  * 読み取りは `createSupabaseServerClient()`（`src/db/matches-board.ts` の中）。
  * どの画面を出すか（読めた／大会が無い／つながらない）は `loadMatchesPage` が決める。
  * ここはそれを JSX にするだけ（分岐を Vitest で確かめられるようにするため）。
  *
  * 仕様: docs/specs/2026-10-14-matches-real-data.md
+ *       docs/specs/2026-11-22-matches-redesign.md
  */
-export default async function Page() {
+export default async function Page({ searchParams }: PageProps<'/matches'>) {
+  const courtParam = (await searchParams).court;
+  const initialCourt = Number(Array.isArray(courtParam) ? courtParam[0] : courtParam);
+
   const state = await loadMatchesPage(
     { findCurrentCompetitionId, findMatchesBoardData },
     await getSession()
@@ -51,8 +55,11 @@ export default async function Page() {
   return (
     <MatchesPage
       board={state.view.board}
-      canFilterMine={state.isPlayer}
       truncated={state.view.truncated}
+      initialCourt={Number.isInteger(initialCourt) && initialCourt > 0 ? initialCourt : null}
+      stageLabel={state.view.stageLabel}
+      completedMatches={state.view.completedMatches}
+      totalMatches={state.view.totalMatches}
     />
   );
 }

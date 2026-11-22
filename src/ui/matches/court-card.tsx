@@ -1,109 +1,187 @@
-import { MatchRow } from '@/ui/matches/match-row';
+import { ClassChip } from '@/ui/components/class-chip';
+import {
+  CourtStatusPill,
+  MineDot,
+  pairNameOf,
+  segmentClass,
+  TeamNameTag,
+  TeamSwatch,
+} from '@/ui/matches/match-parts';
+import { summarizeCourt, type CourtSummary } from '@/ui/matches/court-summary';
 import type { BoardMatch } from '@/ui/matches/types';
 
 type Props = {
-  /** コートの番号。決まっていない試合をまとめたカードは null（「コート未定」と出す）。 */
-  courtNumber: number | null;
-  /** 見出しの「現在◯試合目」「残り◯試合」を出すもと。絞り込みで並ぶ試合が減っても、
-   *  コートの進み具合そのものは変わらないので、そのコートの全試合を渡す。 */
-  allMatches: BoardMatch[];
-  /** 中身に並べる試合（絞り込み後）。 */
-  listedMatches: BoardMatch[];
-  isOpen: boolean;
-  showDone: boolean;
-  onToggleOpen: () => void;
-  onToggleShowDone: () => void;
+  courtNumber: number;
+  /** そのコートの全試合（試合順）。いまの試合・次・進み具合はここから決める。 */
+  matches: BoardMatch[];
+  /** カードを押したとき（そのコートの全試合を開く）。 */
+  onOpen: (courtNumber: number) => void;
 };
 
-/**
- * 見出しの右側と、進行中がある場合の「現在◯試合目」の文言を組み立てる。
- * コートが決まっていないカードには「現在◯試合目」を出さない（どのコートの何試合目かが決まっていない）。
- */
-function headingTextOf(matches: BoardMatch[], hasCourt: boolean) {
-  // 進行中が 2 つあるとき（終了を取り消して直している）は、順番が後のほうを「現在」にする
-  // （結果LIVE の「今の試合」と同じ。derive-courts.ts）。
-  // ただし結果LIVE と違い、取り消された試合が 1 つだけ進行中のときも、その試合を「現在」と出す。
-  // 結果LIVE はその試合を「直し中」に分けるが、その印（reopened）は画面の中だけのもので、
-  // 進行表は読み直しで印を引き継がない（直す操作が無いので要らない）。印を見て分けると、
-  // 読み直しの前後で「現在」が出たり消えたりする。
-  const liveOrders = matches.flatMap((match) =>
-    match.status === 'live' && match.orderInCourt !== null ? [match.orderInCourt] : []
+/** 進み具合の線（そのコートの試合数ぶん）と、右の「4/8」。自分の出番の下に「▲あなた」。 */
+function ProgressRow({ summary }: { summary: CourtSummary }) {
+  const count = summary.segments.length;
+  const markIndex = summary.myMarkIndex;
+  return (
+    // 1 行目＝線と「4/8」、2 行目＝線と同じ列数の枠に置いた「▲あなた」（自分の出番の真下。両端は寄せてはみ出さない）
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2">
+      <div className="flex gap-[3px]">
+        {summary.segments.map((segment) => (
+          <span
+            key={segment.matchId}
+            data-testid="progress-segment"
+            data-kind={segment.kind}
+            data-mine={segment.mine || undefined}
+            className={`h-1 min-w-0 flex-1 rounded-[2px] ${segmentClass(segment.kind, segment.mine)}`}
+          />
+        ))}
+      </div>
+      <span className="tabular text-[11.5px] font-bold text-[#777]">
+        {summary.doneCount}/{summary.total}
+      </span>
+      {markIndex !== null && (
+        <div
+          className="mt-0.5 grid gap-[3px]"
+          style={{ gridTemplateColumns: `repeat(${count}, minmax(0, 1fr))` }}
+        >
+          <span
+            className="text-gold-ink text-[11.5px] font-extrabold whitespace-nowrap"
+            style={{
+              gridColumn: markIndex + 1,
+              justifySelf: markIndex === 0 ? 'start' : markIndex === count - 1 ? 'end' : 'center',
+            }}
+          >
+            ▲あなた
+          </span>
+        </div>
+      )}
+    </div>
   );
-  const currentOrder = hasCourt && liveOrders.length > 0 ? Math.max(...liveOrders) : null;
-  // 進行中の試合もまだ終わっていないので「残り」に数える。数えないと、
-  // 進行中が最後の 1 試合になったコートが「残り0試合」と出て、終わったと読み違える。
-  const remaining = matches.filter((match) => match.status !== 'done').length;
+}
 
-  return {
-    liveText: currentOrder === null ? null : `現在${currentOrder}試合目`,
-    rightText: remaining === 0 ? 'すべて終了' : `残り${remaining}試合`,
-  };
+/** いまの試合の 1 段。■チーム色・選手名・チーム名・（金の点）と、右端に大きな点（呼出待ちは「–」）。 */
+function CurrentLine({
+  team,
+  isMineSide,
+  score,
+}: {
+  team: BoardMatch['teamA'];
+  isMineSide: boolean;
+  /** null は点が無い（呼出待ち）。 */
+  score: number | null;
+}) {
+  return (
+    <div className="flex h-[34px] items-center gap-1.5">
+      <TeamSwatch team={team} size={10} />
+      <span className="min-w-0 truncate text-[16px] font-extrabold">{pairNameOf(team)}</span>
+      <TeamNameTag team={team} />
+      {isMineSide && <MineDot />}
+      <span
+        className={`tabular ml-auto shrink-0 text-[28px] leading-none font-black tracking-[-0.5px] ${
+          score === null ? 'text-[#bbb]' : ''
+        }`}
+      >
+        {score === null ? '–' : score}
+      </span>
+    </div>
+  );
+}
+
+function nextMatchName(match: BoardMatch): string {
+  const undecided = match.teamA.players.length === 0 || match.teamB.players.length === 0;
+  const names = `${pairNameOf(match.teamA)} vs ${pairNameOf(match.teamB)}`;
+  return undecided ? `${match.roundLabel} ${names}` : names;
 }
 
 /**
- * コート 1 面ぶんのカード。見出しを押すと中身が開閉する。
- * 中の行は見るだけ（押せない）。
+ * 1a のコート 1 面ぶんのカード。**開閉は無く**、最初から全部見える
+ * （進み具合の線・いまの試合 2 段＋点・次の試合）。押すとそのコートの全試合（1b）へ。
+ * 自分が試合中のコートは金の枠。値は design-README の 1a のとおり。
+ *
+ * 仕様: docs/specs/2026-11-22-matches-redesign.md
  */
-export function CourtCard({
-  courtNumber,
-  allMatches,
-  listedMatches,
-  isOpen,
-  showDone,
-  onToggleOpen,
-  onToggleShowDone,
-}: Props) {
-  const { liveText, rightText } = headingTextOf(allMatches, courtNumber !== null);
-  const doneMatches = listedMatches.filter((match) => match.status === 'done');
-  const visibleMatches = showDone
-    ? listedMatches
-    : listedMatches.filter((match) => match.status !== 'done');
+export function CourtCard({ courtNumber, matches, onOpen }: Props) {
+  const summary = summarizeCourt(matches);
+  const { current, next } = summary;
+  const calling = summary.status === 'waiting';
+  const frame = current?.scores.find((score) => score.gameNumber === summary.shownGame);
 
   return (
-    <div className="mb-[14px] rounded-[14px] border border-gray-200 bg-white px-4 pt-0.5 pb-1">
+    <div
+      id={`matches-court-${courtNumber}`}
+      data-testid={`matches-court-card-${courtNumber}`}
+      className={`scroll-mt-[76px] rounded-[18px] ${
+        summary.isMineLive ? 'court-card court-card-mine' : 'court-card'
+      }`}
+    >
       <button
         type="button"
-        onClick={onToggleOpen}
-        aria-expanded={isOpen}
-        className="flex min-h-11 w-full items-center gap-[10px] py-[15px] text-left"
+        onClick={() => onOpen(courtNumber)}
+        className="flex min-h-11 w-full flex-col gap-2 px-3.5 pt-3 pb-1.5 text-left"
       >
-        <span className="text-[18px] font-black tracking-[0.04em]">
-          {courtNumber === null ? 'コート未定' : `コート${courtNumber}`}
+        <span className="flex items-center gap-2">
+          <span className="text-[21px] font-extrabold whitespace-nowrap">コート{courtNumber}</span>
+          {current && <ClassChip classLabel={current.classLabel} large />}
+          <span className="ml-auto">
+            <CourtStatusPill status={summary.status} />
+          </span>
         </span>
-        {liveText && (
-          <span className="text-accent text-[12px] font-extrabold whitespace-nowrap">
-            {liveText}
+
+        <ProgressRow summary={summary} />
+
+        {current && (
+          <span className="flex flex-col">
+            <CurrentLine
+              team={current.teamA}
+              isMineSide={current.mySide === 'A'}
+              score={calling ? null : (frame?.sideAScore ?? 0)}
+            />
+            <CurrentLine
+              team={current.teamB}
+              isMineSide={current.mySide === 'B'}
+              score={calling ? null : (frame?.sideBScore ?? 0)}
+            />
+            <span className="text-[12px] font-semibold text-[#666]">
+              {calling
+                ? '呼び出し中'
+                : summary.earlierGames.length === 0
+                  ? `第${summary.shownGame}ゲーム`
+                  : `第${summary.shownGame}ゲーム ・ ${summary.earlierGames
+                      .map((game) => `第${game.gameNumber}G ${game.sideAScore}-${game.sideBScore}`)
+                      .join(' ・ ')}`}
+            </span>
           </span>
         )}
-        <span className="ml-auto text-[12px] font-bold whitespace-nowrap text-gray-400">
-          {rightText}
-        </span>
-        <span aria-hidden="true" className="text-[11px] font-extrabold text-gray-400">
-          {isOpen ? '▲' : '▼'}
+
+        <span className="border-line flex min-h-11 items-center gap-2 border-t pt-1">
+          {summary.status === 'finished' ? (
+            <>
+              <span className="text-[13.5px] text-[#555]">このコートの試合は終わりました</span>
+              <span className="ml-auto text-[12px] font-semibold whitespace-nowrap text-[#777]">
+                結果を見る ›
+              </span>
+            </>
+          ) : (
+            <>
+              {next ? (
+                <>
+                  <span className="shrink-0 rounded-md bg-[#2b2b2b] px-2 py-0.5 text-[11px] font-extrabold text-white">
+                    次
+                  </span>
+                  <span className="min-w-0 truncate text-[13.5px] font-bold">
+                    {nextMatchName(next)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-[13.5px] text-[#555]">これが最後の試合です</span>
+              )}
+              <span className="ml-auto shrink-0 text-[12px] font-semibold whitespace-nowrap text-[#777]">
+                全{summary.total}試合 ›
+              </span>
+            </>
+          )}
         </span>
       </button>
-
-      {isOpen && (
-        <div className="border-t border-gray-100 pt-2 pb-2">
-          {doneMatches.length > 0 && (
-            <button
-              type="button"
-              onClick={onToggleShowDone}
-              className="mb-2 min-h-11 w-full rounded-lg bg-gray-100 px-3 py-[7px] text-left text-[12px] font-extrabold text-gray-500"
-            >
-              {showDone
-                ? `✓ 終了した${doneMatches.length}試合を隠す`
-                : `✓ 終了した${doneMatches.length}試合を見る`}
-            </button>
-          )}
-
-          <ul className="divide-y divide-dashed divide-gray-200">
-            {visibleMatches.map((match) => (
-              <MatchRow key={match.matchId} match={match} />
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

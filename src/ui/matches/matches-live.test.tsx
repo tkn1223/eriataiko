@@ -113,6 +113,7 @@ function twoMatchBoard(): BoardMatch[] {
       matchId: 'm-live',
       status: 'live',
       orderInCourt: 1,
+      maxGameCount: 3,
       teamA: { teamNumber: 1, players: ['中村'], slotLabel: null },
       teamB: { teamNumber: 2, players: ['加藤'], slotLabel: null },
       scores: [{ gameNumber: 1, sideAScore: 12, sideBScore: 9 }],
@@ -121,13 +122,33 @@ function twoMatchBoard(): BoardMatch[] {
   ];
 }
 
-function renderPage(board: BoardMatch[] = twoMatchBoard(), canFilterMine = true) {
-  const view = render(
-    <MatchesPage board={board} canFilterMine={canFilterMine} truncated={false} />
+/** 進行表の画面。props は変わらない部分をまとめる（コート 1 の全試合＝1b を開いた状態が既定）。 */
+function PageUnderTest({
+  board,
+  initialCourt = 1,
+}: {
+  board: BoardMatch[];
+  initialCourt?: number | null;
+}) {
+  return (
+    <MatchesPage
+      board={board}
+      truncated={false}
+      initialCourt={initialCourt}
+      stageLabel="予選リーグ"
+      completedMatches={0}
+      totalMatches={2}
+    />
   );
-  // コート 1 を開いて、試合の行が見える状態にする
-  act(() => screen.getByRole('button', { name: /^コート1/ }).click());
-  return view;
+}
+
+function renderPage(board: BoardMatch[] = twoMatchBoard(), initialCourt: number | null = 1) {
+  return render(<PageUnderTest board={board} initialCourt={initialCourt} />);
+}
+
+/** 試合の行の、片側の点（試合中はいまのゲームの点）。 */
+function scoreOf(matchId: string, side: 'A' | 'B'): string {
+  return screen.getByTestId(`match-row-${matchId}-scoreline-${side}`).textContent ?? '';
 }
 
 /** 読み直しの予定（まとめて待つ間）を進める。 */
@@ -168,12 +189,13 @@ describe('他の人の点がその場で映る（結果LIVE と同じ購読・�
   test('結果LIVE で入った点が、開き直さなくても進行表の同じ試合に映る', () => {
     renderPage();
     setStatus('SUBSCRIBED');
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('12-9');
+    expect(scoreOf('m-live', 'A')).toBe('12');
+    expect(scoreOf('m-live', 'B')).toBe('9');
 
     deliverScore('m-live', 1, 13, 9);
 
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('13-9');
-    expect(screen.getByTestId('match-row-m-live')).not.toHaveTextContent('12-9');
+    expect(scoreOf('m-live', 'A')).toBe('13');
+    expect(scoreOf('m-live', 'B')).toBe('9');
   });
 
   test('新しく始まったゲームの点が、2 ゲーム目として並んで映る', () => {
@@ -187,35 +209,38 @@ describe('他の人の点がその場で映る（結果LIVE と同じ購読・�
       side_b_score: 0,
     });
 
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('12-9 / 1-0');
+    // 試合中の行は、いまのゲーム（2 ゲーム目）の点を出す
+    expect(scoreOf('m-live', 'A')).toBe('1');
+    expect(scoreOf('m-live', 'B')).toBe('0');
+    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('第2ゲーム');
   });
 
   test('結果LIVE で試合が終了すると、そのコートの「現在◯試合目」「残り◯試合」が変わる', () => {
     renderPage();
     setStatus('SUBSCRIBED');
-    const heading = screen.getByRole('button', { name: /^コート1/ });
-    expect(heading).toHaveTextContent('現在1試合目');
-    expect(heading).toHaveTextContent('残り2試合');
+    const court = screen.getByTestId('court-matches');
+    expect(court).toHaveTextContent('0/2 ・ 残り2');
+    expect(screen.getByTestId('court-status')).toHaveTextContent('試合中');
 
     deliverMatch('m-live', { status: 'done', finished_at: '2027-01-01T00:00:00Z' });
 
-    expect(heading).not.toHaveTextContent('現在');
-    expect(heading).toHaveTextContent('残り1試合');
+    expect(court).toHaveTextContent('1/2 ・ 残り1');
+    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出待ち');
   });
 
   test('始まった試合は LIVE になり、勝ち負けは終了したときに付く', () => {
     renderPage();
     setStatus('SUBSCRIBED');
-    expect(screen.getByTestId('match-row-m-next')).not.toHaveTextContent('LIVE');
+    expect(screen.getByTestId('match-row-m-next')).not.toHaveTextContent('試合中');
 
     deliverMatch('m-next', { status: 'live', order_in_court: 2 });
-    expect(screen.getByTestId('match-row-m-next')).toHaveTextContent('LIVE');
+    expect(screen.getByTestId('match-row-m-next')).toHaveTextContent('試合中');
 
     deliverMatch('m-live', { status: 'done', finished_at: '2027-01-01T00:00:00Z' });
-    // 終わった試合は最初は隠れている。出して、勝った側（A 側）が太字になるのを見る
-    act(() => screen.getByRole('button', { name: '✓ 終了した1試合を見る' }).click());
-    const winner = within(screen.getByTestId('match-row-m-live')).getByText('中村');
-    expect(winner.className).toContain('font-black');
+    // 終わった試合は「終わった試合」の見出しに移り、負けた側（B 側）の名前が薄くなる
+    const row = screen.getByTestId('match-row-m-live');
+    expect(within(row).getByText('加藤').className).toContain('text-[#6b665f]');
+    expect(within(row).getByText('中村').className).not.toContain('text-[#6b665f]');
   });
 
   test('結果LIVE で棄権で終了すると、点数と関係なく相手が太字になり「棄権」の印が出る', () => {
@@ -227,26 +252,31 @@ describe('他の人の点がその場で映る（結果LIVE と同じ購読・�
       finished_at: '2027-01-01T00:00:00Z',
       ending: 'retired_side_a',
     });
-    act(() => screen.getByRole('button', { name: '✓ 終了した1試合を見る' }).click());
 
     const row = screen.getByTestId('match-row-m-live');
-    // 点数は A 側が 12-9 でリードしているが、A 側（中村）が棄権 → B 側（加藤）の勝ち
-    expect(within(row).getByText('加藤').className).toContain('font-black');
-    expect(row).toHaveTextContent('中村 棄権');
+    // 点数は A 側が 12-9 でリードしているが、A 側（中村）が棄権 → B 側（加藤）の勝ち（A 側の名前が薄くなる）
+    expect(within(row).getByText('中村').className).toContain('text-[#6b665f]');
+    expect(within(row).getByText('加藤').className).not.toContain('text-[#6b665f]');
+    expect(
+      within(screen.getByTestId('match-row-m-live-line-A')).getByText('棄権')
+    ).toBeInTheDocument();
   });
 
   test('コートや順番が変わった試合は、新しいコートのカードに移る', () => {
-    renderPage([
-      boardMatch({ matchId: 'm-a', courtNumber: null, orderInCourt: null }),
-      boardMatch({ matchId: 'm-b', courtNumber: 1, orderInCourt: 1 }),
-    ]);
+    renderPage(
+      [
+        boardMatch({ matchId: 'm-a', courtNumber: null, orderInCourt: null }),
+        boardMatch({ matchId: 'm-b', courtNumber: 1, orderInCourt: 1 }),
+      ],
+      null
+    );
     setStatus('SUBSCRIBED');
-    expect(screen.getByRole('button', { name: /^コート未定/ })).toBeInTheDocument();
+    expect(screen.getByTestId('matches-undecided')).toBeInTheDocument();
 
     deliverMatch('m-a', { status: 'waiting', court_number: 2, order_in_court: 1 });
 
-    expect(screen.queryByRole('button', { name: /^コート未定/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^コート2/ })).toBeInTheDocument();
+    expect(screen.queryByTestId('matches-undecided')).not.toBeInTheDocument();
+    expect(screen.getByTestId('matches-court-card-2')).toBeInTheDocument();
   });
 });
 
@@ -312,12 +342,12 @@ describe('読み直しの回数（点のたびに読み直さない）', () => {
 
     // 読み直しの返事を待っている間に、点が届いた
     deliverScore('m-live', 1, 15, 9);
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('15-9');
+    expect(scoreOf('m-live', 'A')).toBe('15');
 
     // サーバーが少し前に読んだ一覧（12-9）が届いても、届いた点（15-9）を消さない
-    rerender(<MatchesPage board={twoMatchBoard()} canFilterMine truncated={false} />);
+    rerender(<PageUnderTest board={twoMatchBoard()} />);
 
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('15-9');
+    expect(scoreOf('m-live', 'A')).toBe('15');
   });
 
   test('読み直した一覧に新しい試合があれば、画面に増える', () => {
@@ -326,7 +356,7 @@ describe('読み直しの回数（点のたびに読み直さない）', () => {
     passRefreshWait();
 
     rerender(
-      <MatchesPage
+      <PageUnderTest
         board={[
           ...twoMatchBoard(),
           boardMatch({
@@ -336,8 +366,6 @@ describe('読み直しの回数（点のたびに読み直さない）', () => {
             teamA: { teamNumber: 1, players: ['新人'], slotLabel: null },
           }),
         ]}
-        canFilterMine
-        truncated={false}
       />
     );
 
@@ -388,7 +416,7 @@ describe('結果LIVE と進行表を行き来しても、購読はアプリ全�
   function Matches() {
     return (
       <section data-testid="matches-screen">
-        <MatchesPage board={board} canFilterMine={false} truncated={false} />
+        <PageUnderTest board={board} initialCourt={null} />
       </section>
     );
   }
@@ -416,9 +444,10 @@ describe('結果LIVE と進行表を行き来しても、購読はアプリ全�
     act(() => fake.channels[0].status?.('CLOSED'));
     expect(screen.queryByTestId('live-down-notice')).not.toBeInTheDocument();
 
-    act(() => screen.getByRole('button', { name: /^コート1/ }).click());
+    // コート 1 のカードを開く（1b）
+    act(() => within(screen.getByTestId('matches-court-card-1')).getByRole('button').click());
     deliverScore('m-live', 1, 13, 9);
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('13-9');
+    expect(scoreOf('m-live', 'A')).toBe('13');
   });
 
   test('2 つの画面が同時に開いていても 1 本。片方を閉じても、もう片方には届き続ける', () => {
@@ -438,9 +467,11 @@ describe('結果LIVE と進行表を行き来しても、購読はアプリ全�
     expect(fake.removeChannel).not.toHaveBeenCalled();
 
     const matchesScreen = within(screen.getByTestId('matches-screen'));
-    act(() => matchesScreen.getByRole('button', { name: /^コート1/ }).click());
+    act(() =>
+      within(matchesScreen.getByTestId('matches-court-card-1')).getByRole('button').click()
+    );
     deliverScore('m-live', 1, 13, 9);
-    expect(matchesScreen.getByTestId('match-row-m-live')).toHaveTextContent('13-9');
+    expect(matchesScreen.getByTestId('match-row-m-live-scoreline-A')).toHaveTextContent('13');
 
     view.unmount();
     expect(fake.removeChannel).toHaveBeenCalledTimes(1);

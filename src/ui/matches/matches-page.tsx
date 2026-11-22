@@ -109,7 +109,11 @@ export function MatchesPage({
         totalMatches={totalMatches}
       />
 
-      {connection === 'down' && <LiveDownNotice />}
+      {connection === 'down' && (
+        <div className="pt-3">
+          <LiveDownNotice />
+        </div>
+      )}
 
       {truncated && (
         <p

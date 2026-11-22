@@ -1,8 +1,11 @@
 import { classLabelsByDivisionId } from '@/domain/class-labels';
 import {
+  currentStageProgress,
   toCourtMatch,
   type CourtsViewDivisionRow,
   type CourtsViewMatchRow,
+  type CourtsViewParticipantRow,
+  type CourtsViewStageRow,
 } from '@/usecases/build-courts-view';
 import type { BoardMatch } from '@/ui/matches/types';
 
@@ -23,20 +26,46 @@ export type MatchesViewInput = {
   divisions: CourtsViewDivisionRow[];
   /** いまの大会の全試合（終わった・進行中・これから）。 */
   matches: CourtsViewMatchRow[];
+  /** 段ごとの試合数・終了数（帯の小見出し「予選リーグ 27/72 試合」用。試合速報と同じ数え方）。 */
+  stages: CourtsViewStageRow[];
+  /** その大会の参加者（入力担当の名前を引く元）。 */
+  participants: CourtsViewParticipantRow[];
   /** 読む上限を超えた（読み切れていない）。黙って欠けさせず、画面で知らせる。 */
   truncated: boolean;
 };
 
 export type MatchesView = {
   board: BoardMatch[];
+  /** いまの段の名前（`stages.name`）。段が無ければ空文字。 */
+  stageLabel: string;
+  completedMatches: number;
+  totalMatches: number;
+  /**
+   * 参加者の id → 入力担当として出す名前（「ケイ（もりの）」。チームが無ければ名前だけ）。
+   * 試合の `scorerParticipantId` から引く。
+   */
+  scorerNames: Record<string, string>;
   truncated: boolean;
 };
+
+/** 画面に出す入力担当の名前。「（チーム）」の形は進行表の詳しい画面だけのもの（試合速報は scorerLabel）。 */
+function scorerDisplayName(person: CourtsViewParticipantRow): string {
+  return person.teamName ? `${person.playerName}（${person.teamName}）` : person.playerName;
+}
 
 export function buildMatchesView(input: MatchesViewInput): MatchesView {
   const classLabelById = classLabelsByDivisionId(input.divisions);
 
+  const progress = currentStageProgress(input.stages, input.matches);
+
   return {
     board: input.matches.map((match) => toCourtMatch(match, input.myParticipantId, classLabelById)),
+    stageLabel: progress.label,
+    completedMatches: progress.completedMatches,
+    totalMatches: progress.totalMatches,
+    scorerNames: Object.fromEntries(
+      input.participants.map((person) => [person.participantId, scorerDisplayName(person)])
+    ),
     truncated: input.truncated,
   };
 }

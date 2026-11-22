@@ -14,6 +14,8 @@ const EMPTY_DATA: MatchesViewInput = {
   myParticipantId: null,
   divisions: [],
   matches: [],
+  stages: [],
+  participants: [],
   truncated: false,
 };
 
@@ -70,29 +72,29 @@ describe('大会が無い／つながらないとき、日本語の案内を出�
   });
 });
 
-describe('読めたときは画面の形と、絞り込みを出すかどうかを返す', () => {
-  test('選手として入った人は canFilterMine が true で、自分の playerId で読む', async () => {
+describe('読めたときは画面の形と、選手として入っているかどうかを返す', () => {
+  test('選手として入った人は isPlayer が true で、自分の playerId で読む', async () => {
     const deps = fakeDeps();
 
     const result = await loadMatchesPage(deps, PLAYER);
 
-    expect(result).toMatchObject({ kind: 'ready', canFilterMine: true });
+    expect(result).toMatchObject({ kind: 'ready', isPlayer: true });
     expect(deps.findMatchesBoardData).toHaveBeenCalledWith('competition-1', 'player-1');
   });
 
-  test('観戦者は canFilterMine が false で、playerId を渡さずに読む', async () => {
+  test('観戦者は isPlayer が false で、playerId を渡さずに読む', async () => {
     const deps = fakeDeps();
 
     const result = await loadMatchesPage(deps, VIEWER);
 
-    expect(result).toMatchObject({ kind: 'ready', canFilterMine: false });
+    expect(result).toMatchObject({ kind: 'ready', isPlayer: false });
     expect(deps.findMatchesBoardData).toHaveBeenCalledWith('competition-1', null);
   });
 
-  test('未入場（session が null）も canFilterMine が false', async () => {
+  test('未入場（session が null）も isPlayer が false', async () => {
     const result = await loadMatchesPage(fakeDeps(), null);
 
-    expect(result).toMatchObject({ kind: 'ready', canFilterMine: false });
+    expect(result).toMatchObject({ kind: 'ready', isPlayer: false });
   });
 
   test('試合が 1 つも無い大会は、ready で board が空（画面が「まだ試合が登録されていません」を出す）', async () => {

@@ -53,6 +53,8 @@ function input(overrides: Partial<MatchesViewInput> = {}): MatchesViewInput {
     myParticipantId: null,
     divisions: DIVISIONS,
     matches: [row()],
+    stages: [],
+    participants: [],
     truncated: false,
     ...overrides,
   };
@@ -173,5 +175,49 @@ describe('buildMatchesView', () => {
 
   test('試合が 1 つも無ければ、board は空になる', () => {
     expect(buildMatchesView(input({ matches: [] })).board).toEqual([]);
+  });
+
+  test('自分が出る側（A か B）が mySide に入る。自分の試合でなければ入らない', () => {
+    const asA = buildMatchesView(input({ myParticipantId: 'p-a1' }));
+    const asB = buildMatchesView(input({ myParticipantId: 'p-b1' }));
+    const nobody = buildMatchesView(input({ myParticipantId: 'p-x' }));
+
+    expect(asA.board[0].mySide).toBe('A');
+    expect(asB.board[0].mySide).toBe('B');
+    expect(nobody.board[0].mySide).toBeUndefined();
+  });
+
+  test('帯の小見出し用に、いまの段の名前と「終わった数／全部の数」が入る', () => {
+    const view = buildMatchesView(
+      input({
+        stages: [
+          { id: 'stage-1', name: '予選リーグ', sortOrder: 10, totalMatches: 72, doneMatches: 27 },
+          {
+            id: 'stage-2',
+            name: '決勝トーナメント',
+            sortOrder: 20,
+            totalMatches: 6,
+            doneMatches: 0,
+          },
+        ],
+      })
+    );
+
+    expect(view.stageLabel).toBe('予選リーグ');
+    expect(view.completedMatches).toBe(27);
+    expect(view.totalMatches).toBe(72);
+  });
+
+  test('入力担当の名前は「名前（チーム）」。チームが無い人は名前だけ。参加者の id で引ける', () => {
+    const view = buildMatchesView(
+      input({
+        participants: [
+          { participantId: 'p-1', playerName: 'ケイ', teamName: 'もりの' },
+          { participantId: 'p-2', playerName: '本部', teamName: null },
+        ],
+      })
+    );
+
+    expect(view.scorerNames).toEqual({ 'p-1': 'ケイ（もりの）', 'p-2': '本部' });
   });
 });

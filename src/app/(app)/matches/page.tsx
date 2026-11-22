@@ -51,7 +51,7 @@ export default async function Page() {
   return (
     <MatchesPage
       board={state.view.board}
-      canFilterMine={state.canFilterMine}
+      canFilterMine={state.isPlayer}
       truncated={state.view.truncated}
     />
   );

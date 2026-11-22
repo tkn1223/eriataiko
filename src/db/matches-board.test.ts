@@ -297,6 +297,24 @@ describe('findMatchesBoardData', () => {
     expect(data.myParticipantId).toBeNull();
   });
 
+  test('段ごとの試合数・終了数（帯の小見出し用）が読める', async () => {
+    const data = await findMatchesBoardData(competitionId, null);
+
+    expect(data.stages).toContainEqual(
+      expect.objectContaining({ name: '予選リーグ', totalMatches: 5, doneMatches: 2 })
+    );
+  });
+
+  test('参加者の名前とチーム名（入力担当の名前を引く元）が読める', async () => {
+    const data = await findMatchesBoardData(competitionId, null);
+
+    expect(data.participants).toContainEqual({
+      participantId: myParticipantId,
+      playerName: `${tag} 自分`,
+      teamName: `${tag} チームA`,
+    });
+  });
+
   test('ほかの大会の試合は読まない', async () => {
     const other = await admin
       .from('competitions')

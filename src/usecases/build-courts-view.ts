@@ -142,6 +142,16 @@ export type CourtsView = {
   truncated: boolean;
 };
 
+/** 自分が出る側。自分の試合でなければ undefined。 */
+function mySideOf(
+  match: CourtsViewMatchRow,
+  myParticipantId: string | null
+): 'A' | 'B' | undefined {
+  if (isMineSide(match.sideA, myParticipantId)) return 'A';
+  if (isMineSide(match.sideB, myParticipantId)) return 'B';
+  return undefined;
+}
+
 function isMineSide(side: CourtsViewSideRow, myParticipantId: string | null): boolean {
   if (!myParticipantId) return false;
   return side.players.some((p) => p.participantId === myParticipantId);
@@ -171,6 +181,7 @@ export function toCourtMatch(
   myParticipantId: string | null,
   classLabelById: Map<string, ClassLabel>
 ): CourtMatch {
+  const mySide = mySideOf(match, myParticipantId);
   return {
     matchId: match.matchId,
     // 画面に出す試合は live / waiting / done のどれか（表の check 制約で保証されている）
@@ -187,7 +198,8 @@ export function toCourtMatch(
     roundLabel: match.roundName,
     teamA: toCourtTeam(match.sideA),
     teamB: toCourtTeam(match.sideB),
-    isMine: isMineSide(match.sideA, myParticipantId) || isMineSide(match.sideB, myParticipantId),
+    isMine: mySide !== undefined,
+    ...(mySide ? { mySide } : {}),
     maxGameCount: match.maxGameCount,
     scores: match.gameScores,
   };
@@ -200,7 +212,7 @@ export function toCourtMatch(
  * 最初の段が「いまの段」。どの段にも無ければ、並び順が最初の段（仕様の「決めたこと」2）。
  * 「進行中があるか」は、コート用に読んだ live の試合から分かる。
  */
-function currentStageProgress(
+export function currentStageProgress(
   stages: CourtsViewStageRow[],
   matches: CourtsViewMatchRow[]
 ): { label: string; completedMatches: number; totalMatches: number } {

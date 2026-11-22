@@ -3,6 +3,8 @@ import 'server-only';
 import {
   findDivisions,
   findMyParticipantId,
+  findParticipants,
+  findStagesWithCounts,
   selectMatchRows,
   toViewMatchRow,
   withinLimit,
@@ -18,8 +20,8 @@ import type { MatchesViewInput } from '@/usecases/build-matches-view';
  * **終わった試合も出す画面**なので、いまの大会の全試合を読む。試合 1 行の読み方
  * （選ぶ列・埋め込みの上限・名前や点数の取り出し）は結果LIVE と同じものを使い回す。
  *
- * 開くたびの読み込みは、部・試合・自分の参加者情報の 3 回を同時に読む
- * （`findCurrentCompetitionId` と合わせて 4 回・2 段）。開いたあとは届いた変化だけを画面で当てるので、
+ * 開くたびの読み込みは、部・試合・段の件数・参加者（入力担当の名前）・自分の参加者情報を同時に読む
+ * （`findCurrentCompetitionId` と合わせて 2 段）。開いたあとは届いた変化だけを画面で当てるので、
  * 点が変わるたびには読まない（読み直すのは、購読がつながったときと、知らない試合の変化が届いたときだけ）。
  *
  * 一覧の上限（AGENTS.md の「一覧を読むクエリには .limit() を付ける」）は、`courts.ts` と同じく
@@ -44,9 +46,11 @@ export async function findMatchesBoardData(
 ): Promise<MatchesViewInput> {
   const supabase = createSupabaseServerClient();
 
-  const [divisions, matches, myParticipantId] = await Promise.all([
+  const [divisions, matches, stages, participants, myParticipantId] = await Promise.all([
     findDivisions(supabase, competitionId),
     findAllMatches(supabase, competitionId),
+    findStagesWithCounts(supabase, competitionId),
+    findParticipants(supabase, competitionId),
     playerId ? findMyParticipantId(supabase, competitionId, playerId) : Promise.resolve(null),
   ]);
 
@@ -54,7 +58,9 @@ export async function findMatchesBoardData(
     myParticipantId,
     divisions: divisions.rows,
     matches: matches.rows,
-    truncated: divisions.overflowed || matches.overflowed,
+    stages: stages.rows,
+    participants,
+    truncated: divisions.overflowed || matches.overflowed || stages.overflowed,
   };
 }
 

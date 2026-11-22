@@ -230,6 +230,17 @@ describe('終わった試合', () => {
     expect(lost.getByText('15-12 / 9-15 / 13-15')).toBeInTheDocument();
   });
 
+  test('勝・負の印は読み上げでも「勝ち」「負け」と伝わる', () => {
+    renderPage([nextMatch, wonMatch, lostMatch]);
+
+    expect(
+      within(screen.getByTestId('match-won')).getByRole('img', { name: '勝ち' })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('match-lost')).getByRole('img', { name: '負け' })
+    ).toBeInTheDocument();
+  });
+
   test('勝は金の塗り、負は白抜きの枠', () => {
     renderPage([nextMatch, wonMatch, lostMatch]);
 

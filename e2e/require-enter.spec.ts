@@ -63,10 +63,15 @@ test.describe('入場したあと', () => {
   });
 
   test('退場すると、また入場画面へ送られる', async ({ page }) => {
+    // 観戦者の myページは名前選びそのもので退場ボタンが無いので、名前で入った人が退場する
     await page.goto('/enter');
-    await page.getByRole('button', { name: /観戦の方はこちら/ }).click();
+    await page.getByRole('button', { name: /愛知南/ }).click();
+    await page.getByRole('button', { name: /さとう/ }).click();
+    await page.getByPlaceholder('当日配布された合言葉').fill('がんばれ2027');
+    await page.getByRole('button', { name: '入場する' }).click();
+    await expect(page).toHaveURL(/\/courts$/);
     await page.goto('/me');
-    await page.getByRole('button', { name: '選手として入り直す' }).click();
+    await page.getByRole('button', { name: /名前を選ぶ画面に戻る/ }).click();
     await expect(page.getByText('あなたのチームを選んでください')).toBeVisible();
 
     await page.goto('/courts');

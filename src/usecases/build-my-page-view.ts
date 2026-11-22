@@ -28,6 +28,8 @@ export type MyPageViewPlayerRow = {
   side: 'a' | 'b';
   orderInPair: number;
   name: string;
+  /** その人のチーム名。チーム無しは null。 */
+  teamName: string | null;
 };
 
 export type MyPageViewGameScoreRow = {
@@ -75,6 +77,12 @@ export type MyPageViewInput = {
 export type MyPageView = {
   profile: MyProfile;
   record: MyRecord;
+  /** 終わっていない試合（試合中＋未実施）の数。ヘッダーの「あと◯試合」に使う。 */
+  remainingCount: number;
+  /**
+   * 画面に出す試合。未実施（「◯試合目」→ コート番号の若い順）→ 終了の順。
+   * **試合中の試合は入れない**（本人は試合中に画面を見ない。仕様 2026-11-22-me-redesign.md）。
+   */
   matches: MyMatch[];
 };
 
@@ -87,30 +95,25 @@ function playersOfSide(match: MyPageViewMatchRow, side: 'a' | 'b'): MyPageViewPl
   return match.players.filter((p) => p.side === side).sort((a, b) => a.orderInPair - b.orderInPair);
 }
 
-/** 並び順のキー。コート・順番の若い順、コート未定は最後。 */
-function courtSortKey(match: MyPageViewMatchRow): [number, number] {
-  const court = match.courtNumber ?? Number.MAX_SAFE_INTEGER;
-  const order = match.orderInCourt ?? Number.MAX_SAFE_INTEGER;
-  return [court, order];
-}
+const LAST = Number.MAX_SAFE_INTEGER;
 
 /**
- * 進行中 → 未実施（コート・順番の若い順）→ 終了、の順。
- *
- * 同じ状態どうしもコート・順番、最後に id で並べる。DB は行の順番を約束しないので、
- * ここで決めないと**開き直すたびに終わった試合の並びが入れ替わる**。
+ * 未実施・終了の並び。「◯試合目」の若い順 → コート番号の若い順 → id。
+ * コートは並行して進むので、試合目の数が時間の近さに近い。未定（null）は後ろ。
+ * DB は行の順番を約束しないので、最後に id で決める（開き直すたびに並びが入れ替わらないように）。
  */
 function compareMatches(a: MyPageViewMatchRow, b: MyPageViewMatchRow): number {
-  const statusRank: Record<string, number> = { live: 0, waiting: 1, done: 2 };
-
-  const rankDiff = (statusRank[a.status] ?? 3) - (statusRank[b.status] ?? 3);
-  if (rankDiff !== 0) return rankDiff;
-
-  const [courtA, orderA] = courtSortKey(a);
-  const [courtB, orderB] = courtSortKey(b);
-  if (courtA !== courtB) return courtA - courtB;
-  if (orderA !== orderB) return orderA - orderB;
+  const orderDiff = (a.orderInCourt ?? LAST) - (b.orderInCourt ?? LAST);
+  if (orderDiff !== 0) return orderDiff;
+  const courtDiff = (a.courtNumber ?? LAST) - (b.courtNumber ?? LAST);
+  if (courtDiff !== 0) return courtDiff;
   return a.matchId < b.matchId ? -1 : a.matchId > b.matchId ? 1 : 0;
+}
+
+/** 未実施が先、終了が後ろ。 */
+function compareForDisplay(a: MyPageViewMatchRow, b: MyPageViewMatchRow): number {
+  const rank = (m: MyPageViewMatchRow) => (m.status === 'done' ? 1 : 0);
+  return rank(a) - rank(b) || compareMatches(a, b);
 }
 
 /** ゲーム番号順に並べる。`MyPageViewGameScoreRow` は `GameScore` と同じ形なのでそのまま使える。 */
@@ -123,6 +126,14 @@ function toMyGameScores(scores: GameScore[], mySide: 'a' | 'b'): [number, number
   return scores.map((score) =>
     mySide === 'a' ? [score.sideAScore, score.sideBScore] : [score.sideBScore, score.sideAScore]
   );
+}
+
+/** 相手側のチーム名。重複を除き、違えば「・」でつなぐ。1 つも無ければ null。 */
+function joinTeamNames(players: MyPageViewPlayerRow[]): string | null {
+  const names = [
+    ...new Set(players.map((p) => p.teamName).filter((name): name is string => name !== null)),
+  ];
+  return names.length > 0 ? names.join('・') : null;
 }
 
 function toMyMatch(
@@ -143,10 +154,11 @@ function toMyMatch(
 
   const base: MyMatch = {
     id: match.matchId,
-    status: match.status === 'live' ? 'live' : match.status === 'done' ? 'done' : 'waiting',
+    status: match.status === 'done' ? 'done' : 'waiting',
     roundLabel: match.roundName,
     classLabel,
     opponentNames: opponents.map((p) => p.name),
+    opponentTeamName: joinTeamNames(opponents),
     partnerName: partner?.name,
   };
 
@@ -195,11 +207,14 @@ export function buildMyPageView(input: MyPageViewInput): MyPageView {
   const myMatches = input.matches
     .map((match) => ({ match, mySide: findMySide(match, input.myParticipantId) }))
     .filter((row): row is { match: MyPageViewMatchRow; mySide: 'a' | 'b' } => row.mySide !== null)
-    .sort((x, y) => compareMatches(x.match, y.match));
+    .sort((x, y) => compareForDisplay(x.match, y.match));
 
-  const matches = myMatches.map((row) =>
-    toMyMatch(row.match, input.myParticipantId, row.mySide, classLabelById)
-  );
+  // 試合中は出さないが「あと◯試合」には数える
+  const remainingCount = myMatches.filter((row) => row.match.status !== 'done').length;
+
+  const matches = myMatches
+    .filter((row) => row.match.status !== 'live')
+    .map((row) => toMyMatch(row.match, input.myParticipantId, row.mySide, classLabelById));
 
   const finishedRecords: FinishedMatchRecord[] = myMatches
     .filter((row) => row.match.status === 'done')
@@ -212,5 +227,5 @@ export function buildMyPageView(input: MyPageViewInput): MyPageView {
 
   const record = buildPlayerRecord(finishedRecords);
 
-  return { profile, record, matches };
+  return { profile, record, remainingCount, matches };
 }

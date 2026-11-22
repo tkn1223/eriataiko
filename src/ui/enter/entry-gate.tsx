@@ -32,6 +32,13 @@ type Props = {
   teams: EnterTeam[];
   divisions: EnterDivision[];
   passcodeRequired: boolean;
+  /**
+   * myページの中に出すとき true。大会名の見出し・「観戦の方はこちら」・外枠（画面いっぱいの高さと
+   * 背景）を出さない。myページの側がすでに外枠と見出しを持っているため。
+   */
+  embedded?: boolean;
+  /** 入れたあとの行き先。省略は大会の画面（/）。埋め込みでは自分のいる画面を渡し、移ったあと読み直す。 */
+  afterEnterPath?: string;
 };
 
 /** チームが決まっていない人（試合に出ない入力係など）の置き場を指す目印。 */
@@ -118,6 +125,10 @@ function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
  * 入場済みの人がこの画面を開いたときは、ページの側（src/app/enter/page.tsx）で大会の画面へ送る。
  * 入り直したい人は、マイページのボタン（src/ui/enter/reenter-button.tsx）で退場してから来る。
  *
+ * **もう 1 か所、観戦者が開いた myページ（src/app/(app)/me/page.tsx）にも `embedded` で出る。**
+ * 観戦者はすでに Cookie を持っているが、/api/session の POST は Cookie を上書きするので
+ * 退場を挟まずに選手として入れる。入ったあとは /me に留まって読み直し、自分の myページに替える。
+ *
  * ここで選んだ名前はあくまで「誰として入るか」の申告で、
  * 実際の検証（合言葉・参加者の実在確認・Cookie 発行）はすべて
  * /api/session の中でサーバーが行う。
@@ -128,6 +139,8 @@ export function EntryGate({
   teams,
   divisions,
   passcodeRequired,
+  embedded = false,
+  afterEnterPath = '/',
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -176,7 +189,12 @@ export function EntryGate({
         return;
       }
       // 読み込み直さずに移る。結果LIVE で送れていない点をこの端末から消さないため（仕様 ⑪）
-      startTransition(() => router.push('/'));
+      startTransition(() => {
+        router.push(afterEnterPath);
+        // 埋め込み先は今いる画面と同じ場所なので、移るだけでは中身が替わらない。読み直して
+        // 「名前選び」から「自分の myページ」に切り替える
+        if (embedded) router.refresh();
+      });
     } catch {
       setError('ネットワークに繋がりませんでした。電波を確認してください。');
     } finally {
@@ -198,14 +216,18 @@ export function EntryGate({
   }
 
   return (
-    <div className="bg-paper text-ink min-h-dvh">
-      <div className="mx-auto max-w-md px-4 pt-8 pb-16">
-        <p className="text-muted-ink text-[11px] font-extrabold tracking-[0.28em]">
-          BADMINTON TOURNAMENT
-        </p>
-        <h1 className="mt-1 text-[22px] leading-[1.6] font-black">{competitionName}</h1>
+    <div className={embedded ? 'text-ink' : 'bg-paper text-ink min-h-dvh'}>
+      <div className={embedded ? '' : 'mx-auto max-w-md px-4 pt-8 pb-16'}>
+        {!embedded && (
+          <>
+            <p className="text-muted-ink text-[11px] font-extrabold tracking-[0.28em]">
+              BADMINTON TOURNAMENT
+            </p>
+            <h1 className="mt-1 text-[22px] leading-[1.6] font-black">{competitionName}</h1>
+          </>
+        )}
 
-        <div className="mt-6">
+        <div className={embedded ? '' : 'mt-6'}>
           {entrants.length === 0 ? (
             <EmptyView />
           ) : bucket === null ? (
@@ -222,7 +244,7 @@ export function EntryGate({
           )}
         </div>
 
-        {onFirstScreen && (
+        {onFirstScreen && !embedded && (
           <button
             type="button"
             disabled={working}

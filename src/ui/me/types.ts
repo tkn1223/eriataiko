@@ -29,7 +29,8 @@ export type MyRecord = {
   pointDiff: number;
 };
 
-export type MatchStatus = 'done' | 'live' | 'waiting';
+/** 試合中（live）の試合は myページに出さないので、型にも無い。 */
+export type MatchStatus = 'done' | 'waiting';
 
 export type MyMatch = {
   id: string;
@@ -44,13 +45,15 @@ export type MyMatch = {
   partnerName?: string;
   classLabel: ClassLabel;
   opponentNames: string[];
+  /** 相手側のチーム名（ペアで違えば「・」でつないだもの）。無ければ null。 */
+  opponentTeamName: string | null;
   /**
    * status が 'done' のときのゲーム数。
    * 進行中は付けない（どのゲームが終わったかが表に無く、決着前のゲームまで数えてしまうため）。
    */
   gamesWon?: number;
   gamesLost?: number;
-  /** status が 'done' | 'live' のときの各ゲームの得点（自分の点、相手の点の順）。 */
+  /** status が 'done' のときの各ゲームの得点（自分の点、相手の点の順）。 */
   gameScores?: [number, number][];
   /** status が 'waiting' のときのコート番号。null は「コート未定」。 */
   courtNumber?: number | null;

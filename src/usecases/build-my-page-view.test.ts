@@ -43,10 +43,22 @@ function doubles(overrides: Partial<MyPageViewMatchRow> = {}): MyPageViewMatchRo
     divisionId: 'div-1',
     roundName: '予選 1回戦',
     players: [
-      { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう' },
-      { participantId: PARTNER, side: 'a', orderInPair: 2, name: 'すずき' },
-      { participantId: OPPONENT_1, side: 'b', orderInPair: 1, name: 'わたなべ' },
-      { participantId: OPPONENT_2, side: 'b', orderInPair: 2, name: 'こばやし' },
+      { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう', teamName: '愛知南' },
+      { participantId: PARTNER, side: 'a', orderInPair: 2, name: 'すずき', teamName: '愛知南' },
+      {
+        participantId: OPPONENT_1,
+        side: 'b',
+        orderInPair: 1,
+        name: 'わたなべ',
+        teamName: '愛知中央',
+      },
+      {
+        participantId: OPPONENT_2,
+        side: 'b',
+        orderInPair: 2,
+        name: 'こばやし',
+        teamName: '愛知中央',
+      },
     ],
     gameScores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 11 }],
     ...overrides,
@@ -107,26 +119,25 @@ describe('buildMyPageView のチーム色', () => {
 });
 
 describe('buildMyPageView の試合の並び', () => {
-  test('進行中 → 未実施（コート・順番の若い順）→ 終了 の順に並ぶ', () => {
+  test('未実施は「◯試合目」の若い順、同じならコート番号の若い順に並び、終了は後ろに来る', () => {
     const view = buildMyPageView(
       baseInput({
         matches: [
           doubles({ matchId: 'done-1', status: 'done' }),
           doubles({
-            matchId: 'waiting-court2',
+            matchId: 'w-court2-order1',
             status: 'waiting',
             courtNumber: 2,
             orderInCourt: 1,
           }),
-          doubles({ matchId: 'live-1', status: 'live' }),
           doubles({
-            matchId: 'waiting-court1-2',
+            matchId: 'w-court1-order2',
             status: 'waiting',
             courtNumber: 1,
             orderInCourt: 2,
           }),
           doubles({
-            matchId: 'waiting-court1-1',
+            matchId: 'w-court1-order1',
             status: 'waiting',
             courtNumber: 1,
             orderInCourt: 1,
@@ -136,35 +147,39 @@ describe('buildMyPageView の試合の並び', () => {
     );
 
     expect(view.matches.map((m) => m.id)).toEqual([
-      'live-1',
-      'waiting-court1-1',
-      'waiting-court1-2',
-      'waiting-court2',
+      'w-court1-order1',
+      'w-court2-order1',
+      'w-court1-order2',
       'done-1',
     ]);
   });
 
-  test('コートが未定の未実施試合は、未実施の中でも最後に並ぶ', () => {
+  test('順番未定・コート未定の未実施試合は、それぞれ後ろに並ぶ', () => {
     const view = buildMyPageView(
       baseInput({
         matches: [
-          doubles({
-            matchId: 'waiting-no-court',
-            status: 'waiting',
-            courtNumber: null,
-            orderInCourt: null,
-          }),
-          doubles({
-            matchId: 'waiting-court1',
-            status: 'waiting',
-            courtNumber: 1,
-            orderInCourt: 1,
-          }),
+          doubles({ matchId: 'no-order', status: 'waiting', courtNumber: 1, orderInCourt: null }),
+          doubles({ matchId: 'no-court', status: 'waiting', courtNumber: null, orderInCourt: 2 }),
+          doubles({ matchId: 'both', status: 'waiting', courtNumber: 1, orderInCourt: 2 }),
+          doubles({ matchId: 'none', status: 'waiting', courtNumber: null, orderInCourt: null }),
         ],
       })
     );
 
-    expect(view.matches.map((m) => m.id)).toEqual(['waiting-court1', 'waiting-no-court']);
+    expect(view.matches.map((m) => m.id)).toEqual(['both', 'no-court', 'no-order', 'none']);
+  });
+
+  test('試合中の試合は matches に入らない（どこにも出さない）', () => {
+    const view = buildMyPageView(
+      baseInput({
+        matches: [
+          doubles({ matchId: 'live-1', status: 'live' }),
+          doubles({ matchId: 'w-1', status: 'waiting' }),
+        ],
+      })
+    );
+
+    expect(view.matches.map((m) => m.id)).toEqual(['w-1']);
   });
 
   // DB は行を返す順番を約束しない。ここで決めておかないと、同じ状態の試合の並びが
@@ -179,7 +194,7 @@ describe('buildMyPageView の試合の並び', () => {
     const view = buildMyPageView(baseInput({ matches: finished }));
     const reversed = buildMyPageView(baseInput({ matches: [...finished].reverse() }));
 
-    expect(view.matches.map((m) => m.id)).toEqual(['done-a', 'done-b', 'done-c']);
+    expect(view.matches.map((m) => m.id)).toEqual(['done-a', 'done-c', 'done-b']);
     expect(reversed.matches.map((m) => m.id)).toEqual(view.matches.map((m) => m.id));
   });
 });
@@ -219,8 +234,14 @@ describe('buildMyPageView のペアの相手', () => {
     const singles = doubles({
       matchId: 'm1',
       players: [
-        { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう' },
-        { participantId: OPPONENT_1, side: 'b', orderInPair: 1, name: 'わたなべ' },
+        { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう', teamName: '愛知南' },
+        {
+          participantId: OPPONENT_1,
+          side: 'b',
+          orderInPair: 1,
+          name: 'わたなべ',
+          teamName: '愛知中央',
+        },
       ],
     });
     const view = buildMyPageView(baseInput({ matches: [singles] }));
@@ -273,43 +294,28 @@ describe('buildMyPageView の試合カードの勝敗・得点', () => {
       status: 'done',
       maxGameCount: 1,
       players: [
-        { participantId: OPPONENT_1, side: 'a', orderInPair: 1, name: 'わたなべ' },
-        { participantId: OPPONENT_2, side: 'a', orderInPair: 2, name: 'こばやし' },
-        { participantId: ME, side: 'b', orderInPair: 1, name: 'さとう' },
-        { participantId: PARTNER, side: 'b', orderInPair: 2, name: 'すずき' },
+        {
+          participantId: OPPONENT_1,
+          side: 'a',
+          orderInPair: 1,
+          name: 'わたなべ',
+          teamName: '愛知中央',
+        },
+        {
+          participantId: OPPONENT_2,
+          side: 'a',
+          orderInPair: 2,
+          name: 'こばやし',
+          teamName: '愛知中央',
+        },
+        { participantId: ME, side: 'b', orderInPair: 1, name: 'さとう', teamName: '愛知南' },
+        { participantId: PARTNER, side: 'b', orderInPair: 2, name: 'すずき', teamName: '愛知南' },
       ],
       gameScores: [{ gameNumber: 1, sideAScore: 11, sideBScore: 15 }],
     });
     const view = buildMyPageView(baseInput({ matches: [bSide] }));
 
     expect(view.matches[0]).toMatchObject({ won: true, gameScores: [[15, 11]] });
-  });
-
-  // 2 ゲーム目は進行中なのに、点だけ見ると 2 ゲーム取ったように見える形をわざと使う。
-  test('進行中の試合にはゲーム数を出さず、各ゲームの得点だけ出す', () => {
-    const view = buildMyPageView(
-      baseInput({
-        matches: [
-          doubles({
-            matchId: 'm1',
-            status: 'live',
-            maxGameCount: 3,
-            gameScores: [
-              { gameNumber: 1, sideAScore: 21, sideBScore: 17 },
-              { gameNumber: 2, sideAScore: 5, sideBScore: 3 },
-            ],
-          }),
-        ],
-      })
-    );
-
-    expect(view.matches[0].gamesWon).toBeUndefined();
-    expect(view.matches[0].gamesLost).toBeUndefined();
-    expect(view.matches[0].won).toBeUndefined();
-    expect(view.matches[0].gameScores).toEqual([
-      [21, 17],
-      [5, 3],
-    ]);
   });
 
   // 決勝で 1 ゲームだけ行って終了する試合は当日ふつうに起きる。**人が終了を押した時点で
@@ -351,7 +357,7 @@ describe('buildMyPageView の試合カードの勝敗・得点', () => {
         matches: [
           doubles({
             matchId: 'm1',
-            status: 'live',
+            status: 'done',
             maxGameCount: 3,
             gameScores: [
               { gameNumber: 1, sideAScore: 21, sideBScore: 17 },
@@ -371,8 +377,14 @@ describe('buildMyPageView は自分が出る試合だけを出す', () => {
     const notMine = doubles({
       matchId: 'not-mine',
       players: [
-        { participantId: PARTNER, side: 'a', orderInPair: 1, name: 'すずき' },
-        { participantId: OPPONENT_1, side: 'b', orderInPair: 1, name: 'わたなべ' },
+        { participantId: PARTNER, side: 'a', orderInPair: 1, name: 'すずき', teamName: '愛知南' },
+        {
+          participantId: OPPONENT_1,
+          side: 'b',
+          orderInPair: 1,
+          name: 'わたなべ',
+          teamName: '愛知中央',
+        },
       ],
     });
     const view = buildMyPageView(baseInput({ matches: [doubles({ matchId: 'mine' }), notMine] }));
@@ -386,8 +398,14 @@ describe('buildMyPageView は自分が出る試合だけを出す', () => {
       status: 'done',
       maxGameCount: 1,
       players: [
-        { participantId: PARTNER, side: 'a', orderInPair: 1, name: 'すずき' },
-        { participantId: OPPONENT_1, side: 'b', orderInPair: 1, name: 'わたなべ' },
+        { participantId: PARTNER, side: 'a', orderInPair: 1, name: 'すずき', teamName: '愛知南' },
+        {
+          participantId: OPPONENT_1,
+          side: 'b',
+          orderInPair: 1,
+          name: 'わたなべ',
+          teamName: '愛知中央',
+        },
       ],
       gameScores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 0 }],
     });
@@ -461,5 +479,80 @@ describe('buildMyPageView と棄権（点数に関係なく相手の勝ち）', 
     const view = buildMyPageView(baseInput({ matches: [row('normal')] }));
 
     expect(view.matches[0].retiredNames).toBeUndefined();
+  });
+});
+
+describe('buildMyPageView の相手チーム名', () => {
+  test('相手側のチーム名が入る（同じチームなら 1 つにまとめる）', () => {
+    const view = buildMyPageView(baseInput({ matches: [doubles({ matchId: 'm1' })] }));
+    expect(view.matches[0].opponentTeamName).toBe('愛知中央');
+  });
+
+  test('ペアのチームが違えば「・」でつなぐ', () => {
+    const mixed = doubles({
+      matchId: 'm1',
+      players: [
+        { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう', teamName: '愛知南' },
+        {
+          participantId: OPPONENT_1,
+          side: 'b',
+          orderInPair: 1,
+          name: 'わたなべ',
+          teamName: '愛知中央',
+        },
+        {
+          participantId: OPPONENT_2,
+          side: 'b',
+          orderInPair: 2,
+          name: 'こばやし',
+          teamName: '名古屋西',
+        },
+      ],
+    });
+    const view = buildMyPageView(baseInput({ matches: [mixed] }));
+    expect(view.matches[0].opponentTeamName).toBe('愛知中央・名古屋西');
+  });
+
+  test('相手にチームが無ければ null', () => {
+    const noTeam = doubles({
+      matchId: 'm1',
+      players: [
+        { participantId: ME, side: 'a', orderInPair: 1, name: 'さとう', teamName: '愛知南' },
+        { participantId: OPPONENT_1, side: 'b', orderInPair: 1, name: 'わたなべ', teamName: null },
+      ],
+    });
+    const view = buildMyPageView(baseInput({ matches: [noTeam] }));
+    expect(view.matches[0].opponentTeamName).toBeNull();
+  });
+});
+
+describe('buildMyPageView の残り試合数', () => {
+  test('試合中と未実施の数（終了は数えない）', () => {
+    const view = buildMyPageView(
+      baseInput({
+        matches: [
+          doubles({ matchId: 'd', status: 'done' }),
+          doubles({ matchId: 'l', status: 'live' }),
+          doubles({ matchId: 'w1', status: 'waiting' }),
+          doubles({ matchId: 'w2', status: 'waiting' }),
+        ],
+      })
+    );
+    expect(view.remainingCount).toBe(3);
+  });
+
+  test('試合中だけが残っているときは 1。matches は空になる', () => {
+    const view = buildMyPageView(
+      baseInput({ matches: [doubles({ matchId: 'l', status: 'live' })] })
+    );
+    expect(view.remainingCount).toBe(1);
+    expect(view.matches).toEqual([]);
+  });
+
+  test('全部終わっていれば 0', () => {
+    const view = buildMyPageView(
+      baseInput({ matches: [doubles({ matchId: 'd', status: 'done' })] })
+    );
+    expect(view.remainingCount).toBe(0);
   });
 });

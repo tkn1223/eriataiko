@@ -5,7 +5,8 @@ import { appScoreSyncStore } from '@/ui/courts/use-score-sync';
 
 // 入場に成功すると router.push('/') で大会の画面へ移る作りなので、差し替えておく
 const push = vi.fn();
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }));
+const refresh = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push, refresh }) }));
 
 const teams: EnterTeam[] = [
   { id: 't1', teamNumber: 1, name: '愛知南' },
@@ -53,6 +54,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   push.mockReset();
+  refresh.mockReset();
   fetchMock = vi.fn(async () => new Response(JSON.stringify({ session: null }), { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -374,5 +376,40 @@ describe('入り直しを預かり場所に知らせる', () => {
 
     expect(end).not.toHaveBeenCalled();
     expect(cancel).toHaveBeenCalled();
+  });
+});
+
+describe('myページに埋め込んだとき（embedded）', () => {
+  test('大会名の見出しと「観戦の方はこちら」を出さない（チーム選びは出る）', () => {
+    renderGate({ embedded: true, afterEnterPath: '/me' });
+
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByText('BADMINTON TOURNAMENT')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: VIEWER_BUTTON })).not.toBeInTheDocument();
+    expect(screen.getByText('あなたのチームを選んでください')).toBeInTheDocument();
+  });
+
+  test('外枠の min-h-dvh を付けない', () => {
+    const { container } = renderGate({ embedded: true, afterEnterPath: '/me' });
+
+    expect(container.querySelector('.min-h-dvh')).toBeNull();
+  });
+
+  test('入れたら /me へ移り、画面を読み直す', async () => {
+    renderGate({ embedded: true, afterEnterPath: '/me', passcodeRequired: false });
+    fireEvent.click(screen.getByRole('button', { name: /愛知南/ }));
+    fireEvent.click(screen.getByRole('button', { name: /さとう/ }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/me'));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  test('埋め込みでない入場画面は今までどおり（見出しあり・観戦ボタンあり・読み直さない）', async () => {
+    renderGate();
+
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: VIEWER_BUTTON }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/'));
+    expect(refresh).not.toHaveBeenCalled();
   });
 });

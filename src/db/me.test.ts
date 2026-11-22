@@ -246,6 +246,15 @@ describe('findMyPageData', () => {
     expect(names).toEqual([`${tag} 相手`, `${tag} 相方`, `${tag} 自分`].sort());
   });
 
+  test('試合に出ている人ごとに、そのチーム名が入っている', async () => {
+    const data = await findMyPageData(myPlayerId, competitionId);
+    const done = data!.matches.find((m) => m.matchId === doneMatchId)!;
+
+    const teamNameByPlayer = Object.fromEntries(done.players.map((p) => [p.name, p.teamName]));
+    expect(teamNameByPlayer[`${tag} 相手`]).toBe(`${tag} チームB`);
+    expect(teamNameByPlayer[`${tag} 相方`]).toBe(`${tag} チームA`);
+  });
+
   test('棄権の印（ending）が読める', async () => {
     await admin.from('matches').update({ ending: 'retired_side_b' }).eq('id', doneMatchId);
     const data = await findMyPageData(myPlayerId, competitionId);

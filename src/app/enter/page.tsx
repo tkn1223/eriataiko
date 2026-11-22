@@ -1,9 +1,8 @@
-import { EntryGate, type Entrant, type EnterDivision, type EnterTeam } from '@/ui/enter/entry-gate';
+import { EntryGate } from '@/ui/enter/entry-gate';
 import { ConnectionErrorBlock } from '@/ui/components/connection-error-block';
-import { isPasscodeRequired } from '@/config/env.server';
 import { TOURNAMENT_NAME } from '@/config/tournament';
 import { getSession, type Session } from '@/server/session';
-import { createSupabaseServerClient } from '@/db/server';
+import { findEntryOptions, type EntryOptions } from '@/db/entry-options';
 import { redirect } from 'next/navigation';
 
 // 入場状態（Cookie）を見るので常に動的レンダリング
@@ -12,78 +11,12 @@ export const dynamic = 'force-dynamic';
 /** 入場画面。得点入力をする運営が「自分が誰か」を申告する。 */
 export default async function EnterPage() {
   let session: Session | null = null;
-  let competitionName = TOURNAMENT_NAME;
-  let entrants: Entrant[] = [];
-  let teams: EnterTeam[] = [];
-  let divisions: EnterDivision[] = [];
-  let passcodeRequired = false;
+  let options: EntryOptions | null = null;
   let loadError: string | null = null;
 
   try {
     session = await getSession();
-    passcodeRequired = isPasscodeRequired();
-
-    // anon クライアントで読む = 観戦者にも同じものが見えることの確認になる。
-    //
-    // **大会はユーザーに選ばせない。** is_current が true の 1 件をここで決める。
-    // 過去の大会にだけ出た人は一覧に出ない。
-    const supabase = createSupabaseServerClient();
-
-    const { data: competition, error: competitionError } = await supabase
-      .from('competitions')
-      .select('id, name')
-      .eq('is_current', true)
-      .maybeSingle();
-
-    if (competitionError) throw new Error(competitionError.message);
-
-    if (competition) {
-      competitionName = competition.name;
-
-      const [entryResult, teamResult, divisionResult] = await Promise.all([
-        supabase
-          .from('participants')
-          .select('id, team_id, division_id, players!inner(id, player_number, name)')
-          .eq('competition_id', competition.id)
-          .limit(500),
-        supabase
-          .from('teams')
-          .select('id, team_number, name')
-          .eq('competition_id', competition.id)
-          .order('sort_order')
-          .limit(50),
-        supabase
-          .from('divisions')
-          .select('id, name')
-          .eq('competition_id', competition.id)
-          .order('sort_order')
-          .limit(50),
-      ]);
-
-      if (entryResult.error) throw new Error(entryResult.error.message);
-      if (teamResult.error) throw new Error(teamResult.error.message);
-      if (divisionResult.error) throw new Error(divisionResult.error.message);
-
-      // 番号順に並べる。DB 側で並べ替えると、つないだ表の列を指す書き方が
-      // PostgREST の版に左右されるので、ここで確実に並べる。
-      entrants = (entryResult.data ?? [])
-        .map((row) => ({
-          participantId: row.id,
-          playerId: row.players.id,
-          playerNumber: row.players.player_number,
-          name: row.players.name,
-          teamId: row.team_id,
-          divisionId: row.division_id,
-        }))
-        .sort((a, b) => a.playerNumber - b.playerNumber);
-
-      teams = (teamResult.data ?? []).map((row) => ({
-        id: row.id,
-        teamNumber: row.team_number,
-        name: row.name,
-      }));
-      divisions = divisionResult.data ?? [];
-    }
+    options = await findEntryOptions();
   } catch (error) {
     // 環境変数の未設定・DB 未接続はここに落ちる。画面に理由を出す。
     loadError = error instanceof Error ? error.message : String(error);
@@ -94,21 +27,21 @@ export default async function EnterPage() {
   // try の外で呼ぶ（redirect は例外を投げて止める作りなので、catch に拾われないように）。
   if (session) redirect('/');
 
-  if (loadError) {
+  if (loadError || !options) {
     return (
       <div className="bg-paper min-h-dvh px-4 py-8">
-        <ConnectionErrorBlock message={loadError} />
+        <ConnectionErrorBlock message={loadError ?? '読み込めませんでした。'} />
       </div>
     );
   }
 
   return (
     <EntryGate
-      competitionName={competitionName}
-      entrants={entrants}
-      teams={teams}
-      divisions={divisions}
-      passcodeRequired={passcodeRequired}
+      competitionName={options.competitionName ?? TOURNAMENT_NAME}
+      entrants={options.entrants}
+      teams={options.teams}
+      divisions={options.divisions}
+      passcodeRequired={options.passcodeRequired}
     />
   );
 }

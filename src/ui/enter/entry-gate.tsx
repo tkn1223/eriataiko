@@ -125,6 +125,10 @@ function buildGroups(members: Entrant[], divisions: EnterDivision[]): Group[] {
  * 入場済みの人がこの画面を開いたときは、ページの側（src/app/enter/page.tsx）で大会の画面へ送る。
  * 入り直したい人は、マイページのボタン（src/ui/enter/reenter-button.tsx）で退場してから来る。
  *
+ * **もう 1 か所、観戦者が開いた myページ（src/app/(app)/me/page.tsx）にも `embedded` で出る。**
+ * 観戦者はすでに Cookie を持っているが、/api/session の POST は Cookie を上書きするので
+ * 退場を挟まずに選手として入れる。入ったあとは /me に留まって読み直し、自分の myページに替える。
+ *
  * ここで選んだ名前はあくまで「誰として入るか」の申告で、
  * 実際の検証（合言葉・参加者の実在確認・Cookie 発行）はすべて
  * /api/session の中でサーバーが行う。

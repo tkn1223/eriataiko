@@ -12,7 +12,7 @@ import {
 import { hasAnyPoint, playedGameScores, type GameScore } from '@/domain/scoring';
 import { ClassChip } from '@/ui/components/class-chip';
 import { RetiredNote } from '@/ui/components/retired-note';
-import { teamBgClass, teamPanelClasses } from '@/domain/class-labels';
+import { teamBgClass } from '@/domain/class-labels';
 import {
   ClockIcon,
   CrossIcon,
@@ -32,6 +32,7 @@ import type {
   ScorerRejection,
   ScoreSyncStatus,
 } from '@/ui/courts/types';
+import { TeamPanel } from '@/ui/courts/team-panel';
 import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-confirm-sheet';
 import { ReopenConfirmSheet } from '@/ui/courts/reopen-confirm-sheet';
 import { previousRowAccess } from '@/ui/courts/previous-access';
@@ -451,33 +452,6 @@ function EarlierGameChips({ games }: { games: GameScore[] }) {
   );
 }
 
-/** 得点板の枠 1 枚。上に 5px のチーム色の帯。チーム名（14/800）・選手名（1 人 1 行、16/800）・大きな点数。 */
-function TeamPanel({ testId, team, score }: { testId: string; team: CourtTeam; score: number }) {
-  const colors = teamPanelClasses(team.teamNumber);
-  return (
-    <div
-      data-testid={testId}
-      className={`team-panel min-w-0 rounded-[14px] border-t-[5px] px-1.5 pt-2.5 pb-1.5 text-center ${colors.border} ${colors.tint}`}
-    >
-      {team.teamName && (
-        <p className={`text-[14px] font-extrabold break-words ${colors.text}`}>{team.teamName}</p>
-      )}
-      <div className="mt-0.5 text-[16px] leading-[1.35] font-extrabold">
-        {team.players.length > 0 ? (
-          team.players.map((name, index) => (
-            <p key={index} className="break-words">
-              {name}
-            </p>
-          ))
-        ) : (
-          <p className="break-words">{team.slotLabel ?? ''}</p>
-        )}
-      </div>
-      <p className="score-number mt-1 mb-0.5">{score}</p>
-    </div>
-  );
-}
-
 /**
  * ［−］［＋］。**同じ大きさ**（高さ 46px）で、色だけ分ける（＋は黒のにじみ、−は白に線）。
  * 押したときの名前（aria-label）は昔のまま（画面テストが使っている）。
@@ -789,9 +763,11 @@ export function CourtLiveCard({
 
   return (
     <div
+      id={`court-${court.courtNumber}`}
       data-testid={`court-card-${court.courtNumber}`}
-      // 自分の試合は金の枠と金みの影、ほかは細い灰色の線（globals.css の .court-card）
-      className={`flex flex-col gap-2 rounded-[18px] p-3 ${cardSurfaceClasses(live.isMine)}`}
+      // 自分の試合は金の枠と金みの影、ほかは細い灰色の線（globals.css の .court-card）。
+      // scroll-mt は、貼り付いた上の帯に隠れないため（進行表の「コートNの試合速報を開く」の行き先）
+      className={`flex scroll-mt-[76px] flex-col gap-2 rounded-[18px] p-3 ${cardSurfaceClasses(live.isMine)}`}
     >
       <CourtHeader
         courtNumber={court.courtNumber}
@@ -918,8 +894,9 @@ function IdleCourtCard({
 
   return (
     <div
+      id={`court-${court.courtNumber}`}
       data-testid={`court-card-${court.courtNumber}`}
-      className={`flex flex-col gap-2 rounded-[18px] p-3 ${cardSurfaceClasses(false)}`}
+      className={`flex scroll-mt-[76px] flex-col gap-2 rounded-[18px] p-3 ${cardSurfaceClasses(false)}`}
     >
       <CourtHeader
         courtNumber={court.courtNumber}

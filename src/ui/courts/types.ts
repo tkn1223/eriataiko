@@ -213,6 +213,11 @@ export type CourtMatch = {
   teamA: CourtTeam;
   teamB: CourtTeam;
   isMine: boolean;
+  /**
+   * 自分が出る側。自分の試合のときだけ入る（進行表が、名前の横に金の点を付けるのに使う）。
+   * 試合速報には使わない。
+   */
+  mySide?: 'A' | 'B';
   maxGameCount: number;
   /** サーバーから届いた得点（手元で押した分も含む）。無い枠は 0 対 0。 */
   scores: GameScore[];

@@ -4,235 +4,136 @@ import { MatchRow } from '@/ui/matches/match-row';
 import { boardMatch } from '@/ui/matches/test-support';
 
 /**
- * 進行表の試合の行。見るだけで、押しても何も起きない
- * （得点を入れる場所は結果LIVE だけ。docs/specs/2026-10-14-matches-real-data.md の「決めたこと」1・2）。
+ * 1b・1c の試合の行。チームごとに 2 段で、ゲームごとの点が右に並ぶ。押すと試合の詳しい画面が開く。
+ * 仕様: docs/specs/2026-11-22-matches-redesign.md
  */
 
-const doneMatch = boardMatch({
-  matchId: 'm-done',
-  status: 'done',
-  orderInCourt: 1,
-  maxGameCount: 3,
-  teamA: { teamNumber: 1, players: ['佐藤', '鈴木'], slotLabel: null },
-  teamB: { teamNumber: 2, players: ['高橋', '伊藤'], slotLabel: null },
-  scores: [
-    { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
-    { gameNumber: 2, sideAScore: 21, sideBScore: 18 },
-  ],
-});
+const teamA = {
+  teamNumber: 1,
+  teamName: 'あおぞら',
+  players: ['ハルキ', 'ミドリ'],
+  slotLabel: null,
+};
+const teamB = { teamNumber: 3, teamName: 'さくら', players: ['シン', 'ヒナ'], slotLabel: null };
 
-const liveMatch = boardMatch({
-  matchId: 'm-live',
-  status: 'live',
-  orderInCourt: 3,
-  classLabel: { name: '2部', colorNumber: 2 },
-  isMine: true,
-  maxGameCount: 3,
-  teamA: { teamNumber: 3, players: ['渡辺'], slotLabel: null },
-  teamB: { teamNumber: 4, players: ['山本'], slotLabel: null },
-  scores: [
-    { gameNumber: 1, sideAScore: 21, sideBScore: 19 },
-    { gameNumber: 2, sideAScore: 10, sideBScore: 8 },
-  ],
-});
-
-const waitingMatch = boardMatch({
-  matchId: 'm-waiting',
-  status: 'waiting',
-  orderInCourt: 5,
-  classLabel: { name: '3部', colorNumber: 3 },
-  teamA: { teamNumber: 1, players: ['中村'], slotLabel: null },
-  teamB: { teamNumber: 2, players: ['木村'], slotLabel: null },
-});
-
-/** 名前の見た目（勝ちは太字、負けはグレー）を取り出す。 */
-function nameStyleOf(rowTestId: string, name: string) {
-  const element = within(screen.getByTestId(rowTestId)).getByText(name);
-  return {
-    bold: element.className.includes('font-black'),
-    gray: element.className.includes('text-gray-500'),
-  };
+function renderRow(overrides = {}, props = {}) {
+  return render(
+    <ul>
+      <MatchRow
+        match={boardMatch({ matchId: 'm-9', orderInCourt: 2, teamA, teamB, ...overrides })}
+        {...props}
+      />
+    </ul>
+  );
 }
 
 describe('MatchRow', () => {
-  test('試合の行に 試合順・部・両ペアの名前・スコアが出る', () => {
-    render(<MatchRow match={doneMatch} />);
+  test('行を押すと、その試合の詳しい画面（/matches/[matchId]）が開く', () => {
+    renderRow();
 
-    const row = screen.getByTestId('match-row-m-done');
-    expect(row).toHaveTextContent('1試合目');
-    expect(row).toHaveTextContent('1部');
-    expect(row).toHaveTextContent('佐藤・鈴木');
-    expect(row).toHaveTextContent('高橋・伊藤');
-    expect(row).toHaveTextContent('21-15 / 21-18');
+    expect(screen.getByRole('link')).toHaveAttribute('href', '/matches/m-9');
   });
 
-  test('進行中の行は、終わったゲームと今のゲームの点が並び、LIVE が出る', () => {
-    render(<MatchRow match={liveMatch} />);
+  test('試合順の番号と、チームごと 2 段の選手名・チーム名が出る', () => {
+    renderRow();
 
-    const row = screen.getByTestId('match-row-m-live');
-    expect(row).toHaveTextContent('21-19 / 10-8');
-    expect(row).toHaveTextContent('LIVE');
+    const row = screen.getByTestId('match-row-m-9');
+    expect(within(row).getByText('2')).toBeInTheDocument();
+    expect(within(row).getByText('試合目')).toBeInTheDocument();
+    expect(within(row).getByText('ハルキ・ミドリ')).toBeInTheDocument();
+    expect(within(row).getByText('シン・ヒナ')).toBeInTheDocument();
+    expect(within(row).getByText('あおぞら')).toBeInTheDocument();
+    expect(within(row).getByText('さくら')).toBeInTheDocument();
   });
 
-  test('終了・未実施の行には「LIVE」が出ない', () => {
-    render(<MatchRow match={doneMatch} />);
-    expect(screen.getByTestId('match-row-m-done')).not.toHaveTextContent('LIVE');
+  test('終わった試合は、ゲームごとの点が各段の右に並ぶ', () => {
+    renderRow({
+      status: 'done',
+      maxGameCount: 3,
+      scores: [
+        { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
+        { gameNumber: 2, sideAScore: 18, sideBScore: 21 },
+        { gameNumber: 3, sideAScore: 21, sideBScore: 19 },
+      ],
+    });
 
-    render(<MatchRow match={waitingMatch} />);
-    expect(screen.getByTestId('match-row-m-waiting')).not.toHaveTextContent('LIVE');
+    expect(screen.getByTestId('match-row-m-9-scoreline-A')).toHaveTextContent('211821');
+    expect(screen.getByTestId('match-row-m-9-scoreline-B')).toHaveTextContent('152119');
   });
 
-  test('進行中の行を含め、どの行も押せない（ボタンが無く、得点入力は出ない）', () => {
-    render(
-      <>
-        <MatchRow match={doneMatch} />
-        <MatchRow match={liveMatch} />
-        <MatchRow match={waitingMatch} />
-      </>
-    );
+  test('棄権した側の名前の横に「棄権」の札が出る', () => {
+    renderRow({
+      status: 'done',
+      ending: 'retired_side_b',
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
+    });
 
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    const row = screen.getByTestId('match-row-m-9');
+    expect(within(row).getAllByText('棄権')).toHaveLength(1);
+    expect(within(row).getByTestId('match-row-m-9-line-B')).toHaveTextContent('棄権');
+    expect(within(row).getByTestId('match-row-m-9-line-A')).not.toHaveTextContent('棄権');
   });
 
-  test('0 対 0 の枠（まだ始まっていないゲーム）は点数に出さない', () => {
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-empty',
-          status: 'live',
-          scores: [
-            { gameNumber: 1, sideAScore: 21, sideBScore: 5 },
-            { gameNumber: 2, sideAScore: 0, sideBScore: 0 },
-          ],
-        })}
-      />
-    );
+  test('試合に負けた側の名前は薄くなる', () => {
+    renderRow({
+      status: 'done',
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
+    });
 
-    expect(screen.getByTestId('match-row-m-empty')).toHaveTextContent('21-5');
-    expect(screen.getByTestId('match-row-m-empty')).not.toHaveTextContent('0-0');
+    expect(screen.getByText('シン・ヒナ').className).toMatch(/text-\[#6b665f\]/);
+    expect(screen.getByText('ハルキ・ミドリ').className).not.toMatch(/text-\[#6b665f\]/);
   });
 
-  test('未実施の試合にはスコアが出ない', () => {
-    render(<MatchRow match={waitingMatch} />);
+  test('試合中の行は「試合中 ・ 第Nゲーム」と、いまのゲームの点が出る', () => {
+    renderRow({
+      status: 'live',
+      maxGameCount: 3,
+      scores: [
+        { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
+        { gameNumber: 2, sideAScore: 12, sideBScore: 9 },
+      ],
+    });
 
-    expect(screen.queryByText(/^\d+-\d+$/)).not.toBeInTheDocument();
+    const row = screen.getByTestId('match-row-m-9');
+    expect(within(row).getByText(/試合中 ・ 第2ゲーム/)).toBeInTheDocument();
+    expect(screen.getByTestId('match-row-m-9-scoreline-A')).toHaveTextContent('12');
+    expect(screen.getByTestId('match-row-m-9-scoreline-B')).toHaveTextContent('9');
   });
 
-  test('自分の試合には「あなたの試合」の印が出る。自分の試合でなければ出ない', () => {
-    render(<MatchRow match={liveMatch} />);
-    expect(screen.getByTestId('match-row-m-live')).toHaveTextContent('あなたの試合');
+  test('これからの試合には点が出ない', () => {
+    renderRow({ status: 'waiting' });
 
-    render(<MatchRow match={doneMatch} />);
-    expect(screen.getByTestId('match-row-m-done')).not.toHaveTextContent('あなたの試合');
+    expect(screen.getByTestId('match-row-m-9-scoreline-A')).toBeEmptyDOMElement();
   });
 
-  test('終わった試合は、勝った側の名前が太字、負けた側はグレー', () => {
-    render(<MatchRow match={doneMatch} />);
+  test('出場者が決まっていない枠は空枠の名前（予選1位）と「予選の結果で決まる」が出る', () => {
+    renderRow({
+      status: 'waiting',
+      roundLabel: '準決勝',
+      teamA: { teamNumber: null, players: [], slotLabel: '予選1位' },
+      teamB: { teamNumber: null, players: [], slotLabel: '予選4位' },
+    });
 
-    expect(nameStyleOf('match-row-m-done', '佐藤・鈴木')).toEqual({ bold: true, gray: false });
-    expect(nameStyleOf('match-row-m-done', '高橋・伊藤')).toEqual({ bold: false, gray: true });
+    expect(screen.getByText('予選1位')).toBeInTheDocument();
+    expect(screen.getByText('予選4位')).toBeInTheDocument();
+    expect(screen.getByText('準決勝 ・ 予選の結果で決まる')).toBeInTheDocument();
   });
 
-  test('B 側が勝った試合は、B 側が太字になる', () => {
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-b-wins',
-          status: 'done',
-          scores: [{ gameNumber: 1, sideAScore: 12, sideBScore: 21 }],
-        })}
-      />
-    );
+  test('場所（コート1）を渡すと行の上に出る（探す画面用）', () => {
+    renderRow({ status: 'done' }, { location: 'コート1' });
 
-    expect(nameStyleOf('match-row-m-b-wins', '高橋・伊藤').bold).toBe(true);
-    expect(nameStyleOf('match-row-m-b-wins', '佐藤・鈴木').gray).toBe(true);
+    expect(screen.getByText('コート1')).toBeInTheDocument();
   });
 
-  test('進行中・未実施の試合は、どちらも太字にしない', () => {
-    render(<MatchRow match={liveMatch} />);
+  test('自分の試合の行は金の枠、自分が出る側の名前の横に金の点が付く', () => {
+    renderRow({ isMine: true, mySide: 'A' });
 
-    expect(nameStyleOf('match-row-m-live', '渡辺')).toEqual({ bold: false, gray: false });
-    expect(nameStyleOf('match-row-m-live', '山本')).toEqual({ bold: false, gray: false });
-  });
-
-  test('棄権の試合は、点数で勝っていても相手が太字になり、「棄権」の印が出る', () => {
-    // A 側が 21-5 で勝っているが、A 側が棄権 → 相手（B 側）の勝ち
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-retired',
-          status: 'done',
-          ending: 'retired_side_a',
-          scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 5 }],
-        })}
-      />
-    );
-
-    expect(nameStyleOf('match-row-m-retired', '高橋・伊藤')).toEqual({ bold: true, gray: false });
-    expect(nameStyleOf('match-row-m-retired', '佐藤・鈴木')).toEqual({ bold: false, gray: true });
-    const row = screen.getByTestId('match-row-m-retired');
-    expect(row).toHaveTextContent('佐藤・鈴木 棄権');
-    // 点数は代わりの試合の点数のまま出す
-    expect(row).toHaveTextContent('21-5');
-  });
-
-  test('棄権の印は棄権した側にだけ付く（B 側が棄権なら B 側）', () => {
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-retired-b',
-          status: 'done',
-          ending: 'retired_side_b',
-          scores: [{ gameNumber: 1, sideAScore: 3, sideBScore: 21 }],
-        })}
-      />
-    );
-
-    const row = screen.getByTestId('match-row-m-retired-b');
-    expect(row).toHaveTextContent('高橋・伊藤 棄権');
-    expect(row).not.toHaveTextContent('佐藤・鈴木 棄権');
-    expect(nameStyleOf('match-row-m-retired-b', '佐藤・鈴木').bold).toBe(true);
-  });
-
-  test('棄権でない試合には「棄権」の印が出ない', () => {
-    render(<MatchRow match={doneMatch} />);
-
-    expect(screen.getByTestId('match-row-m-done')).not.toHaveTextContent('棄権');
-  });
-
-  test('ペアがまだ決まっていない側は、空枠ラベル（例: 予選1位）を出す', () => {
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-slot',
-          teamA: { teamNumber: 1, players: ['佐藤'], slotLabel: null },
-          teamB: { teamNumber: null, players: [], slotLabel: '予選1位' },
-        })}
-      />
-    );
-
-    expect(screen.getByTestId('match-row-m-slot')).toHaveTextContent('予選1位');
-  });
-
-  test('ペアも空枠ラベルも無い側は「未定」と出す（空のままにしない）', () => {
-    render(
-      <MatchRow
-        match={boardMatch({
-          matchId: 'm-none',
-          teamB: { teamNumber: null, players: [], slotLabel: null },
-        })}
-      />
-    );
-
-    expect(screen.getByTestId('match-row-m-none')).toHaveTextContent('未定');
-  });
-
-  test('試合順が未定の試合は「順番未定」と出す（「null試合目」にしない）', () => {
-    render(<MatchRow match={boardMatch({ matchId: 'm-no-order', orderInCourt: null })} />);
-
-    const row = screen.getByTestId('match-row-m-no-order');
-    expect(row).toHaveTextContent('順番未定');
-    expect(row).not.toHaveTextContent('null');
+    expect(screen.getByTestId('match-row-m-9').className).toMatch(/border-gold-mine/);
+    expect(
+      within(screen.getByTestId('match-row-m-9-line-A')).getByRole('img', { name: 'あなた' })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('match-row-m-9-line-B')).queryByRole('img', { name: 'あなた' })
+    ).not.toBeInTheDocument();
   });
 });

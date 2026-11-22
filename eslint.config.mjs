@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     // ローカル Supabase が生成する一時ファイル。人が書くコードではない。
     'supabase/.temp/**',
+    // デザイン担当から受け取った見本（HTML と見本を開くための script）。人が書くコードではない。
+    'docs/specs/*/**',
     'test-results/**',
     'playwright-report/**',
   ]),

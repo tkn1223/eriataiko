@@ -1,11 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, test, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { MatchesPage } from '@/ui/matches/matches-page';
 import { boardMatch } from '@/ui/matches/test-support';
 import type { BoardMatch } from '@/ui/matches/types';
 
 /**
- * 画面は読み直し（router.refresh）と、他の人の変化の受け取り（結果LIVE と共有の
+ * 画面は読み直し（router.refresh）と、他の人の変化の受け取り（試合速報と共有の
  * use-live-updates.ts）を使う。この中は表示の確認だけなので、どちらも何もしない偽物にする
  * （受け取りと読み直しの確認は matches-live.test.tsx）。
  */
@@ -13,78 +13,131 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/ui/courts/use-live-updates', () => ({ useLiveUpdates: () => 'live' }));
 
 /**
- * 進行表の画面。見るだけで、得点を入れる場所は結果LIVE だけ。
- * 仕様: docs/specs/2026-10-14-matches-real-data.md
+ * 進行表の画面（1a 全コート・1b コートの全試合・1c 探す）。
+ * 仕様: docs/specs/2026-11-22-matches-redesign.md
  */
 
-/** 見出しの文字列は区切りの空白を挟まず連結される（例: 「コート1現在3試合目残り4試合」）。
- *  「コート1」の直後に別の数字が続かないことだけを見て、他のコート番号と区別する。 */
-function courtHeadingName(courtNumber: number) {
-  return new RegExp(`^コート${courtNumber}(?!\\d)`);
-}
+const aoizora = {
+  teamNumber: 1,
+  teamName: 'あおぞら',
+  players: ['ハルキ', 'ミドリ'],
+  slotLabel: null,
+};
+const umikaze = { teamNumber: 4, teamName: 'うみかぜ', players: ['トモ', 'リコ'], slotLabel: null };
+const morino = { teamNumber: 2, teamName: 'もりの', players: ['ケイ', 'ユイ'], slotLabel: null };
+const sakura = { teamNumber: 3, teamName: 'さくら', players: ['シン', 'ヒナ'], slotLabel: null };
 
-/** コート 1 は 終了 2・進行中 1・これから 3。うち 1 つ（終了のほう）が自分の試合。 */
-function court1Matches(): BoardMatch[] {
+/** コート 1: 終了 2・試合中 1・これから 2。コート 2: 試合中 1・これから 1。 */
+function sampleBoard(): BoardMatch[] {
   return [
     boardMatch({
       matchId: 'c1-1',
       orderInCourt: 1,
       status: 'done',
+      teamA: aoizora,
+      teamB: morino,
       scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 15 }],
     }),
     boardMatch({
       matchId: 'c1-2',
       orderInCourt: 2,
       status: 'done',
-      isMine: true,
-      teamA: { teamNumber: 3, players: ['渡辺', '小林'], slotLabel: null },
-      teamB: { teamNumber: 4, players: ['山本', '松本'], slotLabel: null },
-      scores: [{ gameNumber: 1, sideAScore: 18, sideBScore: 21 }],
+      teamA: aoizora,
+      teamB: sakura,
+      scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 8 }],
     }),
     boardMatch({
       matchId: 'c1-3',
       orderInCourt: 3,
       status: 'live',
-      teamA: { teamNumber: 1, players: ['中村'], slotLabel: null },
-      teamB: { teamNumber: 2, players: ['加藤'], slotLabel: null },
+      teamA: aoizora,
+      teamB: umikaze,
       scores: [{ gameNumber: 1, sideAScore: 12, sideBScore: 9 }],
     }),
-    boardMatch({ matchId: 'c1-4', orderInCourt: 4, status: 'waiting' }),
-    boardMatch({ matchId: 'c1-5', orderInCourt: 5, status: 'waiting' }),
-    boardMatch({ matchId: 'c1-6', orderInCourt: 6, status: 'waiting' }),
+    boardMatch({
+      matchId: 'c1-4',
+      orderInCourt: 4,
+      status: 'waiting',
+      teamA: morino,
+      teamB: sakura,
+    }),
+    boardMatch({
+      matchId: 'c1-5',
+      orderInCourt: 5,
+      status: 'waiting',
+      teamA: morino,
+      teamB: umikaze,
+    }),
+    boardMatch({
+      matchId: 'c2-1',
+      courtNumber: 2,
+      orderInCourt: 1,
+      status: 'live',
+      teamA: { ...sakura, players: ['ソウタ', 'アカネ'] },
+      teamB: { ...umikaze, players: ['カイ', 'ノア'] },
+      scores: [{ gameNumber: 1, sideAScore: 17, sideBScore: 20 }],
+    }),
+    boardMatch({
+      matchId: 'c2-2',
+      courtNumber: 2,
+      orderInCourt: 2,
+      status: 'waiting',
+      teamA: morino,
+      teamB: sakura,
+    }),
   ];
 }
 
-function renderPage({
-  board = court1Matches(),
-  canFilterMine = true,
-  truncated = false,
-}: {
-  board?: BoardMatch[];
-  canFilterMine?: boolean;
-  truncated?: boolean;
-} = {}) {
-  return render(<MatchesPage board={board} canFilterMine={canFilterMine} truncated={truncated} />);
+function renderPage(props: Partial<React.ComponentProps<typeof MatchesPage>> = {}) {
+  return render(
+    <MatchesPage
+      board={sampleBoard()}
+      truncated={false}
+      initialCourt={null}
+      stageLabel="予選リーグ"
+      completedMatches={27}
+      totalMatches={72}
+      {...props}
+    />
+  );
 }
 
-describe('MatchesPage', () => {
-  test('見出し「進行表」が出る', () => {
+// jsdom は scrollTo を持たない（コートを切り替えたとき画面の上へ戻すのに使う）
+beforeEach(() => {
+  window.scrollTo = vi.fn();
+});
+
+afterEach(() => {
+  window.history.replaceState(null, '', '/');
+});
+
+describe('1a 全コート', () => {
+  test('開いた直後、何も押さずに全コートのいまの試合（両方の名前・点）と次の試合が見える', () => {
     renderPage();
-    expect(screen.getByText('進行表')).toBeInTheDocument();
+
+    const court1 = screen.getByTestId('matches-court-card-1');
+    expect(within(court1).getByText('ハルキ・ミドリ')).toBeInTheDocument();
+    expect(within(court1).getByText('トモ・リコ')).toBeInTheDocument();
+    expect(within(court1).getByText('12')).toBeInTheDocument();
+    expect(within(court1).getByText('ケイ・ユイ vs シン・ヒナ')).toBeInTheDocument();
+
+    const court2 = screen.getByTestId('matches-court-card-2');
+    expect(within(court2).getByText('ソウタ・アカネ')).toBeInTheDocument();
+    expect(within(court2).getByText('カイ・ノア')).toBeInTheDocument();
+    expect(within(court2).getByText('20')).toBeInTheDocument();
   });
 
-  test('本物の試合（部・両ペアの名前・点数）が出る。見本の名前は出ない', () => {
+  test('ページ見出し「進行表」は本文に出さない（帯とメニューにあるため）', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
 
-    const live = screen.getByTestId('match-row-c1-3');
-    expect(live).toHaveTextContent('3試合目');
-    expect(live).toHaveTextContent('1部');
-    expect(live).toHaveTextContent('中村');
-    expect(live).toHaveTextContent('加藤');
-    expect(live).toHaveTextContent('12-9');
-    // 見本データの名前（sample-data.ts にあった名前）は出ない
-    expect(screen.queryByText(/杉山|増田|須藤/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '進行表' })).not.toBeInTheDocument();
+  });
+
+  test('「全試合｜自分の試合」の切り替えは無い', () => {
+    renderPage();
+
+    expect(screen.queryByRole('button', { name: '自分の試合' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '全試合' })).not.toBeInTheDocument();
   });
 
   test('コートのカードは試合のあるコートだけ、番号順に出る（9・10 番も、飛び番号もそのまま）', () => {
@@ -96,13 +149,8 @@ describe('MatchesPage', () => {
       ],
     });
 
-    const headings = screen
-      .getAllByRole('button', { name: /^コート\d/ })
-      .map((button) => button.textContent?.match(/^コート(\d+)/)?.[1]);
-    expect(headings).toEqual(['2', '9', '10']);
-    // 試合の無いコート（1・3〜8）のカードは出ない
-    expect(screen.queryByRole('button', { name: courtHeadingName(1) })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: courtHeadingName(3) })).not.toBeInTheDocument();
+    const cards = screen.getAllByTestId(/^matches-court-card-/).map((card) => card.id);
+    expect(cards).toEqual(['matches-court-2', 'matches-court-9', 'matches-court-10']);
   });
 
   test('コートが決まっていない試合は、最後に「コート未定」としてまとまる', () => {
@@ -113,161 +161,38 @@ describe('MatchesPage', () => {
       ],
     });
 
-    const headings = screen.getAllByRole('button', { name: /^コート/ });
-    expect(headings.map((button) => button.textContent)).toEqual([
-      expect.stringMatching(/^コート3/),
-      expect.stringMatching(/^コート未定/),
-    ]);
+    expect(screen.getByTestId('matches-court-card-3')).toBeInTheDocument();
+    const undecided = screen.getByTestId('matches-undecided');
+    expect(undecided).toHaveTextContent('コート未定');
+    expect(within(undecided).getByTestId('match-row-u')).toBeInTheDocument();
   });
 
-  test('見出しを押すと中身が開いたり閉じたりする', () => {
+  test('コート札を押すと、そのコートのカードへ移る（スクロール）', () => {
+    const scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoView;
     renderPage();
 
-    expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^コート2 \S+$/ }));
 
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-    expect(screen.getByTestId('match-row-c1-4')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-    expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('matches-court-2'));
   });
 
-  test('見出しに「現在◯試合目」「残り◯試合」が試合の状態どおりに出る', () => {
-    renderPage({
-      board: [
-        ...court1Matches(),
-        boardMatch({ matchId: 'c2-1', courtNumber: 2, orderInCourt: 1, status: 'done' }),
-      ],
-    });
-
-    const heading1 = screen.getByRole('button', { name: courtHeadingName(1) });
-    expect(heading1).toHaveTextContent('現在3試合目');
-    expect(heading1).toHaveTextContent('残り4試合');
-    expect(screen.getByRole('button', { name: courtHeadingName(2) })).toHaveTextContent(
-      'すべて終了'
-    );
-  });
-
-  test('終わった試合は最初は隠れていて、「✓ 終了した◯試合を見る」を押すと出る', () => {
+  test('コート札の数はコートの数と同じ', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
 
-    expect(screen.queryByTestId('match-row-c1-1')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '✓ 終了した2試合を見る' }));
-    expect(screen.getByTestId('match-row-c1-1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '✓ 終了した2試合を隠す' })).toBeInTheDocument();
+    const chips = screen.getAllByRole('button', {
+      name: /^コート\d (試合中|呼出待ち|全試合終了)$/,
+    });
+    expect(chips).toHaveLength(2);
   });
 
-  test('進行中の行を押しても何も起きない（得点入力は出ない）', () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-
-    fireEvent.click(screen.getByTestId('match-row-c1-3'));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /＋1|−1|閉じる/ })).not.toBeInTheDocument();
-  });
-
-  test('「入れた点はまだ保存されません」の帯は出ない', () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-
-    expect(screen.queryByText(/まだ保存されません/)).not.toBeInTheDocument();
-  });
-
-  describe('選手として入った人', () => {
-    test('「全試合」「自分の試合」が出る', () => {
-      renderPage({ canFilterMine: true });
-
-      expect(screen.getByRole('button', { name: '全試合' })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: '自分の試合' })).toBeInTheDocument();
-    });
-
-    test('「自分の試合」で、自分の出る試合を含むコートだけになる', () => {
-      renderPage({
-        board: [
-          ...court1Matches(),
-          boardMatch({ matchId: 'c2-1', courtNumber: 2, orderInCourt: 1, status: 'waiting' }),
-        ],
-      });
-
-      expect(screen.getByRole('button', { name: courtHeadingName(2) })).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
-
-      expect(screen.queryByRole('button', { name: courtHeadingName(2) })).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: courtHeadingName(1) })).toBeInTheDocument();
-
-      fireEvent.click(screen.getByRole('button', { name: '全試合' }));
-      expect(screen.getByRole('button', { name: courtHeadingName(2) })).toBeInTheDocument();
-    });
-
-    test('「自分の試合」で、コートの中も自分の試合だけが並ぶ', () => {
-      renderPage();
-      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
-      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-      fireEvent.click(screen.getByRole('button', { name: '✓ 終了した1試合を見る' }));
-
-      expect(screen.getByTestId('match-row-c1-2')).toBeInTheDocument();
-      expect(screen.queryByTestId('match-row-c1-3')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('match-row-c1-4')).not.toBeInTheDocument();
-    });
-
-    test('「自分の試合」で絞っても、見出しはコート全体の状態を出す', () => {
-      renderPage();
-      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
-
-      // 自分の試合は終わった c1-2 だけ。コート自体はまだ進行中なので「すべて終了」にしない。
-      const heading = screen.getByRole('button', { name: courtHeadingName(1) });
-      expect(heading).toHaveTextContent('現在3試合目');
-      expect(heading).toHaveTextContent('残り4試合');
-      expect(heading).not.toHaveTextContent('すべて終了');
-    });
-
-    test('自分の試合には「あなたの試合」の印が出る', () => {
-      renderPage();
-      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-      fireEvent.click(screen.getByRole('button', { name: '✓ 終了した2試合を見る' }));
-
-      expect(screen.getByTestId('match-row-c1-2')).toHaveTextContent('あなたの試合');
-      expect(screen.getByTestId('match-row-c1-1')).not.toHaveTextContent('あなたの試合');
-    });
-
-    test('自分の試合が 1 つも無いときは、空のまま黙らず案内を出す', () => {
-      renderPage({ board: [boardMatch({ matchId: 'x', isMine: false })] });
-
-      fireEvent.click(screen.getByRole('button', { name: '自分の試合' }));
-
-      expect(screen.getByText('あなたの試合は見つかりませんでした')).toBeInTheDocument();
-    });
-  });
-
-  describe('観戦者', () => {
-    test('「全試合」だけが出て、「自分の試合」は出ない', () => {
-      renderPage({ canFilterMine: false });
-
-      expect(screen.getByRole('button', { name: '全試合' })).toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: '自分の試合' })).not.toBeInTheDocument();
-    });
-
-    test('「あなたの試合」の印は出ない', () => {
-      // 観戦者の読み込みでは isMine は付かない（build-matches-view.test.ts）
-      renderPage({
-        canFilterMine: false,
-        board: [boardMatch({ matchId: 'a', isMine: false })],
-      });
-      fireEvent.click(screen.getByRole('button', { name: courtHeadingName(1) }));
-
-      expect(screen.queryByText('あなたの試合')).not.toBeInTheDocument();
-    });
-  });
-
-  test('試合が 1 つも無いときは「まだ試合が登録されていません」と出る', () => {
+  test('試合が 1 つも無いときは、日本語の案内が出る', () => {
     renderPage({ board: [] });
 
-    expect(screen.getByText('まだ試合が登録されていません')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /^コート/ })).not.toBeInTheDocument();
+    expect(screen.getByTestId('matches-empty-notice')).toHaveTextContent(
+      'まだ試合が登録されていません'
+    );
   });
 
   test('読む上限を超えたときは、出しきれていないかもしれないと知らせる', () => {
@@ -275,10 +200,118 @@ describe('MatchesPage', () => {
 
     expect(screen.getByRole('alert')).toHaveTextContent('出しきれていない');
   });
+});
 
-  test('上限を超えていなければ、その知らせは出ない', () => {
-    renderPage({ truncated: false });
+describe('1b コートの全試合', () => {
+  test('カードを押すと、そのコートの全試合が出る。終わった試合も隠れていない', () => {
+    renderPage();
 
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('matches-court-card-1')).getByRole('button'));
+
+    expect(screen.getByTestId('court-matches')).toBeInTheDocument();
+    expect(screen.getByTestId('match-row-c1-1')).toBeInTheDocument();
+    expect(screen.getByTestId('match-row-c1-2')).toBeInTheDocument();
+    expect(screen.getByTestId('match-row-c1-5')).toBeInTheDocument();
+    expect(screen.queryByTestId('match-row-c2-1')).not.toBeInTheDocument();
+    expect(window.location.search).toBe('?court=1');
+  });
+
+  test('URL に ?court=N があれば、最初からそのコートの全試合が開く', () => {
+    renderPage({ initialCourt: 2 });
+
+    expect(screen.getByTestId('match-row-c2-2')).toBeInTheDocument();
+    expect(screen.queryByTestId('match-row-c1-1')).not.toBeInTheDocument();
+  });
+
+  test('存在しないコート番号なら、全コートの画面にする', () => {
+    renderPage({ initialCourt: 7 });
+
+    expect(screen.getByTestId('matches-court-card-1')).toBeInTheDocument();
+  });
+
+  test('札で隣のコートへ移れる。開いているコートの札には現在地の印が付く', () => {
+    renderPage({ initialCourt: 1 });
+
+    expect(screen.getByRole('button', { name: /^コート1/ })).toHaveAttribute(
+      'aria-current',
+      'true'
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^コート2/ }));
+
+    expect(screen.getByTestId('match-row-c2-2')).toBeInTheDocument();
+    expect(window.location.search).toBe('?court=2');
+  });
+
+  test('「‹ 全コート」を押すと全コートの画面に戻る', () => {
+    renderPage({ initialCourt: 1 });
+
+    fireEvent.click(screen.getByRole('button', { name: /全コート/ }));
+
+    expect(screen.getByTestId('matches-court-card-2')).toBeInTheDocument();
+    expect(window.location.search).toBe('');
+  });
+});
+
+describe('1c 探す', () => {
+  test('探す欄に名前の一部を入れると、その試合が試合中 → これから → 終わった試合の順に出る', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ハルキ' } });
+
+    const headings = screen
+      .getAllByRole('heading', { level: 2 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual(['試合中', '終わった試合 ・ 2勝0敗']);
+    expect(screen.getByTestId('match-row-c1-3')).toBeInTheDocument();
+    expect(screen.getByTestId('match-row-c1-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('match-row-c2-1')).not.toBeInTheDocument();
+  });
+
+  test('チーム名でも探せて、これからの試合が出る。行の上にコートが出る', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'もりの' } });
+
+    expect(screen.getByRole('heading', { name: 'これから' })).toBeInTheDocument();
+    const row = screen.getByTestId('match-row-c2-2');
+    expect(within(row).getByText('コート2')).toBeInTheDocument();
+  });
+
+  test('当たる試合が無いときは、日本語でそう出る', () => {
+    renderPage();
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ぜんぜん違う' } });
+
+    expect(screen.getByText('当てはまる試合は見つかりませんでした')).toBeInTheDocument();
+  });
+
+  test('「やめる」を押すと探す前の画面（全コート）に戻る', () => {
+    renderPage();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ハルキ' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'やめる' }));
+
+    expect(screen.getByTestId('matches-court-card-1')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'やめる' })).not.toBeInTheDocument();
+  });
+
+  test('結果の行はどれも押すと詳しい画面へ移る', () => {
+    renderPage();
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'ハルキ' } });
+
+    for (const link of screen.getAllByRole('link')) {
+      expect(link.getAttribute('href')).toMatch(/^\/matches\/c1-\d$/);
+    }
+  });
+});
+
+describe('どの行・カードからも詳しい画面へ', () => {
+  test('1b の行は詳しい画面へのリンクになっている', () => {
+    renderPage({ initialCourt: 1 });
+
+    expect(within(screen.getByTestId('match-row-c1-4')).getByRole('link')).toHaveAttribute(
+      'href',
+      '/matches/c1-4'
+    );
   });
 });

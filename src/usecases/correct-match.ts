@@ -13,6 +13,8 @@ export type MatchForCorrecting = {
 /** `correctMatch` が DB に求める操作の約束。実装は `src/db/matches.ts`。 */
 export type CorrectMatchRepository = {
   findMatch(matchId: string): Promise<MatchForCorrecting | null>;
+  /** いま保存されている全ゲームの点。送られなかったゲームも含めて、書いたあとの勝敗を確かめるのに使う。 */
+  findGameScores(matchId: string): Promise<GameScore[]>;
   /**
    * 棄権の印（ending）を、**まだ done のときだけ**書き、続けて全ゲームの点をまとめて上書きする。
    * done でなくなっていて印が書けなかったら、点も書かずに false を返す。
@@ -86,11 +88,14 @@ export async function correctMatch(deps: CorrectMatchRepository, input: CorrectM
     seen.add(gameNumber);
   }
 
-  if (!hasAnyPoint(input.scores)) {
+  // 送られなかったゲームは上書きされずに残る。送られた分だけで判定すると、残ったゲームと合わせて
+  // 同点・0 点の「終わった試合」ができてしまうので、書いたあとに残る点で確かめる
+  const scoresAfterWrite = mergeScores(await deps.findGameScores(input.matchId), input.scores);
+  if (!hasAnyPoint(scoresAfterWrite)) {
     throw new ApiError(400, '1 点も入っていません。点を入れてから訂正してください。');
   }
   // 終了と同じ判定を共有する（同点では勝敗が決まらず、順位が崩れるため）
-  const canFinish = canFinishMatch(input.scores, match.maxGameCount);
+  const canFinish = canFinishMatch(scoresAfterWrite, match.maxGameCount);
   if (!canFinish.ok) {
     throw new ApiError(400, canFinish.reason);
   }
@@ -105,4 +110,11 @@ export async function correctMatch(deps: CorrectMatchRepository, input: CorrectM
     // 読んだあとに、試合速報で「訂正」されて試合中に戻った
     throw new ApiError(409, STILL_PLAYING_MESSAGE);
   }
+}
+
+/** 保存済みの点に、送られた点を同じゲーム番号で上書きしたもの（番号順）。 */
+function mergeScores(saved: GameScore[], sent: GameScore[]): GameScore[] {
+  const byGame = new Map(saved.map((score) => [score.gameNumber, score]));
+  for (const score of sent) byGame.set(score.gameNumber, score);
+  return [...byGame.values()].sort((a, b) => a.gameNumber - b.gameNumber);
 }

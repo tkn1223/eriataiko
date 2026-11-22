@@ -29,7 +29,8 @@ export function BottomNav() {
       className="app-nav fixed bottom-0 left-0 z-20 grid w-full grid-cols-4 px-1 pt-2.5 pb-[calc(18px+env(safe-area-inset-bottom))]"
     >
       {TABS.map((tab) => {
-        const isCurrent = pathname === tab.href;
+        // /matches/[matchId] や /matches/[matchId]/correct でも「進行表」を現在地にする
+        const isCurrent = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         const Icon = ICONS[tab.icon];
 
         return (

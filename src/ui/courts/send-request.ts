@@ -29,7 +29,7 @@ async function readErrorBody(
  */
 export async function sendRequest(request: {
   url: string;
-  method: 'POST' | 'DELETE';
+  method: 'POST' | 'PUT' | 'DELETE';
   body?: unknown;
 }): Promise<SendResult> {
   let response: Response;

@@ -38,6 +38,17 @@ describe('BottomNav', () => {
     expect(screen.getByRole('link', { name: /試合速報/ })).not.toHaveAttribute('aria-current');
   });
 
+  test('進行表の下の画面（/matches/[matchId]・/matches/[matchId]/correct）でも「進行表」が現在地', () => {
+    for (const path of ['/matches/abc', '/matches/abc/correct']) {
+      mockPathname.mockReturnValue(path);
+      const { unmount } = render(<BottomNav />);
+
+      expect(screen.getByRole('link', { name: /進行表/ })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('link', { name: /試合速報/ })).not.toHaveAttribute('aria-current');
+      unmount();
+    }
+  });
+
   test('黒地で、開いている項目だけ金色。どの項目にも印（SVG）が付く', () => {
     mockPathname.mockReturnValue('/courts');
     render(<BottomNav />);

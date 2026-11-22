@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+body{margin:0;background:#E9E6E0;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',system-ui,sans-serif;color:#171717;-webkit-font-smoothing:antialiased}
+a{color:#9C6512;font-weight:700;text-decoration:none}
+a:hover{color:#C08400;text-decoration:underline}
+</style>
+</helmet>
+<div style="padding:56px 56px 96px;display:flex;flex-direction:column;gap:72px">
+
+<header style="max-width:1240px;display:flex;flex-direction:column;gap:18px">
+  <div style="font-size:13px;font-weight:700;color:#9C6512;letter-spacing:0.08em">えりあ太鼓 大会アプリ ・ デザインの見直し ・ 390px</div>
+  <div style="font-size:34px;font-weight:800;letter-spacing:-0.5px;text-wrap:pretty">進行表を「いま」が見える画面に。どの画面からも試合の詳しい画面へ、そこから何試合前でも訂正へ。</div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px">
+    <div style="background:#FFFFFF;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:6px"><div style="font-size:12px;font-weight:800;color:#9C6512">不満 1 ・ 味気ない</div><div style="font-size:14.5px;line-height:1.65;color:#333">試合速報の得点板の言葉（チーム色の■・太い数字・金の枠＝自分）を進行表にも持ち込む。同じ白い箱の羅列をやめ、状態ごとに見た目を変える。</div></div>
+    <div style="background:#FFFFFF;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:6px"><div style="font-size:12px;font-weight:800;color:#9C6512">不満 2 ・ 見たい試合まで遠い</div><div style="font-size:14.5px;line-height:1.65;color:#333">開いた直後に全コートの「いま・次」。上に「1〜9」のコート列、名前で探す、どの行・マスからも試合の詳しい画面へ。</div></div>
+    <div style="background:#FFFFFF;border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:6px"><div style="font-size:12px;font-weight:800;color:#9C6512">不満 3 ・ 過去の試合を直せない</div><div style="font-size:14.5px;line-height:1.65;color:#333">試合の詳しい画面に［訂正する］。直す → 完了の2段。誰が押せるか・直したあとの扱いは <a href="#2d">2d</a> <a href="#2e">2e</a> <a href="#2f">2f</a> で選んでください。</div></div>
+  </div>
+  <div style="font-size:13px;color:#555;line-height:1.7">決めてほしいこと（案を並べて止めています）：<a href="#2d">2d</a> 誰が直せるか ・ <a href="#2e">2e</a> 直したあとの扱い ・ <a href="#2f">2f</a> 決勝が決まったあとの予選の訂正 ・ <a href="#3d">3d</a> 下のメニュー。見本の大会：9面・1コート8試合・あなた＝ハルキ（あおぞら・1部）。</div>
+</header>
+
+<section style="display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;align-items:baseline;gap:14px"><span style="font-size:26px;font-weight:800">1　進行表</span><span style="font-size:14px;color:#666">今回の中心</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start">
+
+    <div id="1a" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">1a</span><span style="font-size:16px;font-weight:800">開いた直後（全コート）</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="padding:12px 12px 0;display:flex;gap:8px">
+          <div style="flex:1;height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;box-shadow:0 2px 4px rgba(0,0,0,0.06);display:flex;align-items:center;gap:8px;padding:0 12px;font-size:14.5px;font-weight:600;color:#8A857D"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg>選手名・チーム名で探す</div>
+        </div>
+        <div style="display:flex;gap:8px;padding:12px 12px 4px;overflow:hidden">
+          <sc-for list="{{ chips }}" as="k" hint-placeholder-count="9">
+            <div style="flex:0 0 44px;height:62px;border-radius:8px;background:{{ k.floor }};border:{{ k.border }};position:relative;display:flex;align-items:center;justify-content:center;box-sizing:border-box"><div style="position:absolute;inset:5px;border:1.5px solid {{ k.line }};border-radius:2px"></div><div style="position:absolute;left:5px;right:5px;top:50%;height:1.5px;margin-top:-0.75px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;top:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;bottom:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;top:5px;bottom:5px;left:50%;width:1px;background:{{ k.line }};opacity:0.6"></div><span style="position:relative;font-size:16px;font-weight:900;color:{{ k.fg }};background:{{ k.floor }};padding:0 4px;line-height:1.15;border-radius:4px">{{ k.n }}</span><span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:5px;background:{{ k.dot }};border:2px solid #FAF9F7"></span></div>
+          </sc-for>
+        </div>
+        <div style="padding:12px 12px 16px;display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ courts }}" as="c" hint-placeholder-count="9">
+            <div style="background:{{ c.bg }};border:{{ c.border }};border-radius:18px;box-shadow:{{ c.shadow }};padding:12px 14px 6px;display:flex;flex-direction:column;gap:7px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:21px;font-weight:800;letter-spacing:-0.3px;white-space:nowrap;flex-shrink:0">コート{{ c.n }}</span>
+                <span style="font-size:12px;font-weight:700;color:{{ c.clsC }};background:{{ c.clsBg }};padding:3px 9px;border-radius:999px;white-space:nowrap">{{ c.clsL }}</span>
+                <span style="margin-left:auto;font-size:12px;font-weight:700;color:{{ c.stC }};background:{{ c.stBg }};padding:4px 10px;border-radius:999px;white-space:nowrap">{{ c.stL }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;display:flex;gap:3px;align-items:flex-start"><sc-for list="{{ c.prog }}" as="p" hint-placeholder-count="8"><div style="flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px"><div style="width:100%;height:4px;border-radius:2px;background:{{ p.bg }}"></div><sc-if value="{{ p.me }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;font-weight:800;color:#9C6512;white-space:nowrap;line-height:1">▲{{ p.name }}</span></sc-if></div></sc-for></div>
+                <span style="font-size:11.5px;font-weight:700;color:#777;font-variant-numeric:tabular-nums">{{ c.progText }}</span>
+              </div>
+              <sc-if value="{{ c.hasMatch }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column">
+                  <sc-for list="{{ c.sides }}" as="s" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;gap:8px;min-height:34px">
+                      <span style="width:10px;height:10px;border-radius:3px;background:{{ s.sq }};flex-shrink:0"></span>
+                      <span style="font-size:16px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ s.p }}</span>
+                      <span style="font-size:11.5px;font-weight:700;color:{{ s.ink }};white-space:nowrap">{{ s.tn }}</span>
+                      <span style="width:6px;height:6px;border-radius:3px;background:#D5A23C;flex-shrink:0;opacity:{{ s.dot }}"></span>
+                      <span style="margin-left:auto;font-size:28px;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-0.5px;line-height:1;color:{{ s.sc }};font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">{{ s.s }}</span>
+                    </div>
+                  </sc-for>
+                  <div style="font-size:12px;font-weight:600;color:#666">{{ c.game }}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;border-top:1px solid #ECE8E2;min-height:44px">
+                  <span style="font-size:11px;font-weight:800;color:#FFFFFF;background:#2B2B2B;border-radius:6px;padding:2px 6px;flex-shrink:0">次</span>
+                  <span style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ c.next }}</span>
+                  <span style="margin-left:auto;font-size:12px;font-weight:600;color:#777;white-space:nowrap">全8試合 ›</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ c.isDone }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;min-height:44px;border-top:1px solid #ECE8E2;font-size:13.5px;color:#555">このコートの試合は終わりました<span style="margin-left:auto;font-size:12px;font-weight:600;color:#777">結果を見る ›</span></div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・開閉をやめ、1面を約120pxに詰めて<b>全9面の「いま」と「次」</b>を最初から出す。</div>
+        <div>・点数は28pxの太い数字、チームはチーム色の■。試合速報の得点板と同じ言葉で読める。</div>
+        <div>・自分の出番は、そのコートの進み具合の線の<b>自分の試合の位置に金の印と「▲あなた」</b>（名前は長いと収まらないため）。出番のあるコートすべてに出るので、どのコートで・あと何試合後かが線を見るだけで分かる。相手や勝敗は myページに任せる。</div>
+        <div>・「自分の試合」の切り替えもやめた（myページと同じになるため）。自分の試合のコートは<b>金の枠</b>、自分のチームの選手は名前の後ろに金の点。</div>
+        <div>・上の列は<b>コートの線を描いた札</b>（外枠・ネット・サービスライン）で「コート番号」と一目で分かるように。右上の点＝試合中（緑）・呼出待ち（黄）・終了（灰）。押すとそのコートへ飛ぶ。</div>
+        <div>・見出し「進行表」は消し、帯の小見出しに。帯・メニュー・見出しの重複をなくす。</div>
+      </div>
+    </div>
+
+    <div id="1b" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">1b</span><span style="font-size:16px;font-weight:800">コートを押した（そのコートの全試合）</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="display:flex;gap:8px;padding:12px 12px 4px;overflow:hidden">
+          <div style="flex:0 0 auto;height:62px;padding:0 12px 0 8px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;display:flex;align-items:center;gap:2px;font-size:13.5px;font-weight:700"><span style="font-size:20px;line-height:1">‹</span>全コート</div>
+          <sc-for list="{{ chipsSel }}" as="k" hint-placeholder-count="9">
+            <div style="flex:0 0 44px;height:62px;border-radius:8px;background:{{ k.floor }};border:{{ k.border }};position:relative;display:flex;align-items:center;justify-content:center;box-sizing:border-box"><div style="position:absolute;inset:5px;border:1.5px solid {{ k.line }};border-radius:2px"></div><div style="position:absolute;left:5px;right:5px;top:50%;height:1.5px;margin-top:-0.75px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;top:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;bottom:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;top:5px;bottom:5px;left:50%;width:1px;background:{{ k.line }};opacity:0.6"></div><span style="position:relative;font-size:16px;font-weight:900;color:{{ k.fg }};background:{{ k.floor }};padding:0 4px;line-height:1.15;border-radius:4px">{{ k.n }}</span><span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:5px;background:{{ k.dot }};border:2px solid #FAF9F7"></span></div>
+          </sc-for>
+        </div>
+        <div style="padding:12px 16px 4px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px;font-weight:800">コート1</span><span style="font-size:13px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:3px 10px;border-radius:999px">1部</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#1E7B3A;background:#E2F3E6;padding:4px 11px;border-radius:999px">● 試合中</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><div style="flex:1;display:flex;gap:3px"><sc-for list="{{ c1prog }}" as="p" hint-placeholder-count="8"><div style="flex:1;height:5px;border-radius:3px;background:{{ p.bg }}"></div></sc-for></div><span style="font-size:12px;font-weight:700;color:#777">3/8 ・ 残り5</span></div>
+        </div>
+        <div style="padding:8px 12px 18px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ c1groups }}" as="grp" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:12.5px;font-weight:800;color:#666;padding:0 4px">{{ grp.label }}</div>
+              <sc-for list="{{ grp.rows }}" as="r" hint-placeholder-count="2">
+                <div style="background:#FFFFFF;border:{{ r.border }};border-radius:16px;box-shadow:{{ r.shadow }};padding:10px 10px 10px 8px;display:flex;align-items:center;gap:8px">
+                  <div style="width:34px;flex-shrink:0;display:flex;flex-direction:column;align-items:center"><span style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1">{{ r.no }}</span><span style="font-size:9.5px;font-weight:700;color:#999">試合目</span></div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                    <sc-if value="{{ r.hasTop }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;font-weight:800;color:{{ r.topC }}">{{ r.top }}</div></sc-if>
+                    <sc-for list="{{ r.sides }}" as="s" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;gap:6px;min-height:26px">
+                        <span style="width:9px;height:9px;border-radius:3px;background:{{ s.sq }};flex-shrink:0"></span>
+                        <span style="font-size:15px;font-weight:{{ s.fw }};color:{{ s.pc }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ s.p }}</span>
+                        <span style="font-size:11px;font-weight:700;color:{{ s.ink }};white-space:nowrap">{{ s.tn }}</span>
+                        <sc-if value="{{ s.ret }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:800;color:#9C6512;background:#FFF4DF;border-radius:5px;padding:1px 5px;white-space:nowrap">棄権</span></sc-if>
+                        <div style="margin-left:auto;display:flex">
+                          <sc-for list="{{ s.g }}" as="g" hint-placeholder-count="0"><span style="width:{{ g.w }};text-align:right;font-size:{{ g.fs }};font-weight:{{ g.fw }};color:{{ g.c }};font-variant-numeric:tabular-nums;line-height:1;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">{{ g.v }}</span></sc-for>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <span style="font-size:20px;color:#B5B0A8;flex-shrink:0">›</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・1試合を<b>チームごとに2段</b>にして名前の折り返しをなくす。点はゲームごとの列（得点板の形）で、取った側だけ濃く。</div>
+        <div>・終わった試合も隠さず上に短く並べる。試合中は緑の札と大きな点。</div>
+        <div>・上の「1〜9」でそのまま隣のコートへ。どの行も押すと試合の詳しい画面（›）。</div>
+      </div>
+    </div>
+
+    <div id="1c" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">1c</span><span style="font-size:16px;font-weight:800">名前・チームで探す（観戦の保護者）</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="padding:12px 12px 0;display:flex;gap:8px">
+          <div style="flex:1;height:46px;border-radius:12px;background:#FFFFFF;border:1.5px solid #171717;display:flex;align-items:center;gap:8px;padding:0 12px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg><span style="font-size:16px;font-weight:600">ハルキ</span><span style="width:1.5px;height:20px;background:#171717"></span></div>
+          <div style="height:46px;padding:0 10px;display:flex;align-items:center;font-size:14px;font-weight:700;color:#333">やめる</div>
+        </div>
+        <div style="padding:14px 12px 18px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ searchGroups }}" as="grp" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <div style="font-size:12.5px;font-weight:800;color:#666;padding:0 4px">{{ grp.label }}</div>
+              <sc-for list="{{ grp.rows }}" as="r" hint-placeholder-count="1">
+                <div style="background:#FFFFFF;border:{{ r.border }};border-radius:16px;box-shadow:{{ r.shadow }};padding:10px 10px 10px 8px;display:flex;align-items:center;gap:8px">
+                  <div style="width:34px;flex-shrink:0;display:flex;flex-direction:column;align-items:center"><span style="font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1">{{ r.no }}</span><span style="font-size:9.5px;font-weight:700;color:#999">試合目</span></div>
+                  <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+                    <sc-if value="{{ r.hasTop }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;font-weight:800;color:{{ r.topC }}">{{ r.top }}</div></sc-if>
+                    <sc-for list="{{ r.sides }}" as="s" hint-placeholder-count="2">
+                      <div style="display:flex;align-items:center;gap:6px;min-height:26px">
+                        <span style="width:9px;height:9px;border-radius:3px;background:{{ s.sq }};flex-shrink:0"></span>
+                        <span style="font-size:15px;font-weight:{{ s.fw }};color:{{ s.pc }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ s.p }}</span>
+                        <span style="font-size:11px;font-weight:700;color:{{ s.ink }};white-space:nowrap">{{ s.tn }}</span>
+                        <sc-if value="{{ s.ret }}" hint-placeholder-val="{{ false }}"><span style="font-size:10.5px;font-weight:800;color:#9C6512;background:#FFF4DF;border-radius:5px;padding:1px 5px;white-space:nowrap">棄権</span></sc-if>
+                        <div style="margin-left:auto;display:flex">
+                          <sc-for list="{{ s.g }}" as="g" hint-placeholder-count="0"><span style="width:{{ g.w }};text-align:right;font-size:{{ g.fs }};font-weight:{{ g.fw }};color:{{ g.c }};font-variant-numeric:tabular-nums;line-height:1;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">{{ g.v }}</span></sc-for>
+                        </div>
+                      </div>
+                    </sc-for>
+                  </div>
+                  <span style="font-size:20px;color:#B5B0A8;flex-shrink:0">›</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・選手名・チーム名で探せる。入力するとすぐ下に試合が出る（候補を選ぶ段は挟まない）。</div>
+        <div>・結果は<b>試合中 → これから → 終わった</b>の順。行の上に「コート◯」。</div>
+        <div>・選手本人の一覧は myページにあるので、ここは観戦者向けの探す画面だけ。</div>
+      </div>
+    </div>
+
+    <div id="1d" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">1d</span><span style="font-size:16px;font-weight:800">試合の詳しい画面（試合中）</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="padding:8px 12px 0;display:flex"><div style="min-height:44px;display:flex;align-items:center;gap:4px;padding:0 6px;font-size:14.5px;font-weight:700"><span style="font-size:22px;line-height:1">‹</span>コート1</div></div>
+        <div style="padding:0 12px 16px;display:flex;flex-direction:column;gap:12px">
+          <div style="border:1.5px solid #DDB767;background:linear-gradient(180deg,#FFFDF7 0%,#FFFFFF 30%);border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 10px 24px rgba(213,162,60,0.18);padding:14px 12px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px;font-weight:800">コート1 ・ 3試合目</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#1E7B3A;background:#E2F3E6;padding:4px 11px;border-radius:999px">● 試合中</span></div>
+            <div style="display:flex;gap:6px"><span style="font-size:12px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:3px 9px;border-radius:999px">1部</span><span style="font-size:12px;font-weight:700;color:#555;background:#F2F0EC;padding:3px 9px;border-radius:999px">予選リーグ</span><span style="font-size:12px;font-weight:700;color:#555;background:#F2F0EC;padding:3px 9px;border-radius:999px">3ゲーム制</span></div>
+            <div style="text-align:center;font-size:13px;font-weight:600;color:#333">第1ゲーム</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="border-top:5px solid #C82929;border-radius:14px;background:linear-gradient(180deg,#FDE9E9,#FFF6F6);box-shadow:0 2px 6px rgba(0,0,0,0.06);padding:10px 8px 14px;display:flex;flex-direction:column;align-items:center;gap:1px"><span style="font-size:14px;font-weight:800;color:#C82929">あおぞら</span><span style="font-size:16px;font-weight:800">ハルキ</span><span style="font-size:16px;font-weight:800">ミドリ</span><span style="font-size:56px;font-weight:900;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:#111;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">12</span></div>
+              <div style="border-top:5px solid #C08400;border-radius:14px;background:linear-gradient(180deg,#FFF2D2,#FFFAEE);box-shadow:0 2px 6px rgba(0,0,0,0.06);padding:10px 8px 14px;display:flex;flex-direction:column;align-items:center;gap:1px"><span style="font-size:14px;font-weight:800;color:#A86E00">うみかぜ</span><span style="font-size:16px;font-weight:800">トモ</span><span style="font-size:16px;font-weight:800">リコ</span><span style="font-size:56px;font-weight:900;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:#111;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">9</span></div>
+            </div>
+            <div style="min-height:48px;border-radius:12px;background:linear-gradient(180deg,#3D3D3D,#161616);color:#FFFFFF;box-shadow:0 3px 8px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:700"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D5A23C" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="2"></circle><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7"></path></svg>コート1の試合速報を開く</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:12.5px;font-weight:800;color:#666;padding:0 4px">コート1の前後</div>
+            <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:16px;display:flex;flex-direction:column">
+              <div style="min-height:48px;display:flex;align-items:center;gap:10px;padding:0 12px;border-bottom:1px solid #ECE8E2"><span style="font-size:11.5px;font-weight:800;color:#666;width:44px">前 2</span><span style="font-size:14px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ハルキ・ミドリ vs シン・ヒナ</span><span style="font-size:12.5px;font-weight:700;color:#555">2-0 棄権</span><span style="color:#B5B0A8;font-size:18px">›</span></div>
+              <div style="min-height:48px;display:flex;align-items:center;gap:10px;padding:0 12px"><span style="font-size:11.5px;font-weight:800;color:#FFFFFF;background:#2B2B2B;border-radius:6px;padding:2px 6px">次 4</span><span style="font-size:14px;font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">ケイ・ユイ vs シン・ヒナ</span><span style="color:#B5B0A8;font-size:18px">›</span></div>
+            </div>
+          </div>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・<b>試合速報と同じ得点板</b>（チーム色の帯・大きな点）。どの画面から来ても同じ読み方。</div>
+        <div>・主ボタンは「コート1の試合速報を開く」。点を入れる・見守るのはそちら。</div>
+        <div>・下にコートの前後を出し、「次は誰か」もここで分かる。戻る先（‹ コート1）は来た画面。</div>
+      </div>
+    </div>
+
+    <div id="1e" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">1e</span><span style="font-size:16px;font-weight:800">試合の詳しい画面（終了・棄権あり）</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="padding:8px 12px 0;display:flex"><div style="min-height:44px;display:flex;align-items:center;gap:4px;padding:0 6px;font-size:14.5px;font-weight:700"><span style="font-size:22px;line-height:1">‹</span>コート1</div></div>
+        <div style="padding:0 12px 16px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 20px rgba(40,30,10,0.07);padding:14px 14px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px;font-weight:800">コート1 ・ 2試合目</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#555;background:#EFEDE9;padding:4px 11px;border-radius:999px">終了</span></div>
+            <div style="display:flex;gap:6px"><span style="font-size:12px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:3px 9px;border-radius:999px">1部</span><span style="font-size:12px;font-weight:700;color:#555;background:#F2F0EC;padding:3px 9px;border-radius:999px">予選リーグ</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 46px 46px 46px;align-items:center;row-gap:4px">
+              <span></span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">第1G</span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">第2G</span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">ゲーム</span>
+              <div style="display:flex;flex-direction:column;gap:1px;padding:8px 0;min-width:0"><span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#C82929"><span style="width:9px;height:9px;border-radius:3px;background:#C82929"></span>あおぞら<span style="font-size:11px;font-weight:800;color:#9C6512;background:#FFF4DF;border-radius:5px;padding:1px 6px">勝</span></span><span style="font-size:16px;font-weight:800">ハルキ・ミドリ</span></div>
+              <span style="text-align:center;font-size:24px;font-weight:900;font-variant-numeric:tabular-nums">21</span><span style="text-align:center;font-size:24px;font-weight:900;font-variant-numeric:tabular-nums">8</span><span style="text-align:center;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums">2</span>
+              <div style="display:flex;flex-direction:column;gap:1px;padding:8px 0;border-top:1px solid #ECE8E2;min-width:0"><span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#1769CC"><span style="width:9px;height:9px;border-radius:3px;background:#1769CC"></span>さくら<span style="font-size:11px;font-weight:800;color:#9C6512;background:#FFF4DF;border-radius:5px;padding:1px 6px">棄権</span></span><span style="font-size:16px;font-weight:700;color:#6B665F">シン・ヒナ</span></div>
+              <span style="text-align:center;font-size:24px;font-weight:600;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:17px 0">15</span><span style="text-align:center;font-size:24px;font-weight:600;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:17px 0">3</span><span style="text-align:center;font-size:17px;font-weight:700;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:20px 0">0</span>
+            </div>
+            <div style="font-size:12.5px;color:#9C6512;font-weight:700">第2ゲームの途中で シン・ヒナ 棄権</div>
+            <div style="font-size:12px;color:#777;border-top:1px solid #ECE8E2;padding-top:10px">入力担当：ケイ（もりの）</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;min-height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;box-shadow:0 2px 4px rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;gap:6px;font-size:14.5px;font-weight:700"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9C6512" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"></path></svg>得点を訂正する</div>
+            <div style="flex:1;min-height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;box-shadow:0 2px 4px rgba(0,0,0,0.06);display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:700">星取表で見る ›</div>
+          </div>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・ゲームごとの点を表で。勝った側に金の「勝」、棄権は名前の上に<b>濃い金の札</b>（myページの棄権と同じ色）。</div>
+        <div>・<b>［得点を訂正する］</b>はここ。何試合前でも同じ入口になる（押せる人は <a href="#2d">2d</a>）。</div>
+        <div>・記録されている入力担当の名前を出す（直すときに誰に聞けばよいか分かる）。</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;align-items:baseline;gap:14px"><span style="font-size:26px;font-weight:800">2　過去の試合を訂正する流れ</span><span style="font-size:14px;color:#666"><a href="#1e">1e</a> ［得点を訂正する］ → 直す → 完了</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start">
+
+    <div id="2b" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">2b</span><span style="font-size:16px;font-weight:800">直す画面（点・棄権）・得点板の形</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="得点の訂正" hint-size="390px,60px"></dc-import>
+        <div style="padding:8px 12px 0;display:flex;align-items:center"><div style="min-height:44px;display:flex;align-items:center;gap:4px;padding:0 6px;font-size:14.5px;font-weight:700"><span style="font-size:22px;line-height:1">‹</span>やめる</div><span style="margin-left:auto;font-size:13px;color:#666;padding-right:6px">コート1 ・ 2試合目</span></div>
+        <div style="padding:4px 12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 20px rgba(40,30,10,0.07);padding:12px;display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;background:#F2F0EC;border-radius:12px;padding:3px;gap:3px">
+              <div style="flex:1;min-height:44px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#333"><span style="font-size:13px;font-weight:700">第1ゲーム</span><span style="font-size:11.5px;font-weight:600;color:#777;font-variant-numeric:tabular-nums">21-15</span></div>
+              <div style="flex:1;min-height:44px;border-radius:10px;background:linear-gradient(180deg,#3A3A3A,#161616);box-shadow:0 2px 6px rgba(0,0,0,0.25);color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font-size:13px;font-weight:700">第2ゲーム</span><span style="font-size:11.5px;font-weight:700;color:#F3D58C;font-variant-numeric:tabular-nums">21-17 変更</span></div>
+              <div style="flex:1;min-height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#777">＋第3ゲーム</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="border-top:5px solid #C82929;border-radius:14px;background:linear-gradient(180deg,#FDE9E9,#FFF6F6);box-shadow:0 2px 6px rgba(0,0,0,0.06);padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:1px"><span style="font-size:14px;font-weight:800;color:#C82929">あおぞら</span><span style="font-size:16px;font-weight:800">ハルキ</span><span style="font-size:16px;font-weight:800">ミドリ</span><span style="font-size:64px;font-weight:900;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:#111;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">21</span><span style="font-size:12px;font-weight:700;color:#9C6512;background:#FFF4DF;border-radius:999px;padding:2px 8px">元は 8</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div style="height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;box-shadow:0 2px 4px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#222">−</div><div style="height:46px;border-radius:12px;border:1px solid transparent;background:linear-gradient(180deg,#3D3D3D,#161616);box-shadow:0 3px 8px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#FFFFFF">＋</div></div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="border-top:5px solid #1769CC;border-radius:14px;background:linear-gradient(180deg,#E2EEFF,#F4F8FF);box-shadow:0 2px 6px rgba(0,0,0,0.06);padding:10px 8px;display:flex;flex-direction:column;align-items:center;gap:1px"><span style="font-size:14px;font-weight:800;color:#1769CC">さくら</span><span style="font-size:16px;font-weight:800">シン</span><span style="font-size:16px;font-weight:800">ヒナ</span><span style="font-size:64px;font-weight:900;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:#111;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">17</span><span style="font-size:12px;font-weight:700;color:#9C6512;background:#FFF4DF;border-radius:999px;padding:2px 8px">元は 3</span></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div style="height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;box-shadow:0 2px 4px rgba(0,0,0,0.08);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#222">−</div><div style="height:46px;border-radius:12px;border:1px solid transparent;background:linear-gradient(180deg,#3D3D3D,#161616);box-shadow:0 3px 8px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:600;color:#FFFFFF">＋</div></div>
+              </div>
+            </div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:14px;font-weight:800">棄権</span><span style="font-size:12px;font-weight:700;color:#9C6512">変更あり</span></div>
+            <div style="min-height:46px;border-radius:12px;border:1.5px solid #171717;background:#FFFFFF;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:14.5px;font-weight:700"><span style="width:20px;height:20px;border-radius:10px;border:6px solid #171717;box-sizing:border-box"></span>棄権なし</div>
+            <div style="min-height:46px;border-radius:12px;border:1px solid #DAD6CF;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:14.5px;font-weight:600"><span style="width:20px;height:20px;border-radius:10px;border:1.5px solid #B5B0A8;box-sizing:border-box"></span>ハルキ・ミドリ が棄権</div>
+            <div style="min-height:46px;border-radius:12px;border:1px solid #DAD6CF;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:14.5px;font-weight:600"><span style="width:20px;height:20px;border-radius:10px;border:1.5px solid #B5B0A8;box-sizing:border-box"></span>シン・ヒナ が棄権<span style="margin-left:auto;font-size:11.5px;color:#888">いまの記録</span></div>
+          </div>
+        </div>
+        <div style="background:#FFFFFF;border-top:1px solid #ECE8E2;padding:12px 12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;flex-direction:column;gap:2px"><div style="font-size:13px;line-height:1.6;color:#444"><b style="color:#9C6512">変えるところ</b>　第2ゲーム 8-3 → <b>21-17</b> ・ 棄権を外す</div><div style="font-size:12px;color:#777">保存すると星取表・順位もいっしょに変わります</div></div>
+          <div style="min-height:48px;border-radius:12px;background:linear-gradient(180deg,#363636,#121212);border:1.5px solid #C99A3E;color:#FFFFFF;box-shadow:0 3px 8px rgba(0,0,0,0.28);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700">この内容で訂正する</div>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・<b>試合速報の得点板と同じ形</b>（ゲームのタブ・チーム色の枠・64pxの点・各枠の真下に同じ大きさの［−］［＋］）。いつもの入力と同じ手つきで直せる。</div>
+        <div>・点の下に「元は 8」。下に「変えるところ」のまとめ。確認画面は挟まず、この画面自体を確認にする。</div>
+        <div>・棄権は3択の大きな行で、付ける・外すを1回で。</div>
+      </div>
+    </div>
+
+    <div id="2c" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">2c</span><span style="font-size:16px;font-weight:800">完了</span></div>
+      <div style="width:390px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="進行表 ・ 予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="padding:10px 12px 0"><div style="min-height:48px;border-radius:14px;background:#E2F3E6;color:#1E7B3A;display:flex;align-items:center;gap:8px;padding:0 14px;font-size:14.5px;font-weight:800"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E7B3A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg>訂正しました<span style="margin-left:auto;font-size:12px;font-weight:700">星取表・順位も更新済み</span></div></div>
+        <div style="padding:2px 12px 0;display:flex"><div style="min-height:44px;display:flex;align-items:center;gap:4px;padding:0 6px;font-size:14.5px;font-weight:700"><span style="font-size:22px;line-height:1">‹</span>コート1</div></div>
+        <div style="padding:0 12px 16px;display:flex;flex-direction:column;gap:12px">
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 20px rgba(40,30,10,0.07);padding:14px;display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:22px;font-weight:800">コート1 ・ 2試合目</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#555;background:#EFEDE9;padding:4px 11px;border-radius:999px">終了</span></div>
+            <div style="display:grid;grid-template-columns:minmax(0,1fr) 46px 46px 46px;align-items:center">
+              <span></span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">第1G</span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">第2G</span><span style="text-align:center;font-size:11.5px;font-weight:700;color:#888">ゲーム</span>
+              <div style="display:flex;flex-direction:column;gap:1px;padding:8px 0;min-width:0"><span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#C82929"><span style="width:9px;height:9px;border-radius:3px;background:#C82929"></span>あおぞら<span style="font-size:11px;font-weight:800;color:#9C6512;background:#FFF4DF;border-radius:5px;padding:1px 6px">勝</span></span><span style="font-size:16px;font-weight:800">ハルキ・ミドリ</span></div>
+              <span style="text-align:center;font-size:24px;font-weight:900;font-variant-numeric:tabular-nums">21</span><span style="text-align:center;font-size:24px;font-weight:900;font-variant-numeric:tabular-nums;background:#FFF4DF;border-radius:8px">21</span><span style="text-align:center;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums">2</span>
+              <div style="display:flex;flex-direction:column;gap:1px;padding:8px 0;border-top:1px solid #ECE8E2;min-width:0"><span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800;color:#1769CC"><span style="width:9px;height:9px;border-radius:3px;background:#1769CC"></span>さくら</span><span style="font-size:16px;font-weight:700;color:#6B665F">シン・ヒナ</span></div>
+              <span style="text-align:center;font-size:24px;font-weight:600;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:13px 0">15</span><span style="text-align:center;font-size:24px;font-weight:600;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:13px 0;background:#FFF4DF">17</span><span style="text-align:center;font-size:17px;font-weight:700;color:#A09A91;font-variant-numeric:tabular-nums;border-top:1px solid #ECE8E2;padding:16px 0">0</span>
+            </div>
+            <div style="font-size:12px;color:#777;border-top:1px solid #ECE8E2;padding-top:10px">入力担当：ケイ（もりの）</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;min-height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:700">得点を訂正する</div>
+            <div style="flex:1;min-height:46px;border-radius:12px;background:#FFFFFF;border:1px solid #DAD6CF;display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:700">星取表で見る ›</div>
+          </div>
+        </div>
+        <dc-import name="AppNav" active="matches" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・元の詳しい画面に戻り、上に緑の「訂正しました」。直した数字は金の地で数秒残す。</div>
+        <div>・訂正の履歴（誰がいつ）はデータに無いので出さない。要るなら別の相談。</div>
+      </div>
+    </div>
+
+    <div id="2d" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#9C6512;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">2d</span><span style="font-size:16px;font-weight:800">決めてほしい：誰が直せるか</span></div>
+      <div style="background:#FFFFFF;border:1px solid #E2DED7;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">A</span>　入場した人なら誰でも</div><div style="font-size:13px;line-height:1.6;color:#444">［得点を訂正する］を全員に出す（観戦者は入場していないので出ない）。今の入口の受け付け方と同じ。</div><div style="font-size:12.5px;color:#1E7B3A">○ 運営がすぐ直せる。仕組みを足さない</div><div style="font-size:12.5px;color:#C82929">△ 関係ない選手の押し間違い・いたずらを止められない</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">B</span>　その試合の選手と入力担当だけ</div><div style="font-size:13px;line-height:1.6;color:#444">今の「1つ前の［訂正］」を出す人の決まりを、全部の試合に広げる。</div><div style="font-size:12.5px;color:#1E7B3A">○ 決まりが今と同じで説明が要らない</div><div style="font-size:12.5px;color:#C82929">△ 本人が帰った・気づかないと、運営が直せない</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">C</span>　運営の合言葉を知っている人</div><div style="font-size:13px;line-height:1.6;color:#444">ボタンは全員に出し、押すと運営用の合言葉を聞く。</div><div style="font-size:12.5px;color:#1E7B3A">○ 運営は確実に直せ、選手は触れない</div><div style="font-size:12.5px;color:#C82929">△ 運営を見分ける仕組みが今は無い（合言葉の置き場所＝データに関わる）</div></div>
+      </div>
+    </div>
+
+    <div id="2e" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#9C6512;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">2e</span><span style="font-size:16px;font-weight:800">決めてほしい：直したあとの扱い</span></div>
+      <div style="background:#FFFFFF;border:1px solid #E2DED7;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">A</span>　試合中に戻して入れ直す</div><div style="font-size:13px;line-height:1.6;color:#444">今の1つ前の［訂正］と同じ。押すと <a href="#2b">2b</a> ではなく試合速報のそのコートへ移り、得点板で直して［試合終了］。</div><div style="font-size:12.5px;color:#1E7B3A">○ 今ある動きをそのまま使える</div><div style="font-size:12.5px;color:#C82929">△ そのコートで次の試合が進んでいると「試合中」が2つになる</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">B</span>　終わったまま点だけ書き換え</div><div style="font-size:13px;line-height:1.6;color:#444"><a href="#2b">2b</a> の画面で保存して終わり。コートの進行は止まらない。</div><div style="font-size:12.5px;color:#1E7B3A">○ 何試合前でも同じ流れ。試合速報に影響しない</div><div style="font-size:12.5px;color:#C82929">△ 書き換え用の保存口を新しく作る必要がある</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">C</span>　1つ前はA、2つ以上前はB</div><div style="font-size:13px;line-height:1.6;color:#444">試合速報の1つ前［訂正］は今のまま残し、進行表からの訂正だけBにする。</div><div style="font-size:12.5px;color:#1E7B3A">○ 今の動きを壊さない</div><div style="font-size:12.5px;color:#C82929">△ 入口によって直し方が違い、説明が2通り要る</div></div>
+      </div>
+    </div>
+
+    <div id="2f" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#9C6512;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">2f</span><span style="font-size:16px;font-weight:800">決めてほしい：決勝が決まったあとの予選の訂正</span></div>
+      <div style="background:#FFFFFF;border:1px solid #E2DED7;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">A</span>　確認の時点で知らせる</div><div style="font-size:13px;line-height:1.6;color:#444"><a href="#2b">2b</a> の保存ボタンの上に黄色の帯「この訂正で予選の 2位と3位が入れ替わり、決勝の組み合わせが変わります」。もう一度押して確定。</div><div style="font-size:12.5px;color:#1E7B3A">○ 直す人がその場で影響に気づく</div><div style="font-size:12.5px;color:#C82929">△ 決勝の当事者には別に伝える必要が残る</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">B</span>　通してから、関わる画面に出す</div><div style="font-size:13px;line-height:1.6;color:#444">対戦表の決勝・進行表のその試合・当事者のmyページに「組み合わせが変わりました」の黄色い帯。</div><div style="font-size:12.5px;color:#1E7B3A">○ 選手本人が気づける</div><div style="font-size:12.5px;color:#C82929">△ 決勝がもう始まっていたときの扱いが別に要る</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:5px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">C</span>　決まったあとは予選を直せない</div><div style="font-size:13px;line-height:1.6;color:#444">［得点を訂正する］の代わりに「決勝の組み合わせが決まったため、運営に伝えてください」。</div><div style="font-size:12.5px;color:#1E7B3A">○ 組み合わせが途中で動かない</div><div style="font-size:12.5px;color:#C82929">△ 本当の間違いがアプリ上で直らないまま残る</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section style="display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;align-items:baseline;gap:14px"><span style="font-size:26px;font-weight:800">3　ほかの画面で揃えるところ</span><span style="font-size:14px;color:#666">簡単な見本</span></div>
+  <div style="display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start">
+
+    <div id="3a" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">3a</span><span style="font-size:16px;font-weight:800">試合速報：コートへ飛ぶ</span></div>
+      <div style="width:390px;height:760px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="予選リーグ 27/72 試合" hint-size="390px,60px"></dc-import>
+        <div style="display:flex;gap:8px;padding:12px 12px 10px;overflow:hidden;background:rgba(250,249,247,0.96);border-bottom:1px solid #ECE8E2">
+          <div style="flex:0 0 auto;height:62px;padding:0 12px;border-radius:12px;background:linear-gradient(180deg,#FFFBF1,#FFF4DF);border:1.5px solid #DDB767;display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:800;color:#9C6512">あなた<span style="color:#171717">1</span></div>
+          <sc-for list="{{ chips }}" as="k" hint-placeholder-count="9">
+            <div style="flex:0 0 44px;height:62px;border-radius:8px;background:{{ k.floor }};border:{{ k.border }};position:relative;display:flex;align-items:center;justify-content:center;box-sizing:border-box"><div style="position:absolute;inset:5px;border:1.5px solid {{ k.line }};border-radius:2px"></div><div style="position:absolute;left:5px;right:5px;top:50%;height:1.5px;margin-top:-0.75px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;top:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;left:5px;right:5px;bottom:33%;height:1px;background:{{ k.line }}"></div><div style="position:absolute;top:5px;bottom:5px;left:50%;width:1px;background:{{ k.line }};opacity:0.6"></div><span style="position:relative;font-size:16px;font-weight:900;color:{{ k.fg }};background:{{ k.floor }};padding:0 4px;line-height:1.15;border-radius:4px">{{ k.n }}</span><span style="position:absolute;top:-4px;right:-4px;width:10px;height:10px;border-radius:5px;background:{{ k.dot }};border:2px solid #FAF9F7"></span></div>
+          </sc-for>
+        </div>
+        <div style="flex:1;overflow:hidden;padding:12px;display:flex;flex-direction:column;gap:12px">
+          <div style="border:1.5px solid #DDB767;background:linear-gradient(180deg,#FFFDF7 0%,#FFFFFF 30%);border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 10px 24px rgba(213,162,60,0.18);padding:12px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px;font-weight:800">コート1</span><span style="font-size:13px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:3px 10px;border-radius:999px">1部</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#1E7B3A;background:#E2F3E6;padding:4px 11px;border-radius:999px">● 試合中</span></div>
+            <div style="text-align:center;font-size:13px;font-weight:600;color:#333">第1ゲーム</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="border-top:5px solid #C82929;border-radius:14px;background:linear-gradient(180deg,#FDE9E9,#FFF6F6);padding:10px 8px 12px;display:flex;flex-direction:column;align-items:center"><span style="font-size:14px;font-weight:800;color:#C82929">あおぞら</span><span style="font-size:16px;font-weight:800">ハルキ</span><span style="font-size:16px;font-weight:800">ミドリ</span><span style="font-size:64px;font-weight:900;line-height:1;letter-spacing:-1px;font-variant-numeric:tabular-nums;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">12</span></div>
+              <div style="border-top:5px solid #C08400;border-radius:14px;background:linear-gradient(180deg,#FFF2D2,#FFFAEE);padding:10px 8px 12px;display:flex;flex-direction:column;align-items:center"><span style="font-size:14px;font-weight:800;color:#A86E00">うみかぜ</span><span style="font-size:16px;font-weight:800">トモ</span><span style="font-size:16px;font-weight:800">リコ</span><span style="font-size:64px;font-weight:900;line-height:1;letter-spacing:-1px;font-variant-numeric:tabular-nums;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">9</span></div>
+            </div>
+            <div style="min-height:44px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#555;border-top:1px solid #ECE8E2">コート1の進行表 ›</div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:26px;font-weight:800">コート2</span><span style="font-size:13px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:3px 10px;border-radius:999px">1部</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#1E7B3A;background:#E2F3E6;padding:4px 11px;border-radius:999px">● 試合中</span></div>
+            <div style="height:180px;border-radius:14px;background:linear-gradient(180deg,#E5F4E9 0%,#FAF9F7 100%)"></div>
+          </div>
+        </div>
+        <dc-import name="AppNav" active="courts" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・上に「コートへ」の列を固定。押すとそのカードまで移る。9面でも1回で届く。</div>
+        <div>・先頭は<b>あなた</b>（自分の試合のコート、金）。点の色・並びは進行表 <a href="#1a">1a</a> と同じ。</div>
+        <div>・カードの下に「コート1の進行表 ›」。試合速報 ⇄ 進行表 を行き来できる。</div>
+      </div>
+    </div>
+
+    <div id="3b" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">3b</span><span style="font-size:16px;font-weight:800">myページ：いま試合中を出す</span></div>
+      <div style="width:390px;height:760px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="myページ ・ あと2試合" hint-size="390px,60px"></dc-import>
+        <div style="flex:1;overflow:hidden;padding:14px 12px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;gap:12px;padding:0 4px"><div style="width:44px;height:44px;border-radius:22px;background:#C82929;color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800">ハ</div><div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:21px;font-weight:800">ハルキ</span><span style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#555">あおぞら<span style="font-size:11.5px;font-weight:700;color:#C2410C;background:#FDEDE6;padding:2px 8px;border-radius:999px">1部</span></span></div></div>
+          <div style="background:#FFFFFF;border:1.5px solid #22A04B;border-radius:18px;box-shadow:0 1px 2px rgba(0,0,0,0.04),0 8px 20px rgba(34,160,75,0.12);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;font-weight:800;color:#1E7B3A">いま試合中</span><span style="margin-left:auto;font-size:13px;font-weight:700;color:#555">コート1 ・ 3試合目 ・ 第1ゲーム</span></div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:34px"><span style="width:10px;height:10px;border-radius:3px;background:#C82929"></span><span style="font-size:16px;font-weight:800">ハルキ・ミドリ</span><span style="margin-left:auto;font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">12</span></div>
+            <div style="display:flex;align-items:center;gap:8px;min-height:34px"><span style="width:10px;height:10px;border-radius:3px;background:#C08400"></span><span style="font-size:16px;font-weight:800">トモ・リコ</span><span style="font-size:11.5px;font-weight:700;color:#A86E00">うみかぜ</span><span style="margin-left:auto;font-size:30px;font-weight:900;font-variant-numeric:tabular-nums;font-family:-apple-system,'SF Pro Display',system-ui,sans-serif">9</span></div>
+            <div style="min-height:44px;border-radius:12px;background:linear-gradient(180deg,#3D3D3D,#161616);color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:14.5px;font-weight:700">試合速報で見る ›</div>
+          </div>
+          <div style="border:1.5px solid #DDB767;background:linear-gradient(180deg,#FFFDF7 0%,#FFFFFF 40%);border-radius:18px;padding:12px 14px;display:flex;flex-direction:column;gap:4px">
+            <div style="font-size:12px;font-weight:800;color:#9C6512">次の試合</div>
+            <div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:28px;font-weight:800">コート1</span><span style="font-size:15px;font-weight:700">7試合目</span></div>
+            <div style="font-size:13px;color:#555">準決勝 ・ 相手は予選のあとで決まります</div>
+          </div>
+          <div style="font-size:13px;font-weight:800;color:#666;padding:4px 4px 0;display:flex">終わった試合<span style="margin-left:auto">2勝0敗</span></div>
+          <div style="height:96px;border-radius:18px;background:#FFFFFF;border:1px solid #ECE8E2"></div>
+        </div>
+        <dc-import name="AppNav" active="me" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・本文の一番上に「いま試合中」を1枚。帯の「あと2試合」と本文の数が合う。押すと試合速報のそのコートへ。</div>
+        <div>・<b style="color:#C82929">要確認：</b>11/22のmyページの仕様では「試合中は出さない」と決めている。今回の依頼と食い違うので、どちらにするか選んでほしい。</div>
+      </div>
+    </div>
+
+    <div id="3c" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#171717;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">3c</span><span style="font-size:16px;font-weight:800">対戦表：星取表を収める・マスから試合へ</span></div>
+      <div style="width:390px;height:760px;background:#FAF9F7;border-radius:28px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,0.06),0 20px 50px rgba(40,30,10,0.14);border:1px solid #E2DED7;display:flex;flex-direction:column">
+        <dc-import name="AppBar" sub="対戦表 ・ 1部" hint-size="390px,60px"></dc-import>
+        <div style="flex:1;overflow:hidden;padding:12px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;background:#F2F0EC;border-radius:12px;padding:3px">
+            <div style="flex:1;min-height:40px;border-radius:10px;background:linear-gradient(180deg,#3A3A3A,#161616);color:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700">予選リーグ</div>
+            <div style="flex:1;min-height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#333">決勝トーナメント</div>
+          </div>
+          <div style="background:#FFFFFF;border:1px solid #ECE8E2;border-radius:18px;padding:10px 8px;display:flex;flex-direction:column">
+            <div style="display:grid;grid-template-columns:78px repeat(4,minmax(0,1fr)) 40px;align-items:end;gap:3px;padding-bottom:6px">
+              <span></span>
+              <sc-for list="{{ starHead }}" as="h" hint-placeholder-count="4"><div style="display:flex;flex-direction:column;align-items:center;gap:3px"><span style="width:26px;height:3px;border-radius:2px;background:{{ h.c }}"></span><span style="font-size:11px;font-weight:800;color:{{ h.ink }}">{{ h.n }}</span></div></sc-for>
+              <span style="text-align:center;font-size:11px;font-weight:800;color:#777">勝敗</span>
+            </div>
+            <sc-for list="{{ starRows }}" as="sr" hint-placeholder-count="4">
+              <div style="display:grid;grid-template-columns:78px repeat(4,minmax(0,1fr)) 40px;align-items:center;gap:3px;border-top:1px solid #ECE8E2;padding:4px 0;background:{{ sr.bg }}">
+                <div style="display:flex;flex-direction:column;min-width:0;padding-left:2px"><span style="font-size:10.5px;font-weight:800;color:{{ sr.ink }}">{{ sr.tn }}</span><span style="font-size:12.5px;font-weight:800;line-height:1.3">{{ sr.p1 }}</span><span style="font-size:12.5px;font-weight:800;line-height:1.3">{{ sr.p2 }}</span></div>
+                <sc-for list="{{ sr.cells }}" as="cl" hint-placeholder-count="4">
+                  <div style="min-height:48px;border-radius:9px;background:{{ cl.bg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px"><span style="font-size:{{ cl.fs }};font-weight:800;color:{{ cl.c }};line-height:1">{{ cl.t }}</span><span style="font-size:10.5px;font-weight:700;color:{{ cl.sc }};font-variant-numeric:tabular-nums">{{ cl.sub }}</span></div>
+                </sc-for>
+                <span style="text-align:center;font-size:13px;font-weight:800;font-variant-numeric:tabular-nums">{{ sr.wl }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:12px;color:#777;line-height:1.6;padding:0 4px">○ 勝ち ・ ● 負け ・ 緑＝試合中 ・ 数字＝◯試合目。マスを押すとその試合へ。</div>
+        </div>
+        <dc-import name="AppNav" active="bracket" hint-size="390px,72px"></dc-import>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:7px;font-size:13.5px;line-height:1.65;color:#3A3A3A;padding:0 4px">
+        <div>・列の見出しは<b>色の線＋チーム名</b>の小さな2段。選手名は行の側だけに2行で出し、4チームが390pxに収まる（320pxでは表だけ横に動かす）。</div>
+        <div>・マスは48pxの押せる大きさ。押すと試合の詳しい画面（<a href="#1d">1d</a>/<a href="#1e">1e</a>）。試合中は緑で点も出す。</div>
+        <div>・決勝トーナメントの枠も同じく、押すと試合の詳しい画面へ。</div>
+      </div>
+    </div>
+
+    <div id="3d" style="width:390px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:10px"><span style="background:#9C6512;color:#FFFFFF;font-size:13px;font-weight:800;padding:4px 10px;border-radius:8px">3d</span><span style="font-size:16px;font-weight:800">決めてほしい：下のメニュー</span></div>
+      <div style="background:#FFFFFF;border:1px solid #E2DED7;border-radius:18px;padding:16px;display:flex;flex-direction:column;gap:10px">
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">A</span>　今のまま 4つ</div><div style="display:flex;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#22272E,#111418);color:#CFCAC0;font-size:11.5px;font-weight:700"><span style="flex:1;text-align:center;padding:9px 0">試合速報</span><span style="flex:1;text-align:center;padding:9px 0;color:#D5A23C">進行表</span><span style="flex:1;text-align:center;padding:9px 0">対戦表</span><span style="flex:1;text-align:center;padding:9px 0">myページ</span></div><div style="font-size:12.5px;color:#444;line-height:1.6">変更なし。進行表に「いま」が出るので、試合速報と役割が近くなる点は残る。</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">B</span>　名前だけ変える</div><div style="display:flex;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#22272E,#111418);color:#CFCAC0;font-size:11.5px;font-weight:700"><span style="flex:1;text-align:center;padding:9px 0">試合速報</span><span style="flex:1;text-align:center;padding:9px 0;color:#D5A23C">試合の順番</span><span style="flex:1;text-align:center;padding:9px 0">対戦表</span><span style="flex:1;text-align:center;padding:9px 0">myページ</span></div><div style="font-size:12.5px;color:#444;line-height:1.6">「進行表」「対戦表」の取り違えを減らす。5文字でメニューにぎりぎり収まる。</div></div>
+        <div style="border:1px solid #ECE8E2;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px"><div style="font-size:15px;font-weight:800"><span style="color:#9C6512">C</span>　試合速報と進行表を1つに（3つ）</div><div style="display:flex;border-radius:10px;overflow:hidden;background:linear-gradient(180deg,#22272E,#111418);color:#CFCAC0;font-size:11.5px;font-weight:700"><span style="flex:1;text-align:center;padding:9px 0;color:#D5A23C">コート</span><span style="flex:1;text-align:center;padding:9px 0">対戦表</span><span style="flex:1;text-align:center;padding:9px 0">myページ</span></div><div style="font-size:12.5px;color:#444;line-height:1.6">「コート」の中で［得点板｜順番］を切り替える。迷う先が1つ減るが、作り直しが大きい。</div></div>
+      </div>
+    </div>
+
+  </div>
+</section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const TEAM = {
+  1: { name: 'あおぞら', bar: '#C82929', ink: '#C82929' },
+  2: { name: 'もりの', bar: '#177734', ink: '#177734' },
+  3: { name: 'さくら', bar: '#1769CC', ink: '#1769CC' },
+  4: { name: 'うみかぜ', bar: '#C08400', ink: '#A86E00' }
+};
+const CLS = { 1: ['1部', '#C2410C', '#FDEDE6'], 2: ['2部', '#2C5FD6', '#E4ECFF'], 3: ['3部', '#1E7B3A', '#E2F3E6'] };
+const ST = { live: ['● 試合中', '#1E7B3A', '#E2F3E6', '#22A04B'], wait: ['呼出待ち', '#A86E00', '#FFF0D1', '#E0A93A'], done: ['全試合終了', '#555555', '#EFEDE9', '#B5B0A8'] };
+const MY = 1;
+const COURTS = [
+  { n: 1, k: 1, st: 'live', done: 2, a: [1, 'ハルキ・ミドリ', 12], b: [4, 'トモ・リコ', 9], game: '第1ゲーム', next: 'ケイ・ユイ vs シン・ヒナ', mine: true, meAt: 6 },
+  { n: 2, k: 1, st: 'live', done: 3, a: [2, 'ソウタ・アカネ', 17], b: [3, 'カイ・ノア', 20], game: '第2ゲーム ・ 第1G 21-18', next: 'リク・ナナ vs カイ・ノア', meAt: 5 },
+  { n: 3, k: 1, st: 'wait', done: 3, a: [1, 'リク・ナナ', null], b: [2, 'ヤス・マナ', null], game: '呼び出し中', next: 'ユウ・ミオ vs タク・レナ' },
+  { n: 4, k: 2, st: 'live', done: 5, a: [3, 'ダイキ・サキ', 8], b: [1, 'ショウ・エマ', 5], game: '第1ゲーム', next: 'レン・アオイ vs ハル・ユナ' },
+  { n: 5, k: 2, st: 'live', done: 4, a: [4, 'ジン・カナ', 19], b: [2, 'ケン・モモ', 20], game: '第3ゲーム ・ 1-1', next: 'ソラ・ミク vs ジン・カナ' },
+  { n: 6, k: 2, st: 'live', done: 2, a: [2, 'ハヤト・ユリ', 14], b: [3, 'アキラ・ノノ', 11], game: '第1ゲーム', next: 'ショウ・エマ vs ケン・モモ' },
+  { n: 7, k: 3, st: 'live', done: 6, a: [1, 'コウ・リン', 3], b: [3, 'タイガ・ヒマリ', 6], game: '第1ゲーム', next: '準決勝 予選1位 vs 予選4位' },
+  { n: 8, k: 3, st: 'wait', done: 4, a: [4, 'ミナト・サラ', null], b: [2, 'ユウマ・ココ', null], game: '呼び出し中', next: 'タク・イオリ vs ミナト・サラ' },
+  { n: 9, k: 3, st: 'done', done: 8 }
+];
+const prog = (done, st, meAt) => Array.from({ length: 8 }, (_, i) => ({ me: i === meAt, name: 'あなた', bg: i === meAt ? '#D5A23C' : (i < done ? '#8F897F' : (i === done && st !== 'done' ? ST[st][3] : '#E7E3DC')) }));
+
+function mkRow(o) {
+  const live = o.st === 'live';
+  const gs = (g, og) => (g || []).map((v, i) => live
+    ? { v, fw: 900, c: '#111111', fs: '24px', w: '34px' }
+    : { v, fw: v > og[i] ? 800 : 500, c: v > og[i] ? '#171717' : '#A09A91', fs: '15px', w: '26px' });
+  const sd = (s, og, lose) => ({
+    sq: s.t ? TEAM[s.t].bar : '#CFCAC2', p: s.p, tn: s.t ? TEAM[s.t].name : '', ink: s.t ? TEAM[s.t].ink : '#999999',
+    pc: !s.t ? '#8A857D' : (lose ? '#6B665F' : '#171717'), fw: (!s.t || lose) ? 600 : 800, ret: !!s.ret, g: gs(s.g, og)
+  });
+  const top = o.top || (live ? '● 試合中 ・ 第1ゲーム' : '');
+  return {
+    no: o.no, top, hasTop: !!top, topC: live ? '#1E7B3A' : '#777777',
+    border: o.mine ? '1.5px solid #DDB767' : '1px solid #ECE8E2',
+    shadow: o.mine ? '0 1px 2px rgba(0,0,0,0.04), 0 8px 18px rgba(213,162,60,0.16)' : '0 1px 2px rgba(0,0,0,0.04)',
+    sides: [sd(o.a, o.b.g || [], o.win === 'b'), sd(o.b, o.a.g || [], o.win === 'a')]
+  };
+}
+const M = {
+  1: { no: 1, st: 'done', win: 'a', mine: true, a: { t: 1, p: 'ハルキ・ミドリ', g: [21, 18, 21] }, b: { t: 2, p: 'ケイ・ユイ', g: [15, 21, 19] } },
+  2: { no: 2, st: 'done', win: 'a', mine: true, a: { t: 1, p: 'ハルキ・ミドリ', g: [21, 8] }, b: { t: 3, p: 'シン・ヒナ', g: [15, 3], ret: true } },
+  3: { no: 3, st: 'live', mine: true, a: { t: 1, p: 'ハルキ・ミドリ', g: [12] }, b: { t: 4, p: 'トモ・リコ', g: [9] } },
+  4: { no: 4, a: { t: 2, p: 'ケイ・ユイ' }, b: { t: 3, p: 'シン・ヒナ' } },
+  5: { no: 5, a: { t: 2, p: 'ケイ・ユイ' }, b: { t: 4, p: 'トモ・リコ' } },
+  6: { no: 6, a: { t: 3, p: 'シン・ヒナ' }, b: { t: 4, p: 'トモ・リコ' } },
+  7: { no: 7, top: '準決勝 ・ 予選の結果で決まる', a: { p: '予選1位' }, b: { p: '予選4位' } },
+  8: { no: 8, top: '準決勝 ・ 予選の結果で決まる', a: { p: '予選2位' }, b: { p: '予選3位' } }
+};
+
+class Component extends DCLogic {
+  renderVals() {
+    const courts = COURTS.map(c => {
+      const st = ST[c.st];
+      const side = x => ({ sq: TEAM[x[0]].bar, p: x[1], tn: TEAM[x[0]].name, ink: TEAM[x[0]].ink, dot: (x[0] === MY && !c.mine) ? 1 : 0, s: x[2] == null ? '–' : x[2], sc: x[2] == null ? '#BBBBBB' : '#111111' });
+      return {
+        n: c.n, clsL: CLS[c.k][0], clsC: CLS[c.k][1], clsBg: CLS[c.k][2], stL: st[0], stC: st[1], stBg: st[2],
+        bg: c.mine ? 'linear-gradient(180deg,#FFFDF7 0%,#FFFFFF 30%)' : '#FFFFFF',
+        border: c.mine ? '1.5px solid #DDB767' : '1px solid #ECE8E2',
+        shadow: c.mine ? '0 1px 2px rgba(0,0,0,0.04), 0 10px 24px rgba(213,162,60,0.18)' : '0 1px 2px rgba(0,0,0,0.04), 0 8px 20px rgba(40,30,10,0.07)',
+        prog: prog(c.done, c.st, c.meAt), progText: c.st === 'done' ? '8/8' : `${c.done + 1}/8`,
+        hasMatch: c.st !== 'done', isDone: c.st === 'done',
+        sides: c.a ? [side(c.a), side(c.b)] : [], game: c.game || '', next: c.next || ''
+      };
+    });
+    const chips = COURTS.map(c => c.st === 'done'
+      ? { n: c.n, dot: ST[c.st][3], floor: '#F2F0EC', line: '#CFCAC2', fg: '#8A857D', border: '1px solid #E2DED7' }
+      : { n: c.n, dot: ST[c.st][3], floor: '#FFF4DF', line: '#D9B56B', fg: '#171717', border: '1px solid #EAD9B4' });
+    const chipsSel = chips.map(k => k.n === 1 ? { ...k, floor: '#22272E', line: '#C99A3E', fg: '#FFFFFF', border: '2px solid #D5A23C' } : k);
+    const R = n => mkRow(M[n]);
+    const RW = (n, where) => mkRow({ ...M[n], top: where });
+    const c1groups = [
+      { label: '終わった試合 2', rows: [R(1), R(2)] },
+      { label: '試合中', rows: [R(3)] },
+      { label: 'これから 5', rows: [R(4), R(5), R(6), R(7), R(8)] }
+    ];
+    const searchGroups = [
+      { label: '試合中', rows: [RW(3, '● 試合中 ・ コート1 ・ 第1ゲーム')] },
+      { label: 'これから', rows: [RW(7, 'コート1 ・ 準決勝（予選1位なら）')] },
+      { label: '終わった試合 ・ 2勝0敗', rows: [RW(1, 'コート1'), RW(2, 'コート1')] }
+    ];
+    const ed = (v, changed) => ({ v, bg: changed ? '#FFF4DF' : '#F6F4F0', border: changed ? '1.5px solid #D5A23C' : '1px solid transparent' });
+    const editGames = [
+      { label: '第1ゲーム', changed: '', rows: [{ sq: '#C82929', p: 'ハルキ・ミドリ', ...ed(21) }, { sq: '#1769CC', p: 'シン・ヒナ', ...ed(15) }] },
+      { label: '第2ゲーム', changed: '変更あり（8-3 → 21-17）', rows: [{ sq: '#C82929', p: 'ハルキ・ミドリ', ...ed(21, true) }, { sq: '#1769CC', p: 'シン・ヒナ', ...ed(17, true) }] }
+    ];
+    const starHead = [1, 2, 3, 4].map(t => ({ n: TEAM[t].name, c: TEAM[t].bar, ink: TEAM[t].ink }));
+    const X = { t: '', sub: '', bg: '#EFEDE9', c: '#999', sc: '#999', fs: '14px' };
+    const W = s => ({ t: '○', sub: s, bg: '#FFF8EC', c: '#9C6512', sc: '#6B5320', fs: '18px' });
+    const L = s => ({ t: '●', sub: s, bg: '#F6F4F0', c: '#555555', sc: '#777777', fs: '18px' });
+    const LV = s => ({ t: '● 試合中', sub: s, bg: '#E2F3E6', c: '#1E7B3A', sc: '#1E7B3A', fs: '10.5px' });
+    const U = n => ({ t: n, sub: '試合目', bg: '#FFFFFF', c: '#333333', sc: '#999999', fs: '15px' });
+    const starRows = [
+      { t: 1, p1: 'ハルキ', p2: 'ミドリ', cells: [X, W('2-1'), W('棄権'), LV('12-9')], wl: '2-0', bg: '#FFF8EC' },
+      { t: 2, p1: 'ケイ', p2: 'ユイ', cells: [L('1-2'), X, U('4'), U('5')], wl: '0-1', bg: 'transparent' },
+      { t: 3, p1: 'シン', p2: 'ヒナ', cells: [L('棄権'), U('4'), X, U('6')], wl: '0-1', bg: 'transparent' },
+      { t: 4, p1: 'トモ', p2: 'リコ', cells: [LV('9-12'), U('5'), U('6'), X], wl: '0-0', bg: 'transparent' }
+    ].map(r => ({ ...r, tn: TEAM[r.t].name, ink: TEAM[r.t].ink }));
+    return { courts, chips, chipsSel, c1prog: prog(2, 'live'), c1groups, searchGroups, editGames, starHead, starRows };
+  }
+}
+</script>
+</body>
+</html>

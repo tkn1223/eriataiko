@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="flex-shrink:0;display:flex;background:linear-gradient(180deg,#22272E,#111418);box-shadow:0 -4px 14px rgba(0,0,0,0.12);padding:6px 4px 10px">
+  <div style="flex:1;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;color:{{ c1 }}">
+    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="2"></circle><path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"></path></svg>
+    <span style="font-size:11.5px;font-weight:700">試合速報</span>
+    <div style="position:absolute;bottom:-4px;width:36px;height:3px;border-radius:2px;background:#D5A23C;box-shadow:0 0 8px rgba(213,162,60,0.7);opacity:{{ o1 }}"></div>
+  </div>
+  <div style="flex:1;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;color:{{ c2 }}">
+    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="4" y="5" width="16" height="15" rx="2.5"></rect><path d="M4 10h16M8.5 3v4M15.5 3v4M8 14h3M13 14h3M8 17h3"></path></svg>
+    <span style="font-size:11.5px;font-weight:700">進行表</span>
+    <div style="position:absolute;bottom:-4px;width:36px;height:3px;border-radius:2px;background:#D5A23C;box-shadow:0 0 8px rgba(213,162,60,0.7);opacity:{{ o2 }}"></div>
+  </div>
+  <div style="flex:1;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;color:{{ c3 }}">
+    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9.5" y="3" width="5" height="4" rx="1"></rect><rect x="3.5" y="16" width="5" height="4" rx="1"></rect><rect x="15.5" y="16" width="5" height="4" rx="1"></rect><path d="M12 7v4.5M6 16v-4.5h12V16"></path></svg>
+    <span style="font-size:11.5px;font-weight:700">対戦表</span>
+    <div style="position:absolute;bottom:-4px;width:36px;height:3px;border-radius:2px;background:#D5A23C;box-shadow:0 0 8px rgba(213,162,60,0.7);opacity:{{ o3 }}"></div>
+  </div>
+  <div style="flex:1;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;position:relative;color:{{ c4 }}">
+    <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="8.5" r="3.8"></circle><path d="M4.5 20c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"></path></svg>
+    <span style="font-size:11.5px;font-weight:700">myページ</span>
+    <div style="position:absolute;bottom:-4px;width:36px;height:3px;border-radius:2px;background:#D5A23C;box-shadow:0 0 8px rgba(213,162,60,0.7);opacity:{{ o4 }}"></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:72},&quot;active&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;courts&quot;,&quot;matches&quot;,&quot;bracket&quot;,&quot;me&quot;],&quot;default&quot;:&quot;matches&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const a = this.props.active ?? 'matches';
+    const keys = ['courts', 'matches', 'bracket', 'me'];
+    const v = {};
+    keys.forEach((k, i) => { v['c' + (i + 1)] = a === k ? '#D5A23C' : '#CFCAC0'; v['o' + (i + 1)] = a === k ? 1 : 0; });
+    return v;
+  }
+}
+</script>
+</body>
+</html>

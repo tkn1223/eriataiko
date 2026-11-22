@@ -7,3 +7,4 @@ supabase/.temp
 test-results
 playwright-report
 .screenshots
+docs/specs/*/

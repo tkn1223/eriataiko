@@ -4,6 +4,7 @@ vi.mock('@/server/session', () => ({ getSession: vi.fn() }));
 
 import { PUT } from '@/app/api/matches/[matchId]/correction/route';
 import { getSupabaseAdminClient } from '@/db/admin';
+import { findBracketData } from '@/db/bracket';
 import { getSession, type Session } from '@/server/session';
 import {
   createScorerFixture,
@@ -133,6 +134,25 @@ describe('PUT /api/matches/[matchId]/correction', () => {
     const { match, scores } = await stateOf(matchId);
     expect(match.ending).toBe('normal');
     expect(scores).toHaveLength(3);
+  });
+
+  test('直したあと、星取表・順位表が読む試合の点と棄権も直した内容になる（終了のまま）', async () => {
+    const { matchId } = await makeDoneMatch();
+    enterAs(fixture.people.minamiTaro.session);
+    await PUT(correctionRequest({ scores: CORRECTED, retiredSide: 'A' }), contextOf(matchId));
+
+    const { data: division } = await admin
+      .from('matches')
+      .select('divisions!inner(competition_id)')
+      .eq('id', matchId)
+      .single();
+    const bracket = await findBracketData(division!.divisions.competition_id, null);
+    const read = bracket.matchups
+      .flatMap((matchup) => matchup.matches)
+      .find((match) => match.id === matchId);
+
+    expect(read).toMatchObject({ status: 'done', ending: 'retired_side_a' });
+    expect(read!.gameScores).toEqual(expect.arrayContaining(CORRECTED));
   });
 
   test('同じ内容を送り直しても同じ結果になる', async () => {

@@ -8,7 +8,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# えりあ太鼓 大会アプリ — 開発ルール
+# エリア対抗 大会アプリ — 開発ルール
 
 バドミントン大会の当日に 100 人程度が同時に使う Web アプリ。趣味で作り、仲間内で使う。
 **エンジニア未経験の人も開発に参加する。**

@@ -243,7 +243,7 @@ async function findMatchPlayersByMatchIds(
   const participantIds = [...new Set(matchPlayers.map((row) => row.participant_id))];
   const { data: participants, error: participantsError } = await supabase
     .from('participants')
-    .select('id, player_id')
+    .select('id, player_id, teams(name)')
     .in('id', participantIds)
     .limit(MAX_PLAYER_ROWS);
   if (participantsError) throw participantsError;
@@ -260,6 +260,9 @@ async function findMatchPlayersByMatchIds(
     .limit(MAX_PLAYER_ROWS);
   if (playersError) throw playersError;
 
+  const teamNameByParticipantId = new Map(
+    (participants ?? []).map((row) => [row.id, row.teams?.name ?? null])
+  );
   const playerNameById = new Map((players ?? []).map((row) => [row.id, row.name]));
 
   const byMatchId = new Map<string, MyPageViewPlayerRow[]>();
@@ -271,6 +274,7 @@ async function findMatchPlayersByMatchIds(
       side: row.side === 'b' ? 'b' : 'a',
       orderInPair: row.order_in_pair,
       name: playerNameById.get(playerId) ?? '',
+      teamName: teamNameByParticipantId.get(row.participant_id) ?? null,
     });
     byMatchId.set(row.match_id, list);
   }

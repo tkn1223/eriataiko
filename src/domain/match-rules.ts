@@ -106,6 +106,12 @@ export type CanFinishMatchResult = { ok: true } | { ok: false; reason: string };
  * ルールが 1 か所にまとまっていることは match-rules.test.ts / finish-match.test.ts で確かめる
  * （PR #52 レビュー指摘4）。
  */
+/**
+ * 訂正（終わったまま点を書き換える）で同点を断るときの文言。判定は `canFinishMatch` と同じだが、
+ * 訂正の画面で「終了」と言うと何を止められたのか分かりにくいので、言葉だけ分ける（画面と入口で共有する）。
+ */
+export const TIE_CORRECTION_REASON = '同点では訂正できません。どちらかが勝つ点にしてください。';
+
 export function canFinishMatch(scores: GameScore[], maxGameCount: number): CanFinishMatchResult {
   const { wonGames } = matchOutcome(scores, maxGameCount);
   if (leadingSide(wonGames) === null) {

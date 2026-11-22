@@ -4,7 +4,9 @@ import { ErrorBlock } from '@/ui/components/error-block';
 import { getSession } from '@/server/session';
 import { buildMyPageView, type MyPageView } from '@/usecases/build-my-page-view';
 import { MyPage } from '@/ui/me/my-page';
-import { ViewerNotice } from '@/ui/me/viewer-notice';
+import { findEntryOptions, type EntryOptions } from '@/db/entry-options';
+import { EntryGate } from '@/ui/enter/entry-gate';
+import { NavbarSubtitle } from '@/ui/navbar-subtitle';
 
 // 入場状態（Cookie）を見るので常に動的レンダリング（src/app/enter/page.tsx と同じ）
 export const dynamic = 'force-dynamic';
@@ -27,8 +29,10 @@ const NOT_FOUND_MESSAGE = '運営の方に確認してください。';
 export default async function MePage() {
   const session = await getSession();
 
+  // 観戦者（まだ名前を選んでいない人）には、入場の名前選びを myページの中に出す。
+  // 選んで入ったら、そのまま自分の myページになる。
   if (!session || session.role === 'viewer') {
-    return <ViewerNotice />;
+    return <ViewerNameChooser />;
   }
 
   let view: MyPageView | null = null;
@@ -75,5 +79,46 @@ export default async function MePage() {
     );
   }
 
-  return <MyPage profile={view.profile} record={view.record} matches={view.matches} />;
+  return (
+    <MyPage
+      profile={view.profile}
+      record={view.record}
+      remainingCount={view.remainingCount}
+      matches={view.matches}
+    />
+  );
+}
+
+/** 観戦者向け。名前選び（`EntryGate`）を myページの外枠の中に出す。 */
+async function ViewerNameChooser() {
+  let options: EntryOptions | null = null;
+  let connectionError: string | null = null;
+  try {
+    options = await findEntryOptions();
+  } catch (error) {
+    connectionError = error instanceof Error ? error.message : String(error);
+  }
+
+  if (connectionError || !options) {
+    return (
+      <div className="bg-paper min-h-dvh px-4 py-8">
+        <ConnectionErrorBlock message={connectionError ?? '読み込めませんでした。'} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-md px-4 pt-5 pb-7">
+      <NavbarSubtitle>myページ · 名前を選ぶ</NavbarSubtitle>
+      <EntryGate
+        competitionName={options.competitionName ?? ''}
+        entrants={options.entrants}
+        teams={options.teams}
+        divisions={options.divisions}
+        passcodeRequired={options.passcodeRequired}
+        embedded
+        afterEnterPath="/me"
+      />
+    </div>
+  );
 }

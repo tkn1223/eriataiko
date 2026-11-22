@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 
@@ -11,7 +11,9 @@ import { describe, expect, test } from 'vitest';
  * `getSupabaseAdminClient()`（`@/db/admin`）は使わない
  * （AGENTS.md の「破ってはいけない 3 つ」の 2 番目）。
  */
-const UI_COMPONENT_FILES = ['src/ui/me/my-page.tsx', 'src/ui/me/viewer-notice.tsx'];
+const UI_COMPONENT_FILES = readdirSync(join(process.cwd(), 'src/ui/me'))
+  .filter((name) => name.endsWith('.tsx') && !name.endsWith('.test.tsx'))
+  .map((name) => `src/ui/me/${name}`);
 
 const PAGE_FILE = 'src/app/(app)/me/page.tsx';
 
@@ -20,6 +22,10 @@ function readSource(path: string): string {
 }
 
 describe('/me の画面', () => {
+  test('部品のファイルが 1 つ以上見つかっている（空の一覧で素通りしない）', () => {
+    expect(UI_COMPONENT_FILES).toContain('src/ui/me/my-page.tsx');
+  });
+
   test.each(UI_COMPONENT_FILES)('%s は @/db を import していない', (path) => {
     const source = readSource(path);
     expect(source).not.toMatch(/from\s+['"](@\/db|.*src\/db|\.{1,2}\/.*\/db)\//);

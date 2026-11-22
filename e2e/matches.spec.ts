@@ -326,7 +326,7 @@ test.describe('1a 全コート', () => {
     await openCourt(page, LIVE_COURT);
 
     await expect(page.getByRole('heading', { name: '終わった試合 1' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: '試合中' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '試合中', exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'これから 1' })).toBeVisible();
     await expect(row(page, 'done')).toContainText(DONE_A.join('・'));
     await expect(row(page, 'live')).toContainText('試合中 ・ 第1ゲーム');
@@ -558,7 +558,10 @@ test.describe('得点の訂正', () => {
     await page.getByRole('textbox').fill('15');
     await page.getByRole('textbox').press('Enter');
 
-    await expect(page.getByRole('alert')).toContainText('同点では終了できません');
+    // Next.js の画面切り替えの読み上げ欄も role="alert" なので、文言で絞る
+    await expect(
+      page.getByRole('alert').filter({ hasText: '同点では訂正できません' })
+    ).toBeVisible();
     await expect(page.getByRole('button', { name: 'この内容で訂正する' })).toBeDisabled();
     expect(await findSavedGameScore(matchIds.done, 1)).toEqual({ sideAScore: 21, sideBScore: 15 });
   });
@@ -682,7 +685,8 @@ test.describe('試合速報 の操作が、別のブラウザの進行表にそ�
       timeout: 8000,
     });
     // 先に書いた変化が届き終わったことを、あとから別のコートに書いた点が映ることで確かめる
-    await writeGameScoreDirectly(matchIds['long-live'], 1, 30, 0);
+    // カードに大きく出るのはいまのゲーム（long-live は第3ゲームの途中）なので、第3ゲームを書く
+    await writeGameScoreDirectly(matchIds['long-live'], 3, 30, 20);
     await expect(courtCard(watcher.page, LONG_COURT).getByText('30', { exact: true })).toBeVisible({
       timeout: 5000,
     });

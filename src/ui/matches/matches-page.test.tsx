@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { MatchesPage } from '@/ui/matches/matches-page';
 import { boardMatch } from '@/ui/matches/test-support';
 import type { BoardMatch } from '@/ui/matches/types';
@@ -101,6 +101,11 @@ function renderPage(props: Partial<React.ComponentProps<typeof MatchesPage>> = {
     />
   );
 }
+
+// jsdom は scrollTo を持たない（コートを切り替えたとき画面の上へ戻すのに使う）
+beforeEach(() => {
+  window.scrollTo = vi.fn();
+});
 
 afterEach(() => {
   window.history.replaceState(null, '', '/');

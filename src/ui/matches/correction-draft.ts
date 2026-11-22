@@ -1,4 +1,4 @@
-import { canFinishMatch, retiredSideOf } from '@/domain/match-rules';
+import { canFinishMatch, retiredSideOf, TIE_CORRECTION_REASON } from '@/domain/match-rules';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
 import type { BoardMatch } from '@/ui/matches/types';
 
@@ -109,7 +109,9 @@ export function checkDraft(
   if (!hasAnyPoint(draft.scores)) {
     return { ok: false, reason: '1 点も入っていません。点を入れてから訂正してください。' };
   }
-  return canFinishMatch(draft.scores, match.maxGameCount);
+  return canFinishMatch(draft.scores, match.maxGameCount).ok
+    ? { ok: true }
+    : { ok: false, reason: TIE_CORRECTION_REASON };
 }
 
 /** `PUT /api/matches/[matchId]/correction` の本文。 */

@@ -1,7 +1,12 @@
 import { z } from 'zod';
 import { ApiError } from '@/server/route-helpers';
 import { hasAnyPoint, type GameScore } from '@/domain/scoring';
-import { canFinishMatch, endingOfRetiredSide, type MatchEnding } from '@/domain/match-rules';
+import {
+  canFinishMatch,
+  endingOfRetiredSide,
+  TIE_CORRECTION_REASON,
+  type MatchEnding,
+} from '@/domain/match-rules';
 
 export type MatchForCorrecting = {
   id: string;
@@ -97,7 +102,7 @@ export async function correctMatch(deps: CorrectMatchRepository, input: CorrectM
   // 終了と同じ判定を共有する（同点では勝敗が決まらず、順位が崩れるため）
   const canFinish = canFinishMatch(scoresAfterWrite, match.maxGameCount);
   if (!canFinish.ok) {
-    throw new ApiError(400, canFinish.reason);
+    throw new ApiError(400, TIE_CORRECTION_REASON);
   }
 
   const written = await deps.writeCorrection({

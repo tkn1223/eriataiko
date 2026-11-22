@@ -125,7 +125,7 @@ describe('断るとき（何も書かない）', () => {
         { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
         { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
       ])
-    ).rejects.toMatchObject({ status: 400, message: '同点では終了できません' });
+    ).rejects.toMatchObject({ status: 400, message: '同点では訂正できません。どちらかが勝つ点にしてください。' });
     expect(deps.writeCorrection).not.toHaveBeenCalled();
   });
 
@@ -138,7 +138,7 @@ describe('断るとき（何も書かない）', () => {
         { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
         { gameNumber: 3, sideAScore: 0, sideBScore: 0 },
       ])
-    ).rejects.toMatchObject({ status: 400, message: '同点では終了できません' });
+    ).rejects.toMatchObject({ status: 400, message: '同点では訂正できません。どちらかが勝つ点にしてください。' });
     expect(deps.writeCorrection).not.toHaveBeenCalled();
   });
 

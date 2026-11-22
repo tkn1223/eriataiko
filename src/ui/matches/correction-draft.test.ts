@@ -104,7 +104,7 @@ describe('保存してよいか', () => {
   test('同点（勝ちゲーム数が同じ）なら、終了と同じ理由が返る', () => {
     const tie = setScore(setScore(draftOf(done), 2, 'A', 3), 2, 'B', 21);
 
-    expect(checkDraft(done, tie)).toEqual({ ok: false, reason: '同点では終了できません' });
+    expect(checkDraft(done, tie)).toEqual({ ok: false, reason: '同点では訂正できません。どちらかが勝つ点にしてください。' });
   });
 
   test('変えていないと保存できない', () => {

@@ -157,7 +157,7 @@ describe('2b 直す画面', () => {
     fireEvent.change(b, { target: { value: '21' } });
     fireEvent.blur(b);
 
-    expect(screen.getByRole('alert')).toHaveTextContent('同点では終了できません');
+    expect(screen.getByRole('alert')).toHaveTextContent('同点では訂正できません。どちらかが勝つ点にしてください。');
     expect(screen.getByRole('button', { name: 'この内容で訂正する' })).toBeDisabled();
   });
 

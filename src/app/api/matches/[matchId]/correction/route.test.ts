@@ -147,6 +147,42 @@ describe('PUT /api/matches/[matchId]/correction', () => {
     expect(await stateOf(matchId)).toEqual(first);
   });
 
+  test('棄権の印だけ書けて点を書く前に切れても、押し直せば送った内容どおりになる', async () => {
+    const { matchId } = await makeDoneMatch();
+    enterAs(fixture.people.minamiTaro.session);
+    // 1 回目の途中（印だけ書けた）を作る
+    await admin.from('matches').update({ ending: 'retired_side_a' }).eq('id', matchId);
+
+    const response = await PUT(
+      correctionRequest({ scores: CORRECTED, retiredSide: 'A' }),
+      contextOf(matchId)
+    );
+
+    expect(response.status).toBe(200);
+    const { match, scores } = await stateOf(matchId);
+    expect(match.ending).toBe('retired_side_a');
+    expect(scores[1]).toMatchObject({ side_a_score: 21, side_b_score: 17 });
+  });
+
+  test('送らなかったゲームが残って同点になる訂正は 400 で、何も変わらない', async () => {
+    const { matchId } = await makeDoneMatch();
+    enterAs(fixture.people.minamiTaro.session);
+    // 第 2 ゲーム（8-3）を送らずに第 1 ゲームだけ B 勝ちにすると、残った第 2 と合わせて 1-1
+    const response = await PUT(
+      correctionRequest({
+        scores: [{ gameNumber: 1, sideAScore: 15, sideBScore: 21 }],
+        retiredSide: null,
+      }),
+      contextOf(matchId)
+    );
+
+    expect(response.status).toBe(400);
+    expect((await stateOf(matchId)).scores[0]).toMatchObject({
+      side_a_score: 21,
+      side_b_score: 15,
+    });
+  });
+
   test('同点・1 点も無い・上限超えは 400 で、何も変わらない', async () => {
     const { matchId } = await makeDoneMatch();
     enterAs(fixture.people.minamiTaro.session);
@@ -155,7 +191,11 @@ describe('PUT /api/matches/[matchId]/correction', () => {
       { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
       { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
     ];
-    const empty = [{ gameNumber: 1, sideAScore: 0, sideBScore: 0 }];
+    // 書いたあとに残る点で判定するので、保存済みの 2 ゲームとも 0 対 0 にして送る
+    const empty = [
+      { gameNumber: 1, sideAScore: 0, sideBScore: 0 },
+      { gameNumber: 2, sideAScore: 0, sideBScore: 0 },
+    ];
     const tooMany = [{ gameNumber: 4, sideAScore: 21, sideBScore: 0 }];
     for (const scores of [tie, empty, tooMany]) {
       const response = await PUT(

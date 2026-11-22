@@ -10,6 +10,7 @@ const NOW = new Date('2026-11-22T02:00:00Z');
 function fakeRepository(overrides: Partial<CorrectMatchRepository> = {}): CorrectMatchRepository {
   return {
     findMatch: vi.fn().mockResolvedValue({ id: 'match-1', status: 'done', maxGameCount: 3 }),
+    findGameScores: vi.fn().mockResolvedValue([]),
     writeCorrection: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
@@ -123,6 +124,19 @@ describe('断るとき（何も書かない）', () => {
       correct(deps, [
         { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
         { gameNumber: 2, sideAScore: 15, sideBScore: 21 },
+      ])
+    ).rejects.toMatchObject({ status: 400, message: '同点では終了できません' });
+    expect(deps.writeCorrection).not.toHaveBeenCalled();
+  });
+
+  test('送らなかったゲームの今の点と合わせると同点になるなら 400（送られた分だけで判定しない）', async () => {
+    // 保存済みは A・B・A の 2-1。第2を送らずに第3を消すと、送った分だけなら A の 1-0 に見えるが、
+    // 書いたあとに残るのは A・B の 1-1（同点）になる
+    const deps = fakeRepository({ findGameScores: vi.fn().mockResolvedValue(TWO_GAMES) });
+    await expect(
+      correct(deps, [
+        { gameNumber: 1, sideAScore: 21, sideBScore: 15 },
+        { gameNumber: 3, sideAScore: 0, sideBScore: 0 },
       ])
     ).rejects.toMatchObject({ status: 400, message: '同点では終了できません' });
     expect(deps.writeCorrection).not.toHaveBeenCalled();

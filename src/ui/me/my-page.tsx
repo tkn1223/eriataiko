@@ -297,7 +297,10 @@ function FinishedRow({ match }: { match: MyMatch }) {
       data-testid={`match-${match.id}`}
       className="grid grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 px-3.5 py-3"
     >
+      {/* 1 字だけだと読み上げで意味が伝わりにくいので「勝ち」「負け」と読ませる */}
       <span
+        role="img"
+        aria-label={match.won ? '勝ち' : '負け'}
         className={`grid size-9 place-items-center rounded-full text-[16px] font-black ${badgeClass}`}
       >
         {match.won ? '勝' : '負'}

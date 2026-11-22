@@ -515,12 +515,12 @@ test.describe('訂正', () => {
 
 test.describe('送れていない点があるまま、別の人として入り直したとき（⑪）', () => {
   /**
-   * 結果LIVE を開いたまま、マイページ →「別の人として入り直す」（ここで退場）→ 別の人で入る →
+   * 結果LIVE を開いたまま、マイページ →「名前を選ぶ画面に戻る」（ここで退場）→ 別の人で入る →
    * そのまま大会の画面へ戻る（画面を読み込み直さないので、送れていない点はこの端末に残っている）。
    */
   async function reenterThroughEntryScreen(page: Page, who: { team: string; name: string }) {
     await page.getByRole('link', { name: /myページ/ }).click();
-    await page.getByRole('button', { name: '別の人として入り直す' }).click();
+    await page.getByRole('button', { name: /名前を選ぶ画面に戻る/ }).click();
     await page.getByRole('button', { name: new RegExp(who.team) }).click();
     await page.getByRole('button', { name: new RegExp(who.name) }).click();
     await page.getByPlaceholder('当日配布された合言葉').fill(loadTestEnv().TOURNAMENT_PASSCODE);

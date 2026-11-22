@@ -5,6 +5,7 @@ import { getSupabaseAdminClient } from '@/db/admin';
 import type { GameScore } from '@/domain/scoring';
 import { lastScoredAtOf, scorerLabel } from '@/domain/scorer';
 import type { ClaimScorerRepository } from '@/usecases/claim-scorer';
+import type { CorrectMatchRepository } from '@/usecases/correct-match';
 import type { FinishMatchRepository } from '@/usecases/finish-match';
 import type { MatchScorer } from '@/usecases/match-scorer';
 import type { ReleaseScorerRepository } from '@/usecases/release-scorer';
@@ -22,7 +23,7 @@ const UNIQUE_VIOLATION = '23505';
  * `getSupabaseAdminClient()` を使うので、呼び出しは Route Handler の中に限る
  * （AGENTS.md の「破ってはいけない 3 つ」の 2 番目）。
  *
- * 5 つの usecase（save-score / finish-match / reopen-match / claim-scorer / release-scorer）が
+ * 6 つの usecase（save-score / finish-match / reopen-match / claim-scorer / release-scorer / correct-match）が
  * 求めるインターフェースをまとめて満たす 1 つのオブジェクトにしている。
  * `findMatch` の戻り値は一番情報の多い形（max_game_count・いまの担当込み）にそろえ、
  * 各 usecase は自分が使う分だけを読む。
@@ -31,7 +32,8 @@ export const matchesDb: SaveScoreRepository &
   FinishMatchRepository &
   ReopenMatchRepository &
   ClaimScorerRepository &
-  ReleaseScorerRepository = {
+  ReleaseScorerRepository &
+  CorrectMatchRepository = {
   async findMatch(matchId) {
     // URL に uuid でない文字列が入ってくると Postgres が構文エラーを返し、
     // 「無い試合」なのに 500 になってしまう。存在しないのは同じなので null に寄せる。
@@ -223,5 +225,33 @@ export const matchesDb: SaveScoreRepository &
       })
       .eq('id', matchId);
     if (error) throw error;
+  },
+
+  async writeCorrection({ matchId, scores, ending, now }) {
+    const supabase = getSupabaseAdminClient();
+
+    // 先に棄権の印。done のままのときだけ書く（試合速報で試合中に戻されていたら 0 件になり、点も書かない）
+    const { data: marked, error: endingError } = await supabase
+      .from('matches')
+      .update({ ending })
+      .eq('id', matchId)
+      .eq('status', 'done')
+      .select('id');
+    if (endingError) throw endingError;
+    if ((marked ?? []).length === 0) return false;
+
+    // 点は全ゲームをまとめて上書き。同じ内容の送り直しで同じ結果になる
+    const { error: scoresError } = await supabase.from('game_scores').upsert(
+      scores.map((score) => ({
+        match_id: matchId,
+        game_number: score.gameNumber,
+        side_a_score: score.sideAScore,
+        side_b_score: score.sideBScore,
+        updated_at: now.toISOString(),
+      })),
+      { onConflict: 'match_id,game_number' }
+    );
+    if (scoresError) throw scoresError;
+    return true;
   },
 };

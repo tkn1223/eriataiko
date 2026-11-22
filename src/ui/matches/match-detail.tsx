@@ -74,12 +74,11 @@ function ResultRow({
   const team = side === 'A' ? match.teamA : match.teamB;
   const won = winner === side;
   const colors = teamPanelClasses(team.teamNumber);
-  const border = side === 'B' ? 'border-line border-t' : '';
   const valueClass = won ? 'font-black' : 'font-semibold text-[#a09a91]';
 
   return (
     <div className="contents" data-testid={`result-row-${side}`}>
-      <div className={`flex min-w-0 flex-col gap-px py-2 ${border}`}>
+      <div className={`flex min-w-0 flex-col gap-px py-2`}>
         <span className="flex items-center gap-1.5 text-[12px] font-extrabold">
           <TeamSwatch team={team} size={9} />
           <span className={isUndecided(team) ? 'text-[#8a857d]' : colors.text}>
@@ -102,7 +101,7 @@ function ResultRow({
         <span
           key={game.gameNumber}
           data-testid={`result-cell-game-${game.gameNumber}`}
-          className={`tabular flex items-center justify-center rounded-lg text-[24px] ${valueClass} ${border} ${
+          className={`tabular flex items-center justify-center rounded-lg text-[24px] ${valueClass} ${
             highlight === game.gameNumber ? 'bg-gold-soft' : ''
           }`}
         >
@@ -112,7 +111,7 @@ function ResultRow({
       <span
         className={`tabular flex items-center justify-center text-[17px] ${
           won ? 'font-extrabold' : 'font-bold text-[#a09a91]'
-        } ${border}`}
+        }`}
       >
         {wonGames}
       </span>
@@ -150,6 +149,8 @@ function ResultTable({ match, highlight }: { match: BoardMatch; highlight: numbe
           retired={retiredSide === 'A'}
           highlight={highlight}
         />
+        {/* 2 チームの間の線（行ごとに境界線を付けると、点を金の地にしたとき角が欠ける） */}
+        <div aria-hidden="true" className="border-line col-span-full border-t" />
         <ResultRow
           side="B"
           match={match}
@@ -316,7 +317,11 @@ export function MatchDetail({
   return (
     <div className="mx-auto flex max-w-md flex-col gap-3 px-3 pb-4">
       {subtitle}
-      {connection === 'down' && <LiveDownNotice />}
+      {connection === 'down' && (
+        <div className="pt-3">
+          <LiveDownNotice />
+        </div>
+      )}
 
       {corrected !== null && (
         <div

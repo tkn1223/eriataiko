@@ -159,7 +159,7 @@ export async function findDivisions(supabase: SupabaseReadClient, competitionId:
  * 段の一覧と件数を 1 回で読むのは、段の id を知ってから段ごとに数えると
  * 順番待ちが 1 段増え、問い合わせも段の数 × 2 回増えるため（体育館の電波は細い）。
  */
-async function findStagesWithCounts(supabase: SupabaseReadClient, competitionId: string) {
+export async function findStagesWithCounts(supabase: SupabaseReadClient, competitionId: string) {
   const { data, error } = await supabase
     .from('stages')
     .select('id, name, sort_order, matchups(total:matches(count), done:matches(count))')
@@ -307,7 +307,7 @@ async function findRecentlyFinishedMatches(supabase: SupabaseReadClient, competi
  * その大会の参加者（担当の名前を引く元）。担当になれるのは参加者全員なので、試合に出る人だけでなく
  * 大会の参加者を全部読む。名前とチーム名しか読まない小さな行。
  */
-async function findParticipants(
+export async function findParticipants(
   supabase: SupabaseReadClient,
   competitionId: string
 ): Promise<CourtsViewParticipantRow[]> {

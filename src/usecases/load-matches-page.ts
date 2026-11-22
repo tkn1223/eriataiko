@@ -11,6 +11,7 @@ import {
  * page.tsx は async な Server Component で Vitest では動かせない）。
  *
  * 仕様: docs/specs/2026-10-14-matches-real-data.md
+ *       docs/specs/2026-11-22-matches-redesign.md
  */
 
 export type LoadMatchesPageDeps = {
@@ -30,8 +31,8 @@ export type MatchesPageState =
   | {
       kind: 'ready';
       view: MatchesView;
-      /** 「自分の試合」の絞り込みを出すか。選手として入った人だけ（観戦者には「全試合」だけ）。 */
-      canFilterMine: boolean;
+      /** 選手として入っているか。［得点を訂正する］を出すかどうかに使う（観戦者・未入場は false）。 */
+      isPlayer: boolean;
     }
   /** 大会が設定されていない（選手向けの案内を出す）。 */
   | { kind: 'not-found' }
@@ -42,7 +43,7 @@ export async function loadMatchesPage(
   deps: LoadMatchesPageDeps,
   session: SessionForMatches
 ): Promise<MatchesPageState> {
-  // 「自分の試合」も「あなたの試合」の印も、選手として入った人だけ。
+  // 「あなたの試合」の印も訂正のボタンも、選手として入った人だけ。
   // 観戦者・未入場は誰の試合かが決まらないので、playerId を渡さない。
   const playerId = session?.role === 'player' ? session.playerId : null;
 
@@ -51,7 +52,7 @@ export async function loadMatchesPage(
     if (!competitionId) return { kind: 'not-found' };
 
     const data = await deps.findMatchesBoardData(competitionId, playerId);
-    return { kind: 'ready', view: buildMatchesView(data), canFilterMine: playerId !== null };
+    return { kind: 'ready', view: buildMatchesView(data), isPlayer: playerId !== null };
   } catch (error) {
     // 「大会が無い」は想定内の分岐（上の not-found）。ここに落ちるのは接続そのものの失敗。
     // 黙って空の画面にせず、理由を画面に出す。

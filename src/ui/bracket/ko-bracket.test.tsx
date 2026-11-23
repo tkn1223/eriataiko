@@ -47,13 +47,22 @@ describe('KoBracket', () => {
     const { container } = render(<KoBracket data={beforeLeagueEnds} />);
 
     const headings = screen.getAllByRole('heading').map((heading) => heading.textContent);
-    expect(headings).toEqual(['準決勝', '決勝', '3位決定戦']);
+    // 3位決定戦は箱の左上に名前が出るので、区切りの見出しは準決勝と決勝だけ
+    expect(headings).toEqual(['準決勝', '決勝']);
     // 優勝の箱は、決勝の下・3位決定戦の上
     const champion = screen.getByTestId('ko-champion-box');
     const position = (element: Element) => container.innerHTML.indexOf(element.outerHTML);
     expect(position(champion)).toBeGreaterThan(position(screen.getByTestId('ko-match-final')));
     expect(position(champion)).toBeLessThan(position(screen.getByText('3位決定戦')));
     expect(container.querySelector('.overflow-x-auto')).toBeNull();
+  });
+
+  test('3位決定戦の箱の左上に「3位決定戦」と状態（まだ）が出る', () => {
+    render(<KoBracket data={beforeLeagueEnds} />);
+
+    const box = screen.getByTestId('ko-match-third');
+    expect(within(box).getByText('3位決定戦')).toBeInTheDocument();
+    expect(within(box).getByText('まだ')).toBeInTheDocument();
   });
 
   test('準決勝の箱の上に「準決勝①」「準決勝②」と状態（まだ）が出る', () => {

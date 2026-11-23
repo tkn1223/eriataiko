@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { BracketSubtitle } from '@/ui/bracket/bracket-subtitle';
 import { CardDetailSheet } from '@/ui/bracket/card-detail-sheet';
 import { KoBracket } from '@/ui/bracket/ko-bracket';
 import { LeagueMatrix } from '@/ui/bracket/league-matrix';
@@ -33,15 +34,11 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
   const selfTeamName = teams.find((team) => team.number === selfTeamNumber)?.name;
 
   return (
-    <div className="mx-auto max-w-md px-3 py-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h1 className="text-[22px] font-black">対戦表</h1>
-        {selfTeamName !== undefined && (
-          <span className="text-gold-ink bg-gold-soft border-gold-mine rounded-md border px-2 py-[5px] text-[11px] font-bold">
-            自分：{selfTeamName}
-          </span>
-        )}
-      </div>
+    <div className="mx-auto max-w-md px-3 pt-3 pb-4">
+      <BracketSubtitle
+        finishedCount={leagueCards.filter((card) => card.status === 'done').length}
+        totalCount={leagueCards.length}
+      />
 
       {truncated && (
         <p
@@ -68,6 +65,7 @@ export function BracketPage({ teams, leagueCards, standings, koBracket, truncate
             cards={leagueCards}
             onSelectCard={setSelectedCard}
             selfTeamNumber={selfTeamNumber}
+            selfTeamName={selfTeamName}
           />
           <StandingsTable teams={teams} rows={standings} />
         </>

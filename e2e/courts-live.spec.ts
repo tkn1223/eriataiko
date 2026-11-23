@@ -828,6 +828,68 @@ test.describe('1つ前と訂正', () => {
     await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
   }
 
+  // 「次のゲームへ進む」（docs/specs/2026-11-23-next-game-button.md）。long-live は上限 3 ゲームで第1ゲーム 10-8
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、「第2ゲームへ進む」「ここで試合終了」「担当をやめる」がカードからはみ出さず高さ 44px 以上。押すとタブが第2に切り替わり、点を送る通信は起きない`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport: { width, height: 844 } });
+      const page = await context.newPage();
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+      const card = courtCard(page, LONG_COURT);
+      await takeScorer(card);
+
+      const next = card.getByRole('button', { name: '第2ゲームへ進む' });
+      const finishHere = card.getByRole('button', { name: 'ここで試合終了' });
+      const release = card.getByRole('button', { name: '担当をやめる' });
+      await expect(next).toBeVisible();
+      await expect(finishHere).toBeVisible();
+      await expect(release).toBeVisible();
+      await expect(card.getByRole('button', { name: '試合終了', exact: true })).toHaveCount(0);
+
+      const cardBox = (await card.boundingBox())!;
+      for (const [label, button] of [
+        ['次へ', next],
+        ['ここで試合終了', finishHere],
+        ['担当をやめる', release],
+      ] as const) {
+        const box = (await button.boundingBox())!;
+        expect(box.height, `${label} の高さ`).toBeGreaterThanOrEqual(44);
+        expect(box.x, `${label} の左`).toBeGreaterThanOrEqual(cardBox.x);
+        expect(box.x + box.width, `${label} の右`).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+      }
+      expect((await next.boundingBox())!.height).toBeGreaterThanOrEqual(52);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+        '横にはみ出さない'
+      ).toBe(width);
+
+      const writes: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() !== 'GET' && new URL(request.url()).pathname.startsWith('/api/')) {
+          writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+        }
+      });
+      await next.click();
+      await expect(card.getByRole('tab', { name: '第2', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(card.getByText('第2ゲーム', { exact: true })).toBeVisible();
+      // 第2ゲームはまだ点が無いので、ほかのゲームへ進むボタンは第3ゲーム
+      await expect(card.getByRole('button', { name: '第3ゲームへ進む' })).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(writes).toEqual([]);
+
+      // 「ここで試合終了」は今の「試合終了」と同じ確認画面を開く（ここでは終了しない）
+      await finishHere.click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.getByRole('button', { name: '戻る' }).click();
+      await context.close();
+    });
+  }
+
   for (const width of [375, 390]) {
     test(`${width}px 幅で、1つ前・直し中・案内が出た状態でも横にはみ出さない（長い名前・3 ゲーム）`, async ({
       browser,

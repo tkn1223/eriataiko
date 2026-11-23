@@ -526,11 +526,11 @@ describe('CourtsPage', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  test('同点（勝ちゲーム数が同数）のコートで「試合終了」を押すと「同点では終了できません」と出る', () => {
+  test('同点（勝ちゲーム数が同数）のコートで「ここで試合終了」を押すと「同点では終了できません」と出る', () => {
     renderPage();
     const card = screen.getByTestId('court-card-6');
 
-    fireEvent.click(within(card).getByRole('button', { name: '試合終了' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'ここで試合終了' }));
 
     expect(within(card).getByRole('status')).toHaveTextContent('同点では終了できません');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

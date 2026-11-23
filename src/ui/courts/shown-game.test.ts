@@ -78,4 +78,21 @@ describe('nextGameToOffer（「第N+1ゲームへ進む」を出すか。docs/sp
   test('前のゲームを見直しているとき（第1ゲームのタブ）は、次の第2ゲームを出す', () => {
     expect(nextGameToOffer([game(1, 21, 15), game(2, 15, 21)], 3, 1)).toBe(2);
   });
+
+  // 上限 2 は「半分を切り上げ」で 1 ゲーム先取（match-rules.ts の gamesToWin）。差がつけば勝負がつく
+  test('上限 2 ゲームでは、第1ゲームが同点なら第2ゲームを出し、第1ゲームに差がつけば出さない', () => {
+    expect(nextGameToOffer([game(1, 10, 10)], 2, 1)).toBe(2);
+    expect(nextGameToOffer([game(1, 21, 15)], 2, 1)).toBeNull();
+    expect(nextGameToOffer([game(1, 10, 10)], 2, 2)).toBeNull();
+  });
+
+  test('上限 5 ゲームで 2-1 なら、第4ゲームを出す。2-2 で第5ゲームを出していれば出さない', () => {
+    const twoOne = [game(1, 21, 15), game(2, 15, 21), game(3, 21, 10)];
+    expect(nextGameToOffer(twoOne, 5, 3)).toBe(4);
+    expect(nextGameToOffer([...twoOne, game(4, 10, 21)], 5, 5)).toBeNull();
+  });
+
+  test('いま出しているゲームが同点（20-20）でも、勝負はついていないので次のゲームを出す', () => {
+    expect(nextGameToOffer([game(1, 20, 20)], 3, 1)).toBe(2);
+  });
 });

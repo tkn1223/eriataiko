@@ -616,6 +616,89 @@ function useShownGame(matchId: string, scores: GameScore[], maxGameCount: number
   };
 }
 
+/** 担当の下に並べる、黒い［試合終了］（訂正では［もう一度終了する］）と［担当をやめる］。 */
+function FinishAndReleaseButtons({
+  finishLabel,
+  onFinish,
+  onRelease,
+}: {
+  finishLabel: string;
+  onFinish: () => void;
+  onRelease: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        type="button"
+        onClick={onFinish}
+        className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+      >
+        <FlagIcon className="size-5" />
+        {finishLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onRelease}
+        className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+      >
+        <CrossIcon className="size-4" />
+        担当をやめる
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 勝負がついていない複数ゲームの試合で、担当の下に並べるボタン（docs/specs/2026-11-23-next-game-button.md）。
+ *
+ * いちばん目立つのを［試合終了］にしておくと、第1ゲームが終わったところで押して 1-0 のまま
+ * 終わらせる人が出たため、［次のゲームへ進む］を大きく出し、終了は白い「ここで試合終了」に下げる。
+ * 時間切れなどで 1-0 のまま終える道は残す（押したときの流れは［試合終了］と同じ）。
+ * ［次へ］は出すゲームを切り替えるだけで、何も送らない（ゲームが終わった印は表に持たない。2026-09-04）。
+ */
+function NextGameButtons({
+  nextGame,
+  onNextGame,
+  onFinish,
+  onRelease,
+}: {
+  nextGame: number;
+  onNextGame: () => void;
+  onFinish: () => void;
+  onRelease: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onNextGame}
+        className="btn-end flex h-[52px] min-h-11 items-center justify-center gap-1.5 rounded-xl text-[16.5px] font-extrabold"
+      >
+        {`第${nextGame}ゲームへ進む`}
+        <span aria-hidden="true">›</span>
+      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onFinish}
+          className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+        >
+          <FlagIcon className="size-4" />
+          ここで試合終了
+        </button>
+        <button
+          type="button"
+          onClick={onRelease}
+          className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+        >
+          <CrossIcon className="size-3.5" />
+          担当をやめる
+        </button>
+      </div>
+    </>
+  );
+}
+
 /** カードの見た目。自分の試合は金の枠と金みの影（globals.css の `.court-card-mine`）。 */
 function cardSurfaceClasses(isMine: boolean): string {
   return isMine ? 'court-card court-card-mine' : 'court-card';
@@ -828,54 +911,18 @@ export function CourtLiveCard({
           )}
 
           {nextGame !== null ? (
-            <>
-              {/* 勝負がついていない間だけ。押すと出すゲームが変わるだけで、何も送らない */}
-              <button
-                type="button"
-                onClick={() => chooseGame(nextGame)}
-                className="btn-end flex h-[52px] min-h-11 items-center justify-center gap-1.5 rounded-xl text-[16.5px] font-extrabold"
-              >
-                {`第${nextGame}ゲームへ進む`}
-                <span aria-hidden="true">›</span>
-              </button>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={handleFinishClick}
-                  className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
-                >
-                  <FlagIcon className="size-4" />
-                  ここで試合終了
-                </button>
-                <button
-                  type="button"
-                  onClick={scorer.onRelease}
-                  className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
-                >
-                  <CrossIcon className="size-3.5" />
-                  担当をやめる
-                </button>
-              </div>
-            </>
+            <NextGameButtons
+              nextGame={nextGame}
+              onNextGame={() => chooseGame(nextGame)}
+              onFinish={handleFinishClick}
+              onRelease={scorer.onRelease}
+            />
           ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={handleFinishClick}
-                className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-              >
-                <FlagIcon className="size-5" />
-                試合終了
-              </button>
-              <button
-                type="button"
-                onClick={scorer.onRelease}
-                className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-              >
-                <CrossIcon className="size-4" />
-                担当をやめる
-              </button>
-            </div>
+            <FinishAndReleaseButtons
+              finishLabel="試合終了"
+              onFinish={handleFinishClick}
+              onRelease={scorer.onRelease}
+            />
           )}
 
           <FinishConfirmSheet
@@ -1089,24 +1136,11 @@ function FixingPanel({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleFinishClick}
-              className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <FlagIcon className="size-5" />
-              もう一度終了する
-            </button>
-            <button
-              type="button"
-              onClick={scorer.onRelease}
-              className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <CrossIcon className="size-4" />
-              担当をやめる
-            </button>
-          </div>
+          <FinishAndReleaseButtons
+            finishLabel="もう一度終了する"
+            onFinish={handleFinishClick}
+            onRelease={scorer.onRelease}
+          />
 
           <FinishConfirmSheet
             open={finishSheet?.open ?? false}

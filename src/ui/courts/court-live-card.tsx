@@ -37,7 +37,7 @@ import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-c
 import { ReopenConfirmSheet } from '@/ui/courts/reopen-confirm-sheet';
 import { previousRowAccess } from '@/ui/courts/previous-access';
 import type { ScorerView } from '@/ui/courts/scorer-view';
-import { defaultShownGame, earlierPlayedGames } from '@/ui/courts/shown-game';
+import { defaultShownGame, earlierPlayedGames, nextGameToOffer } from '@/ui/courts/shown-game';
 import { TakeOverConfirmSheet } from '@/ui/courts/take-over-confirm-sheet';
 import type { FinishSheetControl } from '@/ui/courts/use-finish-sheets';
 
@@ -755,6 +755,8 @@ export function CourtLiveCard({
 
   const previousAccess = previousAccessOf(court, canInput, fix, scorerOf);
 
+  const nextGame = nextGameToOffer(scores, live.maxGameCount, shownGame);
+
   const status: { tone: StatusTone; label: string } = finished
     ? { tone: 'finished', label: '終了' }
     : isPromotedWaiting
@@ -825,24 +827,56 @@ export function CourtLiveCard({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleFinishClick}
-              className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <FlagIcon className="size-5" />
-              試合終了
-            </button>
-            <button
-              type="button"
-              onClick={scorer.onRelease}
-              className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <CrossIcon className="size-4" />
-              担当をやめる
-            </button>
-          </div>
+          {nextGame !== null ? (
+            <>
+              {/* 勝負がついていない間だけ。押すと出すゲームが変わるだけで、何も送らない */}
+              <button
+                type="button"
+                onClick={() => chooseGame(nextGame)}
+                className="btn-end flex h-[52px] min-h-11 items-center justify-center gap-1.5 rounded-xl text-[16.5px] font-extrabold"
+              >
+                {`第${nextGame}ゲームへ進む`}
+                <span aria-hidden="true">›</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleFinishClick}
+                  className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+                >
+                  <FlagIcon className="size-4" />
+                  ここで試合終了
+                </button>
+                <button
+                  type="button"
+                  onClick={scorer.onRelease}
+                  className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+                >
+                  <CrossIcon className="size-3.5" />
+                  担当をやめる
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={handleFinishClick}
+                className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+              >
+                <FlagIcon className="size-5" />
+                試合終了
+              </button>
+              <button
+                type="button"
+                onClick={scorer.onRelease}
+                className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+              >
+                <CrossIcon className="size-4" />
+                担当をやめる
+              </button>
+            </div>
+          )}
 
           <FinishConfirmSheet
             open={finishSheet.open}

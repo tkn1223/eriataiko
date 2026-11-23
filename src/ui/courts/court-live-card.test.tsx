@@ -129,6 +129,118 @@ function renderLiveCard({
   );
 }
 
+describe('「次のゲームへ進む」ボタン（docs/specs/2026-11-23-next-game-button.md）', () => {
+  const game = (gameNumber: number, a: number, b: number) => ({
+    gameNumber,
+    sideAScore: a,
+    sideBScore: b,
+  });
+  const threeGames = { ...baseLive, maxGameCount: 3 };
+  const nextButton = (n: number) => screen.queryByRole('button', { name: `第${n}ゲームへ進む` });
+
+  test('上限 3 ゲームで第1ゲームに点が入り勝負がついていないとき、「第2ゲームへ進む」と白い「ここで試合終了」と「担当をやめる」が出て、黒い「試合終了」は出ない', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15)] });
+
+    expect(nextButton(2)).toBeInTheDocument();
+    expect(nextButton(2)).toHaveClass('btn-end');
+    expect(screen.getByRole('button', { name: 'ここで試合終了' })).toHaveClass('btn-quit');
+    expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
+  });
+
+  test('「第2ゲームへ進む」を押すと、出しているゲームが第2ゲームになり、点は 0-0 で、点は送らない', () => {
+    const onIncrement = vi.fn();
+    const onDecrement = vi.fn();
+    const onFinishMatch = vi.fn();
+    renderLiveCard({
+      live: threeGames,
+      scores: [game(1, 21, 15)],
+      onIncrement,
+      onDecrement,
+      onFinishMatch,
+    });
+
+    fireEvent.click(nextButton(2)!);
+
+    expect(screen.getByText('第2ゲーム')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '第2' })).toHaveAttribute('aria-selected', 'true');
+    expect(within(screen.getByTestId('team-panel-A')).getByText('0')).toBeInTheDocument();
+    expect(within(screen.getByTestId('team-panel-B')).getByText('0')).toBeInTheDocument();
+    expect(onIncrement).not.toHaveBeenCalled();
+    expect(onDecrement).not.toHaveBeenCalled();
+    expect(onFinishMatch).not.toHaveBeenCalled();
+  });
+
+  test('ゲームが 1-1 のとき第2ゲームを出していれば「第3ゲームへ進む」が出る', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15), game(2, 15, 21)] });
+
+    fireEvent.click(screen.getByRole('tab', { name: '第2' }));
+
+    expect(nextButton(3)).toBeInTheDocument();
+  });
+
+  test('第3ゲーム（最後のゲーム）を出しているときは「…へ進む」は出ず、黒い「試合終了」が出る', () => {
+    renderLiveCard({
+      live: threeGames,
+      scores: [game(1, 21, 15), game(2, 15, 21), game(3, 5, 3)],
+    });
+
+    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ここで試合終了' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '試合終了' })).toHaveClass('btn-end');
+  });
+
+  test('どちらかが 2 ゲーム取ったときは「…へ進む」は出ず、黒い「試合終了」が出る', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15), game(2, 21, 18)] });
+
+    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '試合終了' })).toBeInTheDocument();
+  });
+
+  test('「ここで試合終了」を押すと、今の「試合終了」と同じ確認画面が出る', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15)] });
+
+    fireEvent.click(screen.getByRole('button', { name: 'ここで試合終了' }));
+
+    expect(screen.getByRole('button', { name: 'OK' })).toBeInTheDocument();
+  });
+
+  test('上限 1 ゲームの試合（予選）は今と同じ（黒い「試合終了」と「担当をやめる」だけ）', () => {
+    renderLiveCard({ live: baseLive });
+
+    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ここで試合終了' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '試合終了' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '担当をやめる' })).toBeInTheDocument();
+  });
+
+  test('観戦者のカードには「…へ進む」も「ここで試合終了」も出ない', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15)], canInput: false });
+
+    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ここで試合終了' })).not.toBeInTheDocument();
+  });
+
+  test('担当でない人（他の人が担当）のカードにも出ない', () => {
+    renderLiveCard({
+      live: threeGames,
+      scores: [game(1, 21, 15)],
+      scorer: scorerControl({ kind: 'other', name: '愛知北のたろう' }),
+    });
+
+    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ここで試合終了' })).not.toBeInTheDocument();
+  });
+
+  test('押せる 3 つのボタンは 44px 以上の指定（実際の大きさは e2e で測る）', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15)] });
+
+    for (const name of ['第2ゲームへ進む', 'ここで試合終了', '担当をやめる']) {
+      expect(screen.getByRole('button', { name })).toHaveClass('min-h-11');
+    }
+  });
+});
+
 describe('CourtLiveCard', () => {
   test('カードに id="court-N" が付く（進行表の［コートNの試合速報を開く］の行き先）', () => {
     const { container } = renderLiveCard();
@@ -488,7 +600,7 @@ describe('CourtLiveCard', () => {
         ],
       });
 
-      fireEvent.click(screen.getByRole('button', { name: '試合終了' }));
+      fireEvent.click(screen.getByRole('button', { name: 'ここで試合終了' }));
 
       expect(screen.getByRole('status')).toHaveTextContent('同点では終了できません');
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -542,7 +654,7 @@ describe('CourtLiveCard', () => {
         scores: [{ gameNumber: 1, sideAScore: 21, sideBScore: 19 }],
       });
 
-      fireEvent.click(screen.getByRole('button', { name: '試合終了' }));
+      fireEvent.click(screen.getByRole('button', { name: 'ここで試合終了' }));
 
       expect(screen.getByText(/試合の勝ち/)).toBeInTheDocument();
       expect(screen.getByText(/1-0/)).toBeInTheDocument();

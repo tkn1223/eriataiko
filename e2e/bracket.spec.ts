@@ -134,13 +134,15 @@ test.describe('星取表のマス', () => {
     await expect(page.getByText('数字は、対戦内の勝ち試合数です。')).toBeVisible();
   });
 
-  test('見出しの右に「<全部>対戦中 <終了>対戦終了」が、本物の対戦の数どおりに出る', async ({
+  test('上の帯の小見出しに「対戦表 ・ 予選リーグ <終了>/<全部> 対戦終了」が、本物の対戦の数どおりに出る。本文に大きな「対戦表」の見出しと「対戦中」の文字は無い', async ({
     page,
   }) => {
     await page.goto('/bracket');
 
     // seed の予選 6 対戦のうち、終わっているのは 愛知北-愛知西・愛知南-愛知北・愛知南-愛知西 の 3 つ
-    await expect(page.getByText('6対戦中 3対戦終了')).toBeVisible();
+    await expect(page.getByText(/対戦表 ・ 予選リーグ 3\/6 対戦終了/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: '対戦表' })).toHaveCount(0);
+    await expect(page.getByText(/対戦中/)).toHaveCount(0);
   });
 
   test('選手として入った人には「自分：チーム名」の札と、星取表の「自分」が出る。観戦者には出ない', async ({

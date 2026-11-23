@@ -26,6 +26,7 @@ function renderMatrix(
     cards?: LeagueCard[];
     onSelectCard?: (card: LeagueCard) => void;
     selfTeamNumber?: number;
+    selfTeamName?: string;
   } = {}
 ) {
   return render(
@@ -33,6 +34,7 @@ function renderMatrix(
       teams={teams}
       cards={overrides.cards ?? cards}
       selfTeamNumber={overrides.selfTeamNumber}
+      selfTeamName={overrides.selfTeamName}
       onSelectCard={overrides.onSelectCard ?? (() => {})}
     />
   );
@@ -101,18 +103,20 @@ describe('LeagueMatrix', () => {
     expect(waitingCell).not.toHaveTextContent(/\d+-\d+/);
   });
 
-  test('見出し「星取表」の右に「<全部>対戦中 <終了>対戦終了」が、渡された対戦の数どおりに出る', () => {
+  test('星取表のカードに「対戦中」「対戦終了」の数の文字は出ない', () => {
     renderMatrix();
 
     expect(screen.getByRole('heading', { name: '星取表' })).toBeInTheDocument();
-    // cards は 4 対戦で、終わっているのは 2 つ（愛知南-愛知中央、愛知北-愛知西）
-    expect(screen.getByText('4対戦中 2対戦終了')).toBeInTheDocument();
+    expect(screen.queryByText(/対戦中|対戦終了/)).not.toBeInTheDocument();
   });
 
-  test('対戦の数が変われば、見出しの数も変わる', () => {
-    renderMatrix({ cards: cards.slice(0, 1) });
+  test('チームに入っている人には、右上に「自分：<チーム名>」の札が出る。観戦者には出ない', () => {
+    const { unmount } = renderMatrix({ selfTeamNumber: 2, selfTeamName: teams[1].name });
+    expect(screen.getByText(`自分：${teams[1].name}`)).toBeInTheDocument();
+    unmount();
 
-    expect(screen.getByText('1対戦中 1対戦終了')).toBeInTheDocument();
+    renderMatrix();
+    expect(screen.queryByText(/自分：/)).not.toBeInTheDocument();
   });
 
   test('見出しの下に説明の 1 行が出る', () => {

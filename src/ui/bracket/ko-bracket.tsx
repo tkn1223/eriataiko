@@ -49,8 +49,10 @@ export function KoBracket({ data, selfTeamNumber }: Props) {
 
         <ChampionBox champion={data.champion} />
 
-        <Stage title="3位決定戦" />
-        <KoBox match={data.thirdPlace} />
+        {/* 区切りの見出しは付けず、箱の左上に名前を出す（同じ字が 2 回並ばないように） */}
+        <div className="mt-3">
+          <KoBox match={data.thirdPlace} title="3位決定戦" />
+        </div>
       </section>
     </div>
   );

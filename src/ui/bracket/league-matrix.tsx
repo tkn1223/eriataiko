@@ -9,6 +9,8 @@ type Props = {
   onSelectCard: (card: LeagueCard) => void;
   /** 自分のチームの番号。チームに入っていない人（観戦者など）は無い。 */
   selfTeamNumber?: number;
+  /** 自分のチームの名前。右上の札に出す。自分のチームが無ければ無い。 */
+  selfTeamName?: string;
 };
 
 function findCard(cards: LeagueCard[], a: number, b: number) {
@@ -25,16 +27,16 @@ function findCard(cards: LeagueCard[], a: number, b: number) {
  * 列の幅は表を等分する（table-fixed）。375px でも 4 チーム分が横に動かさずに収まるように、
  * 横に動かす枠は作らない。
  */
-export function LeagueMatrix({ teams, cards, onSelectCard, selfTeamNumber }: Props) {
-  const finishedCount = cards.filter((card) => card.status === 'done').length;
-
+export function LeagueMatrix({ teams, cards, onSelectCard, selfTeamNumber, selfTeamName }: Props) {
   return (
     <section className="court-card mb-3 rounded-[18px] p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h2 className="text-[16px] font-extrabold">星取表</h2>
-        <span className="text-muted-ink text-[11px] font-semibold">
-          {cards.length}対戦中 {finishedCount}対戦終了
-        </span>
+        {selfTeamName !== undefined && (
+          <span className="text-gold-ink bg-gold-soft border-gold-mine rounded-md border px-2 py-[5px] text-[11px] font-bold">
+            自分：{selfTeamName}
+          </span>
+        )}
       </div>
       <p className="text-muted-ink text-[12px] leading-[1.7]">
         左のチームから見た結果です。マスを押すと中身が見られます。

@@ -23,6 +23,7 @@ function createFakeClient() {
     name: string;
     bindings: Binding[];
     status: ((status: string) => void) | null;
+    system: ((payload: unknown) => void) | null;
   }> = [];
   const removeChannel = vi.fn();
 
@@ -33,15 +34,23 @@ function createFakeClient() {
     channel(name) {
       const existing = handles.get(name);
       if (existing) return existing;
-      const record: (typeof channels)[number] = { name, bindings: [], status: null };
+      const record: (typeof channels)[number] = { name, bindings: [], status: null, system: null };
       channels.push(record);
       const channel = {
         on(
-          _type: 'postgres_changes',
-          filter: { event: string; table: string },
-          callback: Binding['callback']
+          type: 'postgres_changes' | 'system',
+          filter: { event?: string; table?: string },
+          callback: (payload: never) => void
         ) {
-          record.bindings.push({ event: filter.event, table: filter.table, callback });
+          if (type === 'system') {
+            record.system = callback as (payload: unknown) => void;
+          } else {
+            record.bindings.push({
+              event: filter.event ?? '',
+              table: filter.table ?? '',
+              callback: callback as Binding['callback'],
+            });
+          }
           return channel;
         },
         subscribe(callback: (status: string) => void) {
@@ -67,6 +76,33 @@ function createFakeClient() {
     },
     setStatus(status: string) {
       channels[0].status?.(status);
+    },
+    /** データベースの変化の購読が整った知らせ（SUBSCRIBED のあとに別に届く）。 */
+    systemOk(index = 0) {
+      channels[index].system?.({
+        message: 'Subscribed to PostgreSQL',
+        status: 'ok',
+        extension: 'postgres_changes',
+        channel: 'x',
+      });
+    },
+    systemError() {
+      channels[0].system?.({
+        message: 'Unable to subscribe to changes',
+        status: 'error',
+        extension: 'postgres_changes',
+        channel: 'x',
+      });
+    },
+    /** SUBSCRIBED と、そのあとの system ok の両方。実際の「つながった」。 */
+    connect() {
+      channels[0].status?.('SUBSCRIBED');
+      channels[0].system?.({
+        message: 'Subscribed to PostgreSQL',
+        status: 'ok',
+        extension: 'postgres_changes',
+        channel: 'x',
+      });
     },
   };
 }
@@ -263,6 +299,7 @@ describe('createLiveHub', () => {
     expect(fake.channels).toHaveLength(2);
     expect(fake.channels[1].status).not.toBeNull();
     fake.channels[1].status?.('SUBSCRIBED');
+    fake.systemOk(1);
     expect(events).toEqual([{ type: 'connection', state: 'live' }]);
   });
 
@@ -281,9 +318,9 @@ describe('createLiveHub', () => {
     const fake = createFakeClient();
     const { events } = collect(createLiveHub(() => fake.client));
 
-    fake.setStatus('SUBSCRIBED');
+    fake.connect();
     fake.setStatus('CHANNEL_ERROR');
-    fake.setStatus('SUBSCRIBED');
+    fake.connect();
 
     expect(events).toEqual([
       { type: 'connection', state: 'live' },
@@ -296,7 +333,7 @@ describe('createLiveHub', () => {
     const fake = createFakeClient();
     const { events } = collect(createLiveHub(() => fake.client));
 
-    fake.setStatus('SUBSCRIBED');
+    fake.connect();
     fake.setStatus('TIMED_OUT');
     fake.setStatus('CLOSED');
     fake.setStatus('CHANNEL_ERROR');
@@ -311,7 +348,7 @@ describe('createLiveHub', () => {
     const { events } = collect(createLiveHub(() => fake.client));
 
     fake.setStatus('CHANNEL_ERROR');
-    fake.setStatus('SUBSCRIBED');
+    fake.connect();
 
     expect(events).toEqual([
       { type: 'connection', state: 'down' },
@@ -323,7 +360,7 @@ describe('createLiveHub', () => {
     const fake = createFakeClient();
     const hub = createLiveHub(() => fake.client);
     collect(hub);
-    fake.setStatus('SUBSCRIBED');
+    fake.connect();
 
     const late = collect(hub);
 
@@ -341,7 +378,7 @@ describe('useLiveUpdates', () => {
     const { result, unmount } = renderHook(() => useLiveUpdates({ onChange, onConnected }, hub));
     expect(result.current).toBe('connecting');
 
-    act(() => fake.setStatus('SUBSCRIBED'));
+    act(() => fake.connect());
     expect(result.current).toBe('live');
 
     act(() => fake.deliver('matches', 'UPDATE', MATCH_ROW));
@@ -352,7 +389,7 @@ describe('useLiveUpdates', () => {
     act(() => fake.setStatus('CHANNEL_ERROR'));
     expect(result.current).toBe('down');
 
-    act(() => fake.setStatus('SUBSCRIBED'));
+    act(() => fake.connect());
     expect(result.current).toBe('live');
 
     unmount();
@@ -367,14 +404,77 @@ describe('useLiveUpdates', () => {
     const onConnected = vi.fn();
     renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
 
-    act(() => fake.setStatus('SUBSCRIBED'));
+    act(() => fake.connect());
     expect(onConnected).toHaveBeenCalledTimes(1);
 
     act(() => fake.setStatus('CHANNEL_ERROR'));
     act(() => fake.setStatus('TIMED_OUT'));
     expect(onConnected).toHaveBeenCalledTimes(1);
 
+    act(() => fake.connect());
+    expect(onConnected).toHaveBeenCalledTimes(2);
+  });
+
+  // SUBSCRIBED はチャンネルに入れた返事にすぎない。データベースの変化の購読が整うのは、
+  // そのあとの system の知らせ。ここで「つながった」にすると読み直しが早すぎて、
+  // 整うまでの変化を取りこぼす（実測で SUBSCRIBED から 1.9 秒空くことがあった）。
+  test('SUBSCRIBED だけでは live にならず、onConnected も呼ばれない', () => {
+    const fake = createFakeClient();
+    const hub = createLiveHub(() => fake.client);
+    const onConnected = vi.fn();
+    const { result } = renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
+
     act(() => fake.setStatus('SUBSCRIBED'));
+
+    expect(result.current).toBe('connecting');
+    expect(onConnected).not.toHaveBeenCalled();
+  });
+
+  test('SUBSCRIBED のあと system ok（postgres_changes）で live になり、onConnected が 1 回呼ばれる', () => {
+    const fake = createFakeClient();
+    const hub = createLiveHub(() => fake.client);
+    const onConnected = vi.fn();
+    const { result } = renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
+
+    act(() => fake.setStatus('SUBSCRIBED'));
+    act(() => fake.systemOk());
+
+    expect(result.current).toBe('live');
+    expect(onConnected).toHaveBeenCalledTimes(1);
+  });
+
+  test('system が error なら down', () => {
+    const fake = createFakeClient();
+    const { events } = collect(createLiveHub(() => fake.client));
+
+    fake.setStatus('SUBSCRIBED');
+    fake.systemError();
+
+    expect(events).toEqual([{ type: 'connection', state: 'down' }]);
+  });
+
+  test('止めたあとに届いた system は無視する', () => {
+    const fake = createFakeClient();
+    const { events, unsubscribe } = collect(createLiveHub(() => fake.client));
+
+    unsubscribe();
+    fake.systemOk();
+    fake.systemError();
+
+    expect(events).toEqual([]);
+  });
+
+  test('つなぎ直しでも、system ok が来たらまた onConnected を呼ぶ', () => {
+    const fake = createFakeClient();
+    const hub = createLiveHub(() => fake.client);
+    const onConnected = vi.fn();
+    renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));
+    act(() => fake.connect());
+
+    act(() => fake.setStatus('CHANNEL_ERROR'));
+    act(() => fake.setStatus('SUBSCRIBED'));
+    expect(onConnected).toHaveBeenCalledTimes(1);
+    act(() => fake.systemOk());
     expect(onConnected).toHaveBeenCalledTimes(2);
   });
 
@@ -382,7 +482,7 @@ describe('useLiveUpdates', () => {
     const fake = createFakeClient();
     const hub = createLiveHub(() => fake.client);
     renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected: vi.fn() }, hub));
-    act(() => fake.setStatus('SUBSCRIBED'));
+    act(() => fake.connect());
 
     const onConnected = vi.fn();
     renderHook(() => useLiveUpdates({ onChange: vi.fn(), onConnected }, hub));

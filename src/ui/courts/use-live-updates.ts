@@ -37,11 +37,18 @@ export type LiveClient = {
 };
 
 type LiveChannel = {
-  on: (
-    type: 'postgres_changes',
-    filter: { event: 'UPDATE' | 'INSERT'; schema: 'public'; table: 'matches' | 'game_scores' },
-    callback: (payload: { new: unknown }) => void
-  ) => LiveChannel;
+  on: {
+    (
+      type: 'postgres_changes',
+      filter: { event: 'UPDATE' | 'INSERT'; schema: 'public'; table: 'matches' | 'game_scores' },
+      callback: (payload: { new: unknown }) => void
+    ): LiveChannel;
+    (
+      type: 'system',
+      filter: Record<string, never>,
+      callback: (payload: { extension?: string; status?: string }) => void
+    ): LiveChannel;
+  };
   subscribe: (callback: (status: string) => void) => LiveChannel;
 };
 
@@ -170,22 +177,40 @@ export function createLiveHub(getClient: () => LiveClient): LiveHub {
         { event: 'UPDATE', schema: 'public', table: 'game_scores' },
         deliver(toScoreChange)
       )
+      .on('system', {}, (payload) => {
+        // 止めたあとに遅れて届いたものは捨てる
+        if (channel !== current) return;
+        if (payload.extension !== 'postgres_changes') return;
+
+        if (payload.status === 'ok') {
+          // データベースの変化の購読が整ったのはここ。SUBSCRIBED（チャンネルに入れた返事）では
+          // まだ整っておらず、そこで読み直すと、整うまでの変化（実測で 1.9 秒空くことがあった）を取りこぼす。
+          // つなぎ直したときも同じく、ここで live に戻る。
+          if (state !== 'live') {
+            state = 'live';
+            emit({ type: 'connection', state });
+          }
+          return;
+        }
+        markDown();
+      })
       .subscribe((status) => {
         // 自分で止めたときの CLOSED を「途切れた」と取り違えない
         if (channel !== current) return;
 
-        if (status === 'SUBSCRIBED') {
-          state = 'live';
-          emit({ type: 'connection', state });
-          return;
-        }
-        // 途切れ・失敗・時間切れ。Supabase は自動でつなぎ直すので、つながれば SUBSCRIBED が再び来る。
-        // 続けて何度来ても、案内は 1 回だけ出す。
-        if (state !== 'down') {
-          state = 'down';
-          emit({ type: 'connection', state });
-        }
+        // SUBSCRIBED では live にしない（上の system を待つ）。つながっていない間は 'connecting' か 'down' のまま。
+        if (status === 'SUBSCRIBED') return;
+
+        // 途切れ・失敗・時間切れ。Supabase は自動でつなぎ直すので、つながれば SUBSCRIBED と system ok が再び来る。
+        markDown();
       });
+
+    // 続けて何度来ても、案内は 1 回だけ出す。
+    function markDown() {
+      if (state === 'down') return;
+      state = 'down';
+      emit({ type: 'connection', state });
+    }
   }
 
   function stop() {

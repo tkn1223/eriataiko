@@ -184,7 +184,7 @@ describe('担当の確かめ', () => {
     expect(await actionsOf(matchId)).toEqual(['score.save', 'scorer.claim']);
   });
 
-  test('呼出待ちの試合の最初の 1 点で LIVE になり、その人が担当になる', async () => {
+  test('呼出中の試合の最初の 1 点で LIVE になり、その人が担当になる', async () => {
     const matchId = await fixture.makeMatch('waiting');
     enterAs(fixture.people.honbu.session);
 

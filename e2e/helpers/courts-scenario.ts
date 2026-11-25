@@ -6,7 +6,7 @@ import type { Database } from '@/types/database';
  * /courts（結果LIVE）の画面確認に使う試合を、手元のデータベースに用意する。
  *
  * 前は見本データ（`src/ui/courts/sample-data.ts`）が 8 面ぶんの状態
- * （進行中・0対0・同点・長い名前・呼出待ち…）を固定で持っていたが、DB につないだいまは
+ * （進行中・0対0・同点・長い名前・呼出中…）を固定で持っていたが、DB につないだいまは
  * 本物のデータが要る。`e2e/helpers/long-name-player.ts`（#53）と同じやり方で、
  * いまの大会（`supabase/seed.sql` の固定 id）にテスト用の対戦・試合・選手・得点を
  * service_role で作り、終わったら消す。
@@ -73,11 +73,11 @@ const [
 export const SCORE_COURT_NUMBER = 2;
 /** 0対0のまま。「まだ点が入っていません」の確認に使うコート。 */
 export const ZERO_SCORE_COURT_NUMBER = 3;
-/** 相手がまだ決まっていない対戦（空枠ラベル）を「呼出待ち」で確認するコート。 */
+/** 相手がまだ決まっていない対戦（空枠ラベル）を「呼出中」で確認するコート。 */
 export const SLOT_LABEL_COURT_NUMBER = 5;
 /**
  * 9 番・10 番のコート。次の大会は 10 面なので、8 面で止めていると当日ずっと画面に出ない
- * （PR #56 レビュー）。9 番は進行中、10 番は呼出待ち（次だけ）。
+ * （PR #56 レビュー）。9 番は進行中、10 番は呼出中（次だけ）。
  */
 export const COURT_9_NUMBER = 9;
 export const COURT_10_NUMBER = 10;
@@ -539,7 +539,7 @@ export async function deleteFinalScenario(): Promise<void> {
 // 1-b（結果LIVE の保存）確認用の追加シナリオ
 // ---------------------------------------------------------------------
 
-/** 呼出待ちのみ（進行中が無い）のコートで、選手が枠を押して保存できることを確かめる。 */
+/** 呼出中のみ（進行中が無い）のコートで、選手が枠を押して保存できることを確かめる。 */
 export const WAITING_ONLY_COURT_NUMBER = 8;
 export const WAITING_ONLY_TEAM_A_NAMES = ['西田', '岡村'];
 export const WAITING_ONLY_TEAM_B_NAMES = ['原田', '藤原'];
@@ -772,7 +772,7 @@ export async function findMatchStatus(matchId: string): Promise<string | null> {
 }
 
 /**
- * court_number からその試合の id を引く（呼出待ちの試合が LIVE に昇格したあとの id を取るのに使う）。
+ * court_number からその試合の id を引く（呼出中の試合が LIVE に昇格したあとの id を取るのに使う）。
  * 同じコートに試合が 2 つ以上あると、どちらを見ているか分からないまま通ってしまうので、
  * 1 つに決まらなければ止める。
  */

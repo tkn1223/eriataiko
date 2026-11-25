@@ -13,7 +13,7 @@ export type CourtStatus = 'live' | 'waiting' | 'finished';
 
 /**
  * 進み具合の線の 1 本。
- * - done: 終わった ／ live: 試合中 ／ calling: 呼出待ちのいまの試合 ／ upcoming: これから
+ * - done: 終わった ／ live: 試合中 ／ calling: 呼出中のいまの試合 ／ upcoming: これから
  * - mine: 自分の出番（未実施）。金で塗る
  */
 export type ProgressSegment = {
@@ -28,7 +28,7 @@ export type CourtSummary = {
   total: number;
   /** 試合中も数える。数えないと、最後の 1 試合が試合中のコートが「残り 0」と出て、終わったと読み違える。 */
   remaining: number;
-  /** いまの試合。試合中があればそれ（2 つなら順番が後ろ）、無ければ先頭の未実施（呼出待ち）。全部終わっていれば null。 */
+  /** いまの試合。試合中があればそれ（2 つなら順番が後ろ）、無ければ先頭の未実施（呼出中）。全部終わっていれば null。 */
   current: BoardMatch | null;
   /** 次の試合。いまの試合より後ろの、先頭の未実施。 */
   next: BoardMatch | null;

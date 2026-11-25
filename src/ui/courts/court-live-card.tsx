@@ -118,9 +118,9 @@ const CLAIM_RETRYING_MESSAGE = '入力の担当を取れていません・送り
 const RELEASE_RETRYING_MESSAGE = '入力の担当をやめられていません・送り直しています';
 
 /**
- * 呼出待ちの次の試合を、進行中の試合と同じ形にして扱えるようにする。
+ * 呼出中の次の試合を、進行中の試合と同じ形にして扱えるようにする。
  *
- * 呼出待ちのコートにも次の試合の得点の枠を出し、最初の1点で LIVE の見た目に切り替える
+ * 呼出中のコートにも次の試合の得点の枠を出し、最初の1点で LIVE の見た目に切り替える
  * （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1）。
  * 実際の得点はページ側の `liveScore` が持つので、ここでは 0 対 0（枠だけ）にしておく。
  */
@@ -390,7 +390,7 @@ function teamLabel(team: CourtTeam): string {
 
 type StatusTone = 'live' | 'waiting' | 'fixing' | 'finished';
 
-/** 札の地・文字の色。試合中＝緑・呼出待ち＝黄・直し中＝金・終了＝灰で、互いに見分けがつく。 */
+/** 札の地・文字の色。試合中＝緑・呼出中＝黄・直し中＝金・終了＝灰で、互いに見分けがつく。 */
 const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   live: 'bg-status-live text-status-live-ink',
   waiting: 'bg-status-wait text-status-wait-ink',
@@ -398,12 +398,12 @@ const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   finished: 'bg-gray-100 text-gray-500',
 };
 
-/** カードの右上の状態の札。試合中は「● 試合中」（点つき）、呼出待ちは砂時計の印つき。 */
+/** カードの右上の状態の札。試合中は「● 試合中」（点つき）、呼出中は砂時計の印つき。 */
 function StatusPill({ tone, label, testId }: { tone: StatusTone; label: string; testId?: string }) {
   return (
     <span
       data-testid={testId}
-      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-[11px] py-[5px] text-[13px] font-bold whitespace-nowrap ${STATUS_TONE_CLASSES[tone]}`}
+      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-[11px] py-[2px] text-[13px] font-bold whitespace-nowrap ${STATUS_TONE_CLASSES[tone]}`}
     >
       {tone === 'live' && (
         <span aria-hidden="true" className="bg-status-live-dot size-2 rounded-full" />
@@ -527,7 +527,7 @@ function GameLabelRow({
                 role="tab"
                 aria-selected={selected}
                 onClick={() => onChange(gameNumber)}
-                className={`h-11 min-h-11 min-w-0 rounded-[10px] text-[14px] font-bold ${
+                className={`relative h-[30px] min-w-0 rounded-[10px] text-[14px] font-bold after:absolute after:inset-x-0 after:-inset-y-[7px] after:content-[""] ${
                   selected ? 'tab-on' : 'text-ink-3'
                 }`}
               >
@@ -730,7 +730,7 @@ function previousAccessOf(
 ) {
   const previous = court.previous;
   if (!previous) return null;
-  // いまそのコートの試合 = 進行中、無ければ次（呼出待ち）。担当が自分かどうかを見る
+  // いまそのコートの試合 = 進行中、無ければ次（呼出中）。担当が自分かどうかを見る
   const current = court.live ?? court.next;
   const lines = previousNoticeLines(previous, fix, canInput);
   return {
@@ -770,7 +770,7 @@ export function CourtLiveCard({
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 進行中が無く次の試合があれば、そこにも点の枠を出す（0 対 0・札は「呼出待ち」）。観戦者にも同じ形で見せる
+  // 進行中が無く次の試合があれば、そこにも点の枠を出す（0 対 0・札は「呼出中」）。観戦者にも同じ形で見せる
   // （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1。押せるのは選手の担当だけ）。
   const resolvedLive = court.live ?? (court.next ? nextAsLiveMatch(court.next) : null);
   const { shownGame, chooseGame } = useShownGame(
@@ -798,7 +798,7 @@ export function CourtLiveCard({
     finished: false,
     started: court.live !== null,
   };
-  // 呼出待ちから昇格した試合は、まだ 1 点も入っていない間は「呼出待ち」の見た目のまま。
+  // 呼出中から昇格した試合は、まだ 1 点も入っていない間は「呼出中」の見た目のまま。
   // 最初の 1 点で LIVE に切り替わり、そのあと 0 対 0 に戻しても LIVE のまま
   // （入口側も同じ。src/usecases/save-score.ts）。
   const isPromotedWaiting = !court.live && !started;
@@ -843,7 +843,7 @@ export function CourtLiveCard({
   const status: { tone: StatusTone; label: string } = finished
     ? { tone: 'finished', label: '終了' }
     : isPromotedWaiting
-      ? { tone: 'waiting', label: '呼出待ち' }
+      ? { tone: 'waiting', label: '呼出中' }
       : { tone: 'live', label: '試合中' };
 
   return (

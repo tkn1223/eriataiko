@@ -93,7 +93,7 @@ describe('CourtCard', () => {
     expect(screen.getByText('第2ゲーム ・ 第1G 21-18')).toBeInTheDocument();
   });
 
-  test('呼出待ちのコートは、点の代わりに「–」と「呼び出し中」が出る', () => {
+  test('呼出中のコートは、点の代わりに「–」と「呼び出し中」が出る', () => {
     renderCard([
       boardMatch({
         matchId: 'b',
@@ -111,7 +111,7 @@ describe('CourtCard', () => {
       }),
     ]);
 
-    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出待ち');
+    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出中');
     expect(screen.getAllByText('–')).toHaveLength(2);
     expect(screen.getByText('呼び出し中')).toBeInTheDocument();
   });

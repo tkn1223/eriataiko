@@ -19,7 +19,7 @@ on conflict (id) do nothing;
 
 -- court_count は「今年押さえた面数」。会場の 8 面のうち 8 面を使う年。
 insert into public.competitions (id, name, held_on, is_current, hall_id, court_count) values
-  ('c0000000-0000-4000-8000-000000000001', 'えりあ太鼓カップ 2027', '2027-01-22', true,
+  ('c0000000-0000-4000-8000-000000000001', 'エリア対抗カップ 2027', '2027-01-22', true,
    'e0000000-0000-4000-8000-000000000001', 8)
 on conflict (id) do nothing;
 

@@ -280,7 +280,7 @@ describe('CourtsPage', () => {
   describe('上の 1 行（大会名と、いまの段・消化数）', () => {
     function renderInShell(props: Partial<ComponentProps<typeof CourtsPage>> = {}) {
       return render(
-        <AppShell title="えりあ太鼓カップ 2027">
+        <AppShell title="エリア対抗カップ 2027">
           <CourtsPage
             board={[]}
             stageLabel="予選リーグ"
@@ -300,9 +300,9 @@ describe('CourtsPage', () => {
     test('大会名と「予選リーグ 1/3 試合」が上のバーの 1 行に並ぶ', () => {
       renderInShell();
 
-      const title = screen.getByRole('heading', { name: 'えりあ太鼓カップ 2027' });
+      const title = screen.getByRole('heading', { name: 'エリア対抗カップ 2027' });
       const bar = title.closest('div')!.parentElement!;
-      expect(bar).toHaveTextContent('えりあ太鼓カップ 2027');
+      expect(bar).toHaveTextContent('エリア対抗カップ 2027');
       expect(bar).toHaveTextContent('予選リーグ 1/3 試合');
     });
 
@@ -316,7 +316,7 @@ describe('CourtsPage', () => {
       const { rerender } = renderInShell();
       expect(screen.getByText(/予選リーグ/)).toBeInTheDocument();
 
-      rerender(<AppShell title="えりあ太鼓カップ 2027">別の画面</AppShell>);
+      rerender(<AppShell title="エリア対抗カップ 2027">別の画面</AppShell>);
 
       expect(screen.queryByText(/予選リーグ/)).not.toBeInTheDocument();
     });

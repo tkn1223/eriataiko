@@ -22,7 +22,7 @@ test('ヘッダーと下のメニューが出る', async ({ page }) => {
   await page.goto('/');
   // ヘッダーの大会名は表（competitions.name）から読む。決め打ちの控えの文字
   // （src/config/tournament.ts）が出ていたら、表につながっていないということ。
-  await expect(page.getByRole('heading', { name: 'えりあ太鼓カップ 2027' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'エリア対抗カップ 2027' })).toBeVisible();
   await expect(page.getByRole('link', { name: /試合速報/ })).toBeVisible();
   await expect(page.getByRole('link', { name: /myページ/ })).toBeVisible();
 });

@@ -73,9 +73,11 @@ export function CardDetailSheet({ card, teams, selfTeamNumber, onClose }: Props)
             teamNumber={card.teamA}
             isSelf={card.teamA === selfTeamNumber}
           />
+          {/* 行の高さを詰める（leading-none）と、Android の字体（Noto Sans JP）では数字の上下が
+              入れ物から 7px はみ出して切れた。1.4 倍あれば収まる（公開前の画面テストで見つかった） */}
           <p
             data-testid="card-result-score"
-            className="tabular text-[34px] leading-none font-extrabold tracking-[-1px]"
+            className="tabular text-[34px] leading-[1.4] font-extrabold tracking-[-1px]"
           >
             {scoreTextOf(card)}
           </p>

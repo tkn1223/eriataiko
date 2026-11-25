@@ -59,7 +59,7 @@ function ProgressRow({ summary }: { summary: CourtSummary }) {
   );
 }
 
-/** いまの試合の 1 段。■チーム色・選手名・チーム名・（金の点）と、右端に大きな点（呼出待ちは「–」）。 */
+/** いまの試合の 1 段。■チーム色・選手名・チーム名・（金の点）と、右端に大きな点（呼出中は「–」）。 */
 function CurrentLine({
   team,
   isMineSide,
@@ -67,7 +67,7 @@ function CurrentLine({
 }: {
   team: BoardMatch['teamA'];
   isMineSide: boolean;
-  /** null は点が無い（呼出待ち）。 */
+  /** null は点が無い（呼出中）。 */
   score: number | null;
 }) {
   return (

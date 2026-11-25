@@ -73,7 +73,7 @@ describe('overlayPendingScores', () => {
     ]);
   });
 
-  test('呼出待ち（未実施）の試合に押した点も、送れていなければ戻る', () => {
+  test('呼出中（未実施）の試合に押した点も、送れていなければ戻る', () => {
     const result = overlayPendingScores(
       [match({ matchId: 'match-next', status: 'waiting', scores: [] })],
       true,

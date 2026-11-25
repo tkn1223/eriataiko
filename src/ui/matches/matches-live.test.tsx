@@ -244,7 +244,7 @@ describe('他の人の点がその場で映る（結果LIVE と同じ購読・�
     deliverMatch('m-live', { status: 'done', finished_at: '2027-01-01T00:00:00Z' });
 
     expect(court).toHaveTextContent('1/2 ・ 残り1');
-    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出待ち');
+    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出中');
   });
 
   test('始まった試合は LIVE になり、勝ち負けは終了したときに付く', () => {

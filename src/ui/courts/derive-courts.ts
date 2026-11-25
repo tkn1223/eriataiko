@@ -78,7 +78,7 @@ function buildCourt(courtNumber: number, matches: CourtMatch[]): Court {
 
   // 進行中が 2 つ以上あるときは、順番が後の試合が「今の試合」、前の試合が「直し中」。
   // 終了を取り消された試合（reopened）は、1 つだけでも直し中として出す
-  // （今の試合の枠は空け、次の試合を呼出待ちとして残す）。
+  // （今の試合の枠は空け、次の試合を呼出中として残す）。
   // 今の試合以外は、3 つ以上でも黙って消さず、全部直し中として出す。
   const current = lives.filter((match) => !match.reopened).at(-1);
   const fixing = lives.filter((match) => match !== current);

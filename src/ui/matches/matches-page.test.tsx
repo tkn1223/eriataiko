@@ -182,7 +182,7 @@ describe('1a 全コート', () => {
     renderPage();
 
     const chips = screen.getAllByRole('button', {
-      name: /^コート\d (試合中|呼出待ち|全試合終了)$/,
+      name: /^コート\d (試合中|呼出中|全試合終了)$/,
     });
     expect(chips).toHaveLength(2);
   });

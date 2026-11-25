@@ -14,11 +14,11 @@ export type CourtChipItem = { courtNumber: number; status: CourtStatus };
 
 const STATUS_LABELS: Record<CourtStatus, string> = {
   live: '試合中',
-  waiting: '呼出待ち',
+  waiting: '呼出中',
   finished: '全試合終了',
 };
 
-/** 状態の点の色（試合中・呼出待ち・全試合終了）。 */
+/** 状態の点の色（試合中・呼出中・全試合終了）。 */
 const DOT_COLORS: Record<CourtStatus, string> = {
   live: '#22a04b',
   waiting: '#e0a93a',

@@ -95,7 +95,7 @@ describe('deriveCourts', () => {
       expect(court.fixing).toEqual([]);
     });
 
-    test('取り消されたのを見た試合は、1 つだけでも直し中になる。今の試合は空になり、次の試合が呼出待ちに残る', () => {
+    test('取り消されたのを見た試合は、1 つだけでも直し中になる。今の試合は空になり、次の試合が呼出中に残る', () => {
       const [court] = deriveCourts([
         match({ matchId: 'fixed', reopened: true }),
         match({ matchId: 'next', status: 'waiting', orderInCourt: 2 }),

@@ -181,7 +181,7 @@ test.describe('取る', () => {
     await other.context.close();
   });
 
-  test('呼出待ちのコートも、先に「入力を担当する」を押す。最初の 1 点で「試合中」になる', async ({
+  test('呼出中のコートも、先に「入力を担当する」を押す。最初の 1 点で「試合中」になる', async ({
     browser,
   }) => {
     await createMatchesScenario([
@@ -201,7 +201,7 @@ test.describe('取る', () => {
     });
     const mine = await openCourtsAs(browser, MINAMI);
     const card = courtCard(mine.page, LIVE_COURT);
-    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(card.getByText('呼出中')).toBeVisible();
     await expect(plusButton(card, LIVE_A)).toHaveCount(0);
 
     await card.getByRole('button', { name: '入力を担当する' }).click();

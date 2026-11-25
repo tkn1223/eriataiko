@@ -55,7 +55,7 @@ export function RetiredBadge() {
 
 const COURT_STATUS_LABELS: Record<CourtStatus, string> = {
   live: '試合中',
-  waiting: '呼出待ち',
+  waiting: '呼出中',
   finished: '全試合終了',
 };
 
@@ -65,7 +65,7 @@ const COURT_STATUS_CLASSES: Record<CourtStatus, string> = {
   finished: 'bg-[#efede9] text-[#555]',
 };
 
-/** コートの状態の札（試合中・呼出待ち・全試合終了）。試合中だけ緑の点が付く。 */
+/** コートの状態の札（試合中・呼出中・全試合終了）。試合中だけ緑の点が付く。 */
 export function CourtStatusPill({ status, label }: { status: CourtStatus; label?: string }) {
   return (
     <span

@@ -47,7 +47,7 @@ describe('担当を取る', () => {
     });
   });
 
-  test('呼出待ちの試合でも取れる（最初の 1 点の前に、1 試合に 1 回だけ押す）', async () => {
+  test('呼出中の試合でも取れる（最初の 1 点の前に、1 試合に 1 回だけ押す）', async () => {
     const deps = fakeRepository(null, {
       findMatch: vi.fn().mockResolvedValue({ id: 'match-1', status: 'waiting', scorer: null }),
     });

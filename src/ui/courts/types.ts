@@ -75,8 +75,8 @@ export type LiveScore = {
   /** 試合が終わったか。終わったコートは得点を押せなくする。 */
   finished: boolean;
   /**
-   * 1 点でも入ったことがあるか。呼出待ちから入力を始めたコートを、0 対 0 に戻しても
-   * LIVE の見た目のままにするのに使う（入口の側も一度 LIVE にした試合は呼出待ちに戻さない）。
+   * 1 点でも入ったことがあるか。呼出中から入力を始めたコートを、0 対 0 に戻しても
+   * LIVE の見た目のままにするのに使う（入口の側も一度 LIVE にした試合は呼出中に戻さない）。
    * 進行中として読み込んだコートは最初から true。
    */
   started: boolean;
@@ -84,12 +84,12 @@ export type LiveScore = {
 
 export type NextMatch = {
   /**
-   * `matches.id`。呼出待ちのコートで先に枠を出すのに使う
+   * `matches.id`。呼出中のコートで先に枠を出すのに使う
    * （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1）。
    */
   matchId: string;
   classLabel: ClassLabel;
-  /** 例: '予選 1回戦'。呼出待ちの枠を LIVE の見た目に切り替えたときにも使う。 */
+  /** 例: '予選 1回戦'。呼出中の枠を LIVE の見た目に切り替えたときにも使う。 */
   roundLabel: string;
   teamA: CourtTeam;
   teamB: CourtTeam;
@@ -158,7 +158,7 @@ export type ScoreSyncStatus = {
 export type MatchSyncState = ScoreSyncStatus & {
   /**
    * この試合で一度でも 0 対 0 以外の点を押したか（あとで 0 対 0 に戻しても true）。
-   * 呼出待ちから始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
+   * 呼出中から始めた試合を、別の画面から戻ったときも LIVE の見た目に保つのに使う
    * （`LiveScore.started` と同じ決まり）。
    */
   started: boolean;
@@ -245,7 +245,7 @@ export type Court = {
   courtNumber: number;
   /**
    * 今の試合。進行中が 2 つ以上あるときは、順番（`order_in_court`）が後のほう。
-   * 無いコートは「呼出待ち」または「予定なし」になる。
+   * 無いコートは「呼出中」または「予定なし」になる。
    */
   live: LiveMatch | null;
   /** 次の試合。無ければコートに「次」は出さない。 */
@@ -261,7 +261,7 @@ export type Court = {
 
 /**
  * このコートにいま入力できる試合の id。進行中があればその試合、無くて
- * 呼出待ち（選手だけ）なら次の試合。どちらも無ければ null（入力できない）。
+ * 呼出中（選手だけ）なら次の試合。どちらも無ければ null（入力できない）。
  * `use-score-sync.ts` の `sync` に渡す宛先や、`statusByMatchId` を引く鍵に使う。
  */
 export function activeMatchId(court: Court, canInput: boolean): string | null {

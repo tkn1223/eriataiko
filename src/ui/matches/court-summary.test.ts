@@ -21,7 +21,7 @@ describe('summarizeCourt', () => {
     expect(summary.next?.matchId).toBe('c');
   });
 
-  test('試合中が無く未実施だけなら「呼出待ち」。先頭の未実施がいまの試合、その次が次', () => {
+  test('試合中が無く未実施だけなら「呼出中」。先頭の未実施がいまの試合、その次が次', () => {
     const summary = summarizeCourt([
       boardMatch({ matchId: 'a', orderInCourt: 1, status: 'done' }),
       boardMatch({ matchId: 'b', orderInCourt: 2, status: 'waiting' }),
@@ -53,7 +53,7 @@ describe('summarizeCourt', () => {
     expect(summary.current?.matchId).toBe('b');
   });
 
-  test('進み具合の線は試合の数ぶん。終わった・試合中・これからが並び、呼出待ちのいまの試合は別の色', () => {
+  test('進み具合の線は試合の数ぶん。終わった・試合中・これからが並び、呼出中のいまの試合は別の色', () => {
     const live = summarizeCourt([
       boardMatch({ matchId: 'a', orderInCourt: 1, status: 'done' }),
       boardMatch({ matchId: 'b', orderInCourt: 2, status: 'live' }),

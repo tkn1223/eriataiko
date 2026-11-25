@@ -37,7 +37,7 @@ import { FinishConfirmSheet, type FinishConfirmGame } from '@/ui/courts/finish-c
 import { ReopenConfirmSheet } from '@/ui/courts/reopen-confirm-sheet';
 import { previousRowAccess } from '@/ui/courts/previous-access';
 import type { ScorerView } from '@/ui/courts/scorer-view';
-import { defaultShownGame, earlierPlayedGames } from '@/ui/courts/shown-game';
+import { defaultShownGame, earlierPlayedGames, nextGameToOffer } from '@/ui/courts/shown-game';
 import { TakeOverConfirmSheet } from '@/ui/courts/take-over-confirm-sheet';
 import type { FinishSheetControl } from '@/ui/courts/use-finish-sheets';
 
@@ -118,9 +118,9 @@ const CLAIM_RETRYING_MESSAGE = '入力の担当を取れていません・送り
 const RELEASE_RETRYING_MESSAGE = '入力の担当をやめられていません・送り直しています';
 
 /**
- * 呼出待ちの次の試合を、進行中の試合と同じ形にして扱えるようにする。
+ * 呼出中の次の試合を、進行中の試合と同じ形にして扱えるようにする。
  *
- * 呼出待ちのコートにも次の試合の得点の枠を出し、最初の1点で LIVE の見た目に切り替える
+ * 呼出中のコートにも次の試合の得点の枠を出し、最初の1点で LIVE の見た目に切り替える
  * （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1）。
  * 実際の得点はページ側の `liveScore` が持つので、ここでは 0 対 0（枠だけ）にしておく。
  */
@@ -390,7 +390,7 @@ function teamLabel(team: CourtTeam): string {
 
 type StatusTone = 'live' | 'waiting' | 'fixing' | 'finished';
 
-/** 札の地・文字の色。試合中＝緑・呼出待ち＝黄・直し中＝金・終了＝灰で、互いに見分けがつく。 */
+/** 札の地・文字の色。試合中＝緑・呼出中＝黄・直し中＝金・終了＝灰で、互いに見分けがつく。 */
 const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   live: 'bg-status-live text-status-live-ink',
   waiting: 'bg-status-wait text-status-wait-ink',
@@ -398,12 +398,12 @@ const STATUS_TONE_CLASSES: Record<StatusTone, string> = {
   finished: 'bg-gray-100 text-gray-500',
 };
 
-/** カードの右上の状態の札。試合中は「● 試合中」（点つき）、呼出待ちは砂時計の印つき。 */
+/** カードの右上の状態の札。試合中は「● 試合中」（点つき）、呼出中は砂時計の印つき。 */
 function StatusPill({ tone, label, testId }: { tone: StatusTone; label: string; testId?: string }) {
   return (
     <span
       data-testid={testId}
-      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-[11px] py-[5px] text-[13px] font-bold whitespace-nowrap ${STATUS_TONE_CLASSES[tone]}`}
+      className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full px-[11px] py-[2px] text-[13px] font-bold whitespace-nowrap ${STATUS_TONE_CLASSES[tone]}`}
     >
       {tone === 'live' && (
         <span aria-hidden="true" className="bg-status-live-dot size-2 rounded-full" />
@@ -527,7 +527,7 @@ function GameLabelRow({
                 role="tab"
                 aria-selected={selected}
                 onClick={() => onChange(gameNumber)}
-                className={`h-11 min-h-11 min-w-0 rounded-[10px] text-[14px] font-bold ${
+                className={`relative h-[30px] min-w-0 rounded-[10px] text-[14px] font-bold after:absolute after:inset-x-0 after:-inset-y-[7px] after:content-[""] ${
                   selected ? 'tab-on' : 'text-ink-3'
                 }`}
               >
@@ -616,6 +616,89 @@ function useShownGame(matchId: string, scores: GameScore[], maxGameCount: number
   };
 }
 
+/** 担当の下に並べる、黒い［試合終了］（訂正では［もう一度終了する］）と［担当をやめる］。 */
+function FinishAndReleaseButtons({
+  finishLabel,
+  onFinish,
+  onRelease,
+}: {
+  finishLabel: string;
+  onFinish: () => void;
+  onRelease: () => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        type="button"
+        onClick={onFinish}
+        className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+      >
+        <FlagIcon className="size-5" />
+        {finishLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onRelease}
+        className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
+      >
+        <CrossIcon className="size-4" />
+        担当をやめる
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 勝負がついていない複数ゲームの試合で、担当の下に並べるボタン（docs/specs/2026-11-23-next-game-button.md）。
+ *
+ * いちばん目立つのを［試合終了］にしておくと、第1ゲームが終わったところで押して 1-0 のまま
+ * 終わらせる人が出たため、［次のゲームへ進む］を大きく出し、終了は白い「ここで試合終了」に下げる。
+ * 時間切れなどで 1-0 のまま終える道は残す（押したときの流れは［試合終了］と同じ）。
+ * ［次へ］は出すゲームを切り替えるだけで、何も送らない（ゲームが終わった印は表に持たない。2026-09-04）。
+ */
+function NextGameButtons({
+  nextGame,
+  onNextGame,
+  onFinish,
+  onRelease,
+}: {
+  nextGame: number;
+  onNextGame: () => void;
+  onFinish: () => void;
+  onRelease: () => void;
+}) {
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onNextGame}
+        className="btn-end flex h-[52px] min-h-11 items-center justify-center gap-1.5 rounded-xl text-[16.5px] font-extrabold"
+      >
+        {`第${nextGame}ゲームへ進む`}
+        <span aria-hidden="true">›</span>
+      </button>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={onFinish}
+          className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+        >
+          <FlagIcon className="size-4" />
+          ここで試合終了
+        </button>
+        <button
+          type="button"
+          onClick={onRelease}
+          className="btn-quit flex h-11 min-h-11 items-center justify-center gap-2 rounded-xl text-[13.5px] font-bold"
+        >
+          <CrossIcon className="size-3.5" />
+          担当をやめる
+        </button>
+      </div>
+    </>
+  );
+}
+
 /** カードの見た目。自分の試合は金の枠と金みの影（globals.css の `.court-card-mine`）。 */
 function cardSurfaceClasses(isMine: boolean): string {
   return isMine ? 'court-card court-card-mine' : 'court-card';
@@ -647,7 +730,7 @@ function previousAccessOf(
 ) {
   const previous = court.previous;
   if (!previous) return null;
-  // いまそのコートの試合 = 進行中、無ければ次（呼出待ち）。担当が自分かどうかを見る
+  // いまそのコートの試合 = 進行中、無ければ次（呼出中）。担当が自分かどうかを見る
   const current = court.live ?? court.next;
   const lines = previousNoticeLines(previous, fix, canInput);
   return {
@@ -687,7 +770,7 @@ export function CourtLiveCard({
   // 0対0・同点で押したときの案内。押し直す（得点を動かす）まで出したままにする。
   const [notice, setNotice] = useState<string | null>(null);
 
-  // 進行中が無く次の試合があれば、そこにも点の枠を出す（0 対 0・札は「呼出待ち」）。観戦者にも同じ形で見せる
+  // 進行中が無く次の試合があれば、そこにも点の枠を出す（0 対 0・札は「呼出中」）。観戦者にも同じ形で見せる
   // （docs/specs/2026-09-19-save-score-from-courts.md の「決めたこと」1。押せるのは選手の担当だけ）。
   const resolvedLive = court.live ?? (court.next ? nextAsLiveMatch(court.next) : null);
   const { shownGame, chooseGame } = useShownGame(
@@ -715,7 +798,7 @@ export function CourtLiveCard({
     finished: false,
     started: court.live !== null,
   };
-  // 呼出待ちから昇格した試合は、まだ 1 点も入っていない間は「呼出待ち」の見た目のまま。
+  // 呼出中から昇格した試合は、まだ 1 点も入っていない間は「呼出中」の見た目のまま。
   // 最初の 1 点で LIVE に切り替わり、そのあと 0 対 0 に戻しても LIVE のまま
   // （入口側も同じ。src/usecases/save-score.ts）。
   const isPromotedWaiting = !court.live && !started;
@@ -755,10 +838,12 @@ export function CourtLiveCard({
 
   const previousAccess = previousAccessOf(court, canInput, fix, scorerOf);
 
+  const nextGame = nextGameToOffer(scores, live.maxGameCount, shownGame);
+
   const status: { tone: StatusTone; label: string } = finished
     ? { tone: 'finished', label: '終了' }
     : isPromotedWaiting
-      ? { tone: 'waiting', label: '呼出待ち' }
+      ? { tone: 'waiting', label: '呼出中' }
       : { tone: 'live', label: '試合中' };
 
   return (
@@ -825,24 +910,20 @@ export function CourtLiveCard({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleFinishClick}
-              className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <FlagIcon className="size-5" />
-              試合終了
-            </button>
-            <button
-              type="button"
-              onClick={scorer.onRelease}
-              className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <CrossIcon className="size-4" />
-              担当をやめる
-            </button>
-          </div>
+          {nextGame !== null ? (
+            <NextGameButtons
+              nextGame={nextGame}
+              onNextGame={() => chooseGame(nextGame)}
+              onFinish={handleFinishClick}
+              onRelease={scorer.onRelease}
+            />
+          ) : (
+            <FinishAndReleaseButtons
+              finishLabel="試合終了"
+              onFinish={handleFinishClick}
+              onRelease={scorer.onRelease}
+            />
+          )}
 
           <FinishConfirmSheet
             open={finishSheet.open}
@@ -1055,24 +1136,11 @@ function FixingPanel({
             </p>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleFinishClick}
-              className="btn-end flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <FlagIcon className="size-5" />
-              もう一度終了する
-            </button>
-            <button
-              type="button"
-              onClick={scorer.onRelease}
-              className="btn-quit flex h-[46px] min-h-11 items-center justify-center gap-2 rounded-xl text-[14.5px] font-bold"
-            >
-              <CrossIcon className="size-4" />
-              担当をやめる
-            </button>
-          </div>
+          <FinishAndReleaseButtons
+            finishLabel="もう一度終了する"
+            onFinish={handleFinishClick}
+            onRelease={scorer.onRelease}
+          />
 
           <FinishConfirmSheet
             open={finishSheet?.open ?? false}

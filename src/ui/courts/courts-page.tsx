@@ -455,7 +455,7 @@ export function CourtsPage({
     });
   }
 
-  /** そのコートで、いま点を入れられる試合（今の試合、無ければ呼出待ちの次の試合）の id。 */
+  /** そのコートで、いま点を入れられる試合（今の試合、無ければ呼出中の次の試合）の id。 */
   function activeMatchIdOfCourt(courtNumber: number): string | null {
     const court = deriveCourts(liveBoard.get()).find((c) => c.courtNumber === courtNumber);
     return court ? activeMatchId(court, canInput) : null;
@@ -575,7 +575,7 @@ export function CourtsPage({
                   scores: activeMatch.scores,
                   // 終了を送っている間は、終わった見た目にする（記録されたら次の試合に切り替わる）
                   finished: syncStatus?.finishing ?? false,
-                  // 進行中の試合は最初から LIVE。呼出待ちの次の試合は、1 点でも入った（自分が押した・
+                  // 進行中の試合は最初から LIVE。呼出中の次の試合は、1 点でも入った（自分が押した・
                   // 他の人が入れた）時点で LIVE の見た目になり、0 対 0 に戻しても LIVE のまま。
                   started:
                     court.live !== null ||

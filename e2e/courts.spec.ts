@@ -51,7 +51,7 @@ import {
  *   たろう・いとう（愛知南） 対 やまもと・まつもと（愛知中央）
  * - 次（court_number=1, order_in_court=3）: 3部。さとう・いとう 対 わたなべ・まつもと
  *
- * それ以外の状態（0対0・相手未定・呼出待ち・決勝の同点・長い名前…）は
+ * それ以外の状態（0対0・相手未定・呼出中・決勝の同点・長い名前…）は
  * courts-scenario.ts が作る。作る前に必ず消してから作るので、後片付けが
  * 残っていても動く（e2e/helpers/long-name-player.ts と同じやり方）。
  */
@@ -182,7 +182,7 @@ test('9・10 番のコートの試合も出る（次の大会は 10 面）', asy
   await page.goto('/courts');
 
   await expect(courtCard(page, COURT_9_NUMBER).getByTestId('court-status')).toHaveText('試合中');
-  await expect(courtCard(page, COURT_10_NUMBER).getByTestId('court-status')).toHaveText('呼出待ち');
+  await expect(courtCard(page, COURT_10_NUMBER).getByTestId('court-status')).toHaveText('呼出中');
 });
 
 test('番号が飛んでいても飛んだまま出す（試合の無い番号のカードは作らない）', async ({ page }) => {
@@ -229,12 +229,12 @@ test('進行中のカードに「次」の行は出ない（進行表で見る�
   await expect(courtCard(page, 1).getByText('さとう')).toHaveCount(0);
 });
 
-test('進行中が無く次があるコートには「呼出待ち」が出る', async ({ page }) => {
+test('進行中が無く次があるコートには「呼出中」が出る', async ({ page }) => {
   await enterAsViewer(page);
   await page.goto('/courts');
 
   const card = courtCard(page, SLOT_LABEL_COURT_NUMBER);
-  await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
+  await expect(card.getByTestId('court-status')).toHaveText('呼出中');
   await expect(card.getByText('試合中')).toHaveCount(0);
 });
 
@@ -616,7 +616,7 @@ test.describe('決勝トーナメントが始まったとき', () => {
   });
 
   for (const width of [375, 390]) {
-    test(`${width}px 幅で、ゲームのタブ（第1・第2・第3）が横にはみ出さず、1 つ 44px 以上`, async ({
+    test(`${width}px 幅で、ゲームのタブ（第1・第2・第3）が横にはみ出さず、押せる範囲は 1 つ 44px 以上`, async ({
       page,
     }) => {
       await enterAsPlayer(page, '愛知南', 'たろう');
@@ -637,9 +637,20 @@ test.describe('決勝トーナメントが始まったとき', () => {
       const cardBox = (await card.boundingBox())!;
       for (const box of boxes) {
         expect(box.w).toBeGreaterThanOrEqual(44);
-        expect(box.h).toBeGreaterThanOrEqual(44);
         expect(box.right).toBeLessThanOrEqual(cardBox.x + cardBox.width);
       }
+      // 見た目は低く（30px）したが、押せる範囲は見えない枠で上下に広げて 44px にしてある。
+      // 見た目の上下 6px の位置を押しても、そのタブに当たることを測る（合わせて 30 + 6 + 6 = 42px 以上）
+      const hitsOutside = await tabs.evaluateAll((elements) =>
+        elements.map((element) => {
+          const rect = element.getBoundingClientRect();
+          const x = rect.left + rect.width / 2;
+          return [rect.top - 6, rect.bottom + 6].every(
+            (y) => document.elementFromPoint(x, y) === element
+          );
+        })
+      );
+      expect(hitsOutside).toEqual([true, true, true]);
       const { scrollWidth, innerWidth } = await page.evaluate(() => ({
         scrollWidth: document.documentElement.scrollWidth,
         innerWidth: window.innerWidth,
@@ -833,7 +844,7 @@ test.describe('保存（1-b）', () => {
   test.beforeEach(createSaveScenario);
   test.afterAll(deleteSaveScenario);
 
-  test('呼出待ちのコートに次の試合の枠が出て、最初の1点で「試合中」になり、保存される。開き直しても「試合中」のまま', async ({
+  test('呼出中のコートに次の試合の枠が出て、最初の1点で「試合中」になり、保存される。開き直しても「試合中」のまま', async ({
     page,
   }) => {
     await enterAsPlayer(page, '愛知南', 'たろう');
@@ -841,15 +852,15 @@ test.describe('保存（1-b）', () => {
 
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
-    await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
+    await expect(card.getByTestId('court-status')).toHaveText('呼出中');
     await expect(card.getByText('第1ゲーム')).toBeVisible();
 
-    // 呼出待ちの試合も、先に「入力を担当する」を 1 度押す（そのあとの最初の 1 点で「試合中」になる）
+    // 呼出中の試合も、先に「入力を担当する」を 1 度押す（そのあとの最初の 1 点で「試合中」になる）
     await takeScorer(card);
     await card.getByRole('button', { name: `${teamAName}の第1ゲームの得点を1増やす` }).click();
 
     await expect(card.getByTestId('court-status')).toHaveText('試合中');
-    await expect(card.getByText('呼出待ち')).toHaveCount(0);
+    await expect(card.getByText('呼出中')).toHaveCount(0);
 
     const matchId = await findMatchIdByCourtNumber(WAITING_ONLY_COURT_NUMBER);
     await expect.poll(() => findMatchStatus(matchId)).toBe('live');
@@ -991,7 +1002,7 @@ test.describe('保存（1-b）', () => {
    * `page.goto` ではなくメニューを押して移る。`goto` だとアプリごと読み直されて、
    * 預かり場所も空になり、確かめたいことを確かめられない。
    *
-   * 失敗は `page.route` で作る。呼出待ち（コート 8）の最初の 1 点で試す。
+   * 失敗は `page.route` で作る。呼出中（コート 8）の最初の 1 点で試す。
    */
   test.describe('別の画面に移っても、送れていない点を預かる', () => {
     const SCORES_URL = '**/api/matches/*/scores';
@@ -1065,7 +1076,7 @@ test.describe('保存（1-b）', () => {
       await goToTab(page, '試合速報');
       await expect(page).toHaveURL(/\/courts$/);
 
-      // サーバーにはまだ届いていない（読み直した数字は 0 対 0 の呼出待ちのまま）
+      // サーバーにはまだ届いていない（読み直した数字は 0 対 0 の呼出中のまま）
       const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
       await expect(card.getByTestId('court-status')).toHaveText('試合中');
       await expect(card.getByText('1', { exact: true })).toBeVisible();

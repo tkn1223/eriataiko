@@ -26,6 +26,7 @@ type FakeChannel = {
   handle: unknown;
   bindings: { event: string; table: string; callback: (payload: { new: unknown }) => void }[];
   status: ((status: string) => void) | null;
+  system: ((payload: unknown) => void) | null;
 };
 const fake = vi.hoisted(() => ({
   channels: [] as FakeChannel[],
@@ -34,15 +35,23 @@ const fake = vi.hoisted(() => ({
 vi.mock('@/db/client', () => ({
   getSupabaseBrowserClient: () => ({
     channel(name: string) {
-      const record: FakeChannel = { name, handle: null, bindings: [], status: null };
+      const record: FakeChannel = { name, handle: null, bindings: [], status: null, system: null };
       fake.channels.push(record);
       const channel = {
         on(
-          _type: string,
-          filter: { event: string; table: string },
-          callback: FakeChannel['bindings'][number]['callback']
+          type: string,
+          filter: { event?: string; table?: string },
+          callback: (payload: never) => void
         ) {
-          record.bindings.push({ event: filter.event, table: filter.table, callback });
+          if (type === 'system') {
+            record.system = callback as (payload: unknown) => void;
+          } else {
+            record.bindings.push({
+              event: filter.event ?? '',
+              table: filter.table ?? '',
+              callback: callback as FakeChannel['bindings'][number]['callback'],
+            });
+          }
           return channel;
         },
         subscribe(callback: (status: string) => void) {
@@ -63,8 +72,18 @@ function currentChannel(): FakeChannel {
   return channel;
 }
 
+/**
+ * 本物は SUBSCRIBED のあとに、データベースの変化の購読が整った知らせ（system ok）が別に届く。
+ * 「つながった」は後者なので、SUBSCRIBED を流すときは続けて system ok も流す。
+ */
 function setStatus(status: string) {
-  act(() => currentChannel().status?.(status));
+  act(() => {
+    const channel = currentChannel();
+    channel.status?.(status);
+    if (status === 'SUBSCRIBED') {
+      channel.system?.({ status: 'ok', extension: 'postgres_changes' });
+    }
+  });
 }
 
 /** 購読に、他の人が起こした変化を届ける（Supabase から届く行の形そのまま）。 */
@@ -225,7 +244,7 @@ describe('他の人の点がその場で映る（結果LIVE と同じ購読・�
     deliverMatch('m-live', { status: 'done', finished_at: '2027-01-01T00:00:00Z' });
 
     expect(court).toHaveTextContent('1/2 ・ 残り1');
-    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出待ち');
+    expect(screen.getByTestId('court-status')).toHaveTextContent('呼出中');
   });
 
   test('始まった試合は LIVE になり、勝ち負けは終了したときに付く', () => {

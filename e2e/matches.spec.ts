@@ -214,7 +214,7 @@ function courtCard(page: Page, courtNumber: number) {
 /** コート札（1a の上の列・1b の上の列）。カードの押す部分と取り違えないよう、名前の末尾が状態のものだけ。 */
 function courtChip(page: Page, courtNumber: number) {
   return page.getByRole('button', {
-    name: new RegExp(`^コート${courtNumber} (試合中|呼出待ち|全試合終了)$`),
+    name: new RegExp(`^コート${courtNumber} (試合中|呼出中|全試合終了)$`),
   });
 }
 
@@ -286,8 +286,8 @@ test.describe('1a 全コート', () => {
     await expect(card.getByText('5', { exact: true })).toBeVisible();
     await expect(card.getByText('3', { exact: true })).toBeVisible();
     await expect(card).toContainText(`${NEXT_A.join('・')} vs ${NEXT_B.join('・')}`);
-    // 呼出待ちのコートは「–」と次の試合
-    await expect(courtCard(page, WAIT_9_COURT)).toContainText('呼出待ち');
+    // 呼出中のコートは「–」と次の試合
+    await expect(courtCard(page, WAIT_9_COURT)).toContainText('呼出中');
     await expect(courtCard(page, WAIT_9_COURT)).toContainText(WAIT_9_A.join('・'));
   });
 
@@ -660,7 +660,7 @@ test.describe('試合速報 の操作が、別のブラウザの進行表にそ�
     await expect(watcher.page.getByTestId('court-matches')).toContainText('2/3 ・ 残り1', {
       timeout: 5000,
     });
-    await expect(watcher.page.getByTestId('court-status')).toContainText('呼出待ち');
+    await expect(watcher.page.getByTestId('court-status')).toContainText('呼出中');
     // 勝った側（A 側）はそのまま、負けた側（B 側）の名前が薄くなる
     await expect(
       row(watcher.page, 'live').getByText(LIVE_B.join('・'), { exact: true })

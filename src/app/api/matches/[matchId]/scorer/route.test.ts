@@ -149,7 +149,7 @@ describe('担当を取る', () => {
     ]);
   });
 
-  test('呼出待ちの試合でも取れる', async () => {
+  test('呼出中の試合でも取れる', async () => {
     enterAs(fixture.people.minamiTaro.session);
     const matchId = await fixture.makeMatch('waiting');
 

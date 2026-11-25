@@ -185,11 +185,11 @@ describe('得点板のカード', () => {
     expect(screen.getByTestId('court-status')).toHaveTextContent('試合中');
   });
 
-  test('呼出待ちのコートは、次の試合を 0 対 0 で出し、札は「呼出待ち」になる（選手にも観戦者にも同じ形）', () => {
+  test('呼出中のコートは、次の試合を 0 対 0 で出し、札は「呼出中」になる（選手にも観戦者にも同じ形）', () => {
     for (const canInput of [true, false]) {
       const { unmount } = renderCard({ court: { next }, canInput });
 
-      expect(screen.getByTestId('court-status')).toHaveTextContent('呼出待ち');
+      expect(screen.getByTestId('court-status')).toHaveTextContent('呼出中');
       expect(within(screen.getByTestId('team-panel-A')).getByText('愛知北')).toBeInTheDocument();
       expect(within(screen.getByTestId('team-panel-A')).getByText('0')).toBeInTheDocument();
       expect(within(screen.getByTestId('team-panel-B')).getByText('0')).toBeInTheDocument();
@@ -381,8 +381,8 @@ describe('1つ前の［訂正］を出す相手', () => {
     ).toBeInTheDocument();
   });
 
-  test('進行中が無く呼出待ちの次の試合があるコートでは、その次の試合の担当（自分）に出る', () => {
-    // 前の試合が終わった直後は、次の試合が「呼出待ち」のまま担当を取る。その人が
+  test('進行中が無く呼出中の次の試合があるコートでは、その次の試合の担当（自分）に出る', () => {
+    // 前の試合が終わった直後は、次の試合が「呼出中」のまま担当を取る。その人が
     // いまのコートの担当なので、1つ前の押し間違いを直せるようにしておく
     renderCard({ court: { next, previous }, scorer: scorerControl({ kind: 'mine' }) });
 

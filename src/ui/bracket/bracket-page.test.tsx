@@ -1,5 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, test } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { describe, expect, test, vi } from 'vitest';
+import { NavbarSubtitleSetterContext } from '@/ui/navbar-subtitle';
 import { BracketPage } from '@/ui/bracket/bracket-page';
 import type {
   KoBracketData,
@@ -93,22 +95,91 @@ const koData: KoBracketData = {
   champion: { decided: false },
 };
 
-function renderPage(overrides: { truncated?: boolean; koBracket?: KoBracketView } = {}) {
-  return render(
-    <BracketPage
-      teams={teams}
-      leagueCards={leagueCards}
-      standings={standings}
-      koBracket={overrides.koBracket ?? { kind: 'ready', data: koData }}
-      truncated={overrides.truncated ?? false}
-    />
+function renderPage(
+  overrides: { truncated?: boolean; koBracket?: KoBracketView; cards?: LeagueCard[] } = {}
+) {
+  // 上の帯は外枠が持っているので、差し込まれた中身を受け取って、あとで描いて確かめる
+  const setSubtitle = vi.fn<(content: ReactNode) => void>();
+  const view = render(
+    <NavbarSubtitleSetterContext.Provider value={setSubtitle}>
+      <BracketPage
+        teams={teams}
+        leagueCards={overrides.cards ?? leagueCards}
+        standings={standings}
+        koBracket={overrides.koBracket ?? { kind: 'ready', data: koData }}
+        truncated={overrides.truncated ?? false}
+      />
+    </NavbarSubtitleSetterContext.Provider>
   );
+  /** 帯に最後に差し込まれた中身の文字。 */
+  const subtitleText = () => {
+    const content = setSubtitle.mock.calls.findLast(([value]) => value !== null)?.[0];
+    return render(<>{content}</>).container.textContent;
+  };
+  return { ...view, subtitleText };
 }
 
 describe('BracketPage', () => {
-  test('見出し「対戦表」が出る', () => {
+  test('上の帯の小見出しに「対戦表 ・ 予選リーグ <終了>/<全部> 対戦終了」が、渡された対戦の数どおりに出る', () => {
+    const { subtitleText } = renderPage({
+      cards: [
+        { ...leagueCards[0], id: 'a', status: 'done' },
+        { ...leagueCards[0], id: 'b', status: 'live' },
+        { ...leagueCards[0], id: 'c', status: 'waiting' },
+      ],
+    });
+
+    expect(subtitleText()).toBe('対戦表 ・ 予選リーグ 1/3 対戦終了');
+  });
+
+  test('予選の対戦が 0 件のときは、小見出しは「対戦表」だけ', () => {
+    const { subtitleText } = renderPage({ cards: [] });
+
+    expect(subtitleText()).toBe('対戦表');
+  });
+
+  test('本文に大きな「対戦表」の見出しは無い', () => {
     renderPage();
-    expect(screen.getByText('対戦表')).toBeInTheDocument();
+
+    expect(screen.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
+    expect(screen.queryByText('対戦表')).not.toBeInTheDocument();
+  });
+
+  test('本文の余白は進行表と同じ（横 px-3、上 pt-3）', () => {
+    const { container } = renderPage();
+
+    expect(container.firstElementChild).toHaveClass('px-3', 'pt-3');
+  });
+
+  test('チームに入っている人には、星取表カードの右上に「自分：愛知中央」の札が出る', () => {
+    renderPage();
+
+    const card = screen.getByRole('heading', { name: '星取表' }).closest('section');
+    expect(card).not.toBeNull();
+    expect(within(card as HTMLElement).getByText('自分：愛知中央')).toBeInTheDocument();
+  });
+
+  test('観戦者（自分のチームが無い）には、その札が出ない', () => {
+    render(
+      <BracketPage
+        teams={teams}
+        leagueCards={leagueCards}
+        standings={standings.map((row) => ({ ...row, isSelf: false }))}
+        koBracket={{ kind: 'ready', data: koData }}
+        truncated={false}
+      />
+    );
+
+    expect(screen.queryByText(/自分：/)).not.toBeInTheDocument();
+  });
+
+  test('「星取表に戻る」でも、詳細が閉じる', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '愛知南 対 愛知中央 の対戦' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '星取表に戻る' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   test('「予選リーグ」「決勝トーナメント」の切り替えが出て、押すと中身が入れ替わる', () => {
@@ -135,7 +206,8 @@ describe('BracketPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '愛知南 対 愛知中央 の対戦' }));
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
-    expect(screen.getByText('予選リーグ：愛知南 2-1 愛知中央')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '予選リーグ・対戦詳細' })).toBeInTheDocument();
+    expect(screen.getByText('○ 愛知南の勝利')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /閉じる/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

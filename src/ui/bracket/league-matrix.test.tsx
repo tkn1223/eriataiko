@@ -22,12 +22,19 @@ const cards: LeagueCard[] = [
 ];
 
 function renderMatrix(
-  overrides: { cards?: LeagueCard[]; onSelectCard?: (card: LeagueCard) => void } = {}
+  overrides: {
+    cards?: LeagueCard[];
+    onSelectCard?: (card: LeagueCard) => void;
+    selfTeamNumber?: number;
+    selfTeamName?: string;
+  } = {}
 ) {
   return render(
     <LeagueMatrix
       teams={teams}
       cards={overrides.cards ?? cards}
+      selfTeamNumber={overrides.selfTeamNumber}
+      selfTeamName={overrides.selfTeamName}
       onSelectCard={overrides.onSelectCard ?? (() => {})}
     />
   );
@@ -96,12 +103,57 @@ describe('LeagueMatrix', () => {
     expect(waitingCell).not.toHaveTextContent(/\d+-\d+/);
   });
 
-  test('星取表の下に「○＝カード勝利、△＝引き分け…」の注記が出る', () => {
+  test('星取表のカードに「対戦中」「対戦終了」の数の文字は出ない', () => {
+    renderMatrix();
+
+    expect(screen.getByRole('heading', { name: '星取表' })).toBeInTheDocument();
+    expect(screen.queryByText(/対戦中|対戦終了/)).not.toBeInTheDocument();
+  });
+
+  test('チームに入っている人には、右上に「自分：<チーム名>」の札が出る。観戦者には出ない', () => {
+    const { unmount } = renderMatrix({ selfTeamNumber: 2, selfTeamName: teams[1].name });
+    expect(screen.getByText(`自分：${teams[1].name}`)).toBeInTheDocument();
+    unmount();
+
+    renderMatrix();
+    expect(screen.queryByText(/自分：/)).not.toBeInTheDocument();
+  });
+
+  test('見出しの下に説明の 1 行が出る', () => {
     renderMatrix();
 
     expect(
-      screen.getByText('○＝カード勝利、△＝引き分け（数字はカード内の勝ち試合数）。タップで詳細。')
+      screen.getByText('左のチームから見た結果です。マスを押すと中身が見られます。')
     ).toBeInTheDocument();
+  });
+
+  test('表の下に凡例「○ 勝ち ● 負け △ 引き分け 未 未実施」と「数字は、対戦内の勝ち試合数です。」が出る', () => {
+    renderMatrix();
+
+    expect(screen.getByText('○ 勝ち ● 負け △ 引き分け 未 未実施')).toBeInTheDocument();
+    expect(screen.getByText('数字は、対戦内の勝ち試合数です。')).toBeInTheDocument();
+  });
+
+  test('自分のチームの行の見出しにだけ「自分」が出る', () => {
+    renderMatrix({ selfTeamNumber: 1 });
+
+    expect(screen.getAllByText('自分')).toHaveLength(1);
+    const selfRow = screen.getByRole('rowheader', { name: /愛知南/ });
+    expect(selfRow).toHaveTextContent('自分');
+    expect(screen.getByRole('rowheader', { name: /愛知中央/ })).not.toHaveTextContent('自分');
+  });
+
+  test('自分のチームが無い（観戦者・チームなし）ときは「自分」がどこにも出ない', () => {
+    renderMatrix();
+
+    expect(screen.queryByText('自分')).not.toBeInTheDocument();
+  });
+
+  test('読み上げ用の言葉（勝ち / 負け）が、○ と ● に付いている', () => {
+    renderMatrix();
+
+    expect(screen.getAllByRole('img', { name: '勝ち' })).toHaveLength(1);
+    expect(screen.getAllByRole('img', { name: '負け' })).toHaveLength(1);
   });
 
   test('マスを押すと、そのカードを渡して onSelectCard が呼ばれる', () => {

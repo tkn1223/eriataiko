@@ -28,7 +28,7 @@ describe('CourtChipStrip', () => {
     render(<CourtChipStrip courts={courts} onSelect={vi.fn()} />);
 
     expect(screen.getByRole('button', { name: 'コート1 試合中' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'コート2 呼出待ち' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'コート2 呼出中' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'コート3 全試合終了' })).toBeInTheDocument();
   });
 

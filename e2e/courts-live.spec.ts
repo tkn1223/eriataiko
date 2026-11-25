@@ -333,7 +333,7 @@ test.describe('開いてから購読がつながるまでの間の変化', () =>
     letConnect();
 
     await expect(card.getByTestId('court-status')).not.toHaveText('試合中', { timeout: 15_000 });
-    await expect(card.getByText('呼出待ち')).toBeVisible();
+    await expect(card.getByText('呼出中')).toBeVisible();
     await expect(page.getByTestId(`previous-match-${LIVE_COURT}`)).toContainText('5-3');
 
     await context.close();
@@ -470,7 +470,7 @@ test.describe('試合の終了', () => {
     // ほかの人が、その試合を終了した
     await finishMatchDirectly(matchIds.live);
 
-    await expect(card.getByTestId('court-status')).toHaveText('呼出待ち', { timeout: 5000 });
+    await expect(card.getByTestId('court-status')).toHaveText('呼出中', { timeout: 5000 });
     // 次の試合（金子・銀林 vs 銅谷・鉄井）の確認画面が開いたままになっていない
     await expect(dialog).toHaveCount(0);
 
@@ -509,7 +509,7 @@ test.describe('試合の終了', () => {
     await expect(cardOnSecond.getByTestId('court-status')).not.toHaveText('試合中', {
       timeout: 5000,
     });
-    await expect(cardOnSecond.getByText('呼出待ち')).toBeVisible();
+    await expect(cardOnSecond.getByText('呼出中')).toBeVisible();
     await expect(cardOnSecond.getByTestId('team-panel-A')).toContainText(NEXT_A[0]);
     // 切り替わりは、届いた行を当てただけ（画面全体は読み直さない）
     expect(second.refreshes.count).toBe(0);
@@ -780,7 +780,7 @@ test.describe('1つ前と訂正', () => {
     await viewer.context.close();
   });
 
-  test('試合を終了すると、そのコートの1つ前に移り、「訂正」で戻せる（次の試合は呼出待ちに残る）', async ({
+  test('試合を終了すると、そのコートの1つ前に移り、「訂正」で戻せる（次の試合は呼出中に残る）', async ({
     browser,
   }) => {
     const context = await browser.newContext();
@@ -794,7 +794,7 @@ test.describe('1つ前と訂正', () => {
 
     const card = courtCard(page, LIVE_COURT);
     const row = page.getByTestId(`previous-match-${LIVE_COURT}`);
-    await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
+    await expect(card.getByTestId('court-status')).toHaveText('呼出中');
     // 終わった試合の入力担当（この人）には、試合に出ていなくても、次の試合の担当でなくても、1 つ前が出る
     await expect(row).toContainText('5-3');
 
@@ -803,8 +803,8 @@ test.describe('1つ前と訂正', () => {
 
     await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('live');
     await expect(page.getByTestId(`fixing-match-${LIVE_COURT}`).getByText('直し中')).toBeVisible();
-    // 次の試合は呼出待ちのまま
-    await expect(card.getByTestId('court-status')).toHaveText('呼出待ち');
+    // 次の試合は呼出中のまま
+    await expect(card.getByTestId('court-status')).toHaveText('呼出中');
 
     await context.close();
   });
@@ -826,6 +826,68 @@ test.describe('1つ前と訂正', () => {
     await courtCard(page, LIVE_COURT).getByRole('button', { name: '試合終了' }).click();
     await page.getByRole('button', { name: 'OK' }).click();
     await expect.poll(async () => (await findMatchResult(matchIds.live))?.status).toBe('done');
+  }
+
+  // 「次のゲームへ進む」（docs/specs/2026-11-23-next-game-button.md）。long-live は上限 3 ゲームで第1ゲーム 10-8
+  for (const width of [375, 390]) {
+    test(`${width}px 幅で、「第2ゲームへ進む」「ここで試合終了」「担当をやめる」がカードからはみ出さず高さ 44px 以上。押すとタブが第2に切り替わり、点を送る通信は起きない`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport: { width, height: 844 } });
+      const page = await context.newPage();
+      await enterAsPlayer(page, '愛知南', 'たろう');
+      await page.goto('/courts');
+      const card = courtCard(page, LONG_COURT);
+      await takeScorer(card);
+
+      const next = card.getByRole('button', { name: '第2ゲームへ進む' });
+      const finishHere = card.getByRole('button', { name: 'ここで試合終了' });
+      const release = card.getByRole('button', { name: '担当をやめる' });
+      await expect(next).toBeVisible();
+      await expect(finishHere).toBeVisible();
+      await expect(release).toBeVisible();
+      await expect(card.getByRole('button', { name: '試合終了', exact: true })).toHaveCount(0);
+
+      const cardBox = (await card.boundingBox())!;
+      for (const [label, button] of [
+        ['次へ', next],
+        ['ここで試合終了', finishHere],
+        ['担当をやめる', release],
+      ] as const) {
+        const box = (await button.boundingBox())!;
+        expect(box.height, `${label} の高さ`).toBeGreaterThanOrEqual(44);
+        expect(box.x, `${label} の左`).toBeGreaterThanOrEqual(cardBox.x);
+        expect(box.x + box.width, `${label} の右`).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+      }
+      expect((await next.boundingBox())!.height).toBeGreaterThanOrEqual(52);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+        '横にはみ出さない'
+      ).toBe(width);
+
+      const writes: string[] = [];
+      page.on('request', (request) => {
+        if (request.method() !== 'GET' && new URL(request.url()).pathname.startsWith('/api/')) {
+          writes.push(`${request.method()} ${new URL(request.url()).pathname}`);
+        }
+      });
+      await next.click();
+      await expect(card.getByRole('tab', { name: '第2', exact: true })).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      await expect(card.getByText('第2ゲーム', { exact: true })).toBeVisible();
+      // 第2ゲームはまだ点が無いので、ほかのゲームへ進むボタンは第3ゲーム
+      await expect(card.getByRole('button', { name: '第3ゲームへ進む' })).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(writes).toEqual([]);
+
+      // 「ここで試合終了」は今の「試合終了」と同じ確認画面を開く（ここでは終了しない）
+      await finishHere.click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.getByRole('button', { name: '戻る' }).click();
+      await context.close();
+    });
   }
 
   for (const width of [375, 390]) {
@@ -959,9 +1021,9 @@ test.describe('棄権で終了する', () => {
     await expect(previousRow(mine.page).getByText(/勝ち:/)).toContainText(LIVE_B.join('・'));
     await expect(previousRow(mine.page).getByText(RETIRED_NOTE)).toBeVisible();
     // 他のブラウザにも、その場で映る（開き直さない）。観戦者に 1 つ前の行は出ないので、
-    // 試合が終わって次の試合の呼出待ちに切り替わったことで見る
+    // 試合が終わって次の試合の呼出中に切り替わったことで見る
     await expect(courtCard(viewer.page, LIVE_COURT).getByTestId('court-status')).toHaveText(
-      '呼出待ち',
+      '呼出中',
       { timeout: 5000 }
     );
     await expect(previousRow(viewer.page)).toHaveCount(0);

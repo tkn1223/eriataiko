@@ -32,7 +32,7 @@ function matchOf(matchId: string, status: CourtMatch['status']): CourtMatch {
 }
 
 describe('closeSheetsOfEndedMatches', () => {
-  test('終わった試合の確認画面は閉じる。進行中・呼出待ちの試合のものは残す', () => {
+  test('終わった試合の確認画面は閉じる。進行中・呼出中の試合のものは残す', () => {
     const sheets = {
       done: { retiredSide: null },
       live: { retiredSide: 'A' as const },

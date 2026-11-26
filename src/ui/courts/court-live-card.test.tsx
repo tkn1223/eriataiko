@@ -301,6 +301,17 @@ describe('CourtLiveCard', () => {
     expect(within(screen.getByTestId('team-panel-A')).getByText('10')).toBeInTheDocument();
   });
 
+  test('予選リーグのような 1 ゲームだけの試合では「第1ゲーム」の見出しを出さない（決勝トーナメントだけに出す）', () => {
+    renderLiveCard({
+      live: { ...baseLive, maxGameCount: 1 },
+      scores: [{ gameNumber: 1, sideAScore: 2, sideBScore: 0 }],
+    });
+
+    expect(screen.queryByText('第1ゲーム')).not.toBeInTheDocument();
+    // 点の枠はいつもどおり出る
+    expect(within(screen.getByTestId('team-panel-A')).getByText('2')).toBeInTheDocument();
+  });
+
   test('上限ゲーム数が複数でも、いま入れている 1 ゲームだけが「第Nゲーム」として出る', () => {
     renderLiveCard({
       live: { ...baseLive, maxGameCount: 3 },
@@ -1108,7 +1119,8 @@ describe('直し中と1つ前', () => {
       const panel = screen.getByTestId('fixing-match-3');
       expect(within(panel).getByText('直し中')).toBeInTheDocument();
       expect(within(panel).getByText('1部')).toBeInTheDocument();
-      expect(within(panel).getByText('第1ゲーム')).toBeInTheDocument();
+      // 1 ゲームだけの試合なので「第1ゲーム」の見出しは出ない（決勝トーナメントだけに出す）
+      expect(within(panel).queryByText('第1ゲーム')).not.toBeInTheDocument();
       expect(within(panel).getByText('15')).toBeInTheDocument();
       expect(within(panel).getByText('21')).toBeInTheDocument();
     });

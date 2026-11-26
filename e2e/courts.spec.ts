@@ -213,7 +213,8 @@ test('枠の数がmax_game_countどおりで、保存済みの得点が枠に入
 
   // seed の得点は手元で押すと変わるので、テスト用に作った試合（1 ゲームだけ・得点つき）で見る
   const card = courtCard(page, COURT_9_NUMBER);
-  await expect(card.getByText('第1ゲーム')).toBeVisible();
+  // 1 ゲームだけの試合（予選リーグ）なので「第1ゲーム」の見出しは出さない
+  await expect(card.getByText('第1ゲーム')).toHaveCount(0);
   await expect(card.getByText('第2ゲーム')).toHaveCount(0);
   await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideA), { exact: true })).toBeVisible();
   await expect(card.getByText(String(COURT_9_SAVED_SCORE.sideB), { exact: true })).toBeVisible();
@@ -853,7 +854,6 @@ test.describe('保存（1-b）', () => {
     const card = courtCard(page, WAITING_ONLY_COURT_NUMBER);
     const teamAName = WAITING_ONLY_TEAM_A_NAMES.join('・');
     await expect(card.getByTestId('court-status')).toHaveText('呼出中');
-    await expect(card.getByText('第1ゲーム')).toBeVisible();
 
     // 呼出中の試合も、先に「入力を担当する」を 1 度押す（そのあとの最初の 1 点で「試合中」になる）
     await takeScorer(card);
@@ -1214,4 +1214,38 @@ test.describe('保存（1-b）', () => {
       expect(scrollWidth).toBe(innerWidth);
     });
   }
+});
+
+test('どのコートのカードも「コートN」が真ん中で、部の札は右端の状態の札の真上・中心に出る', async ({
+  page,
+}) => {
+  await enterAsViewer(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/courts');
+
+  const cards = page.locator('[data-testid^="court-card-"]');
+  await expect(cards.first()).toBeVisible();
+  let checked = 0;
+  for (const card of await cards.all()) {
+    const chip = card.getByText(/^\d部$/).first();
+    if ((await chip.count()) === 0) continue; // 試合が無いコートには部の札が無い
+    const cardBox = (await card.boundingBox())!;
+    const nameBox = (await card
+      .getByText(/^コート\d+$/)
+      .first()
+      .boundingBox())!;
+    const chipBox = (await chip.boundingBox())!;
+    const statusBox = (await card.getByTestId('court-status').boundingBox())!;
+    const centerX = (box: { x: number; width: number }) => box.x + box.width / 2;
+
+    // 名前はカードの真ん中
+    expect(Math.abs(centerX(nameBox) - centerX(cardBox))).toBeLessThanOrEqual(2);
+    // 部の札は状態の札の上で、中心がそろう
+    expect(chipBox.y + chipBox.height).toBeLessThanOrEqual(statusBox.y + 1);
+    expect(Math.abs(centerX(chipBox) - centerX(statusBox))).toBeLessThanOrEqual(2);
+    // 状態の札は右端（名前より右）
+    expect(statusBox.x).toBeGreaterThan(nameBox.x + nameBox.width);
+    checked += 1;
+  }
+  expect(checked).toBeGreaterThan(0);
 });

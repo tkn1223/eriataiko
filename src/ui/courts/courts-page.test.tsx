@@ -625,7 +625,6 @@ describe('CourtsPage', () => {
       const card = screen.getByTestId('court-card-7');
 
       expect(screen.getByText('呼出中')).toBeInTheDocument();
-      expect(within(card).getByText('第1ゲーム')).toBeInTheDocument();
       expect(
         within(card).getByRole('button', { name: '斉藤・坂本の第1ゲームの得点を1増やす' })
       ).toBeInTheDocument();
@@ -1521,7 +1520,6 @@ describe('CourtsPage', () => {
       expect(calls()).toEqual(['DELETE /api/matches/match-prev/result']);
       const panel = screen.getByTestId('fixing-match-1');
       expect(within(panel).getByText('山本', { exact: false })).toBeInTheDocument();
-      expect(within(panel).getByText('第1ゲーム')).toBeInTheDocument();
       expect(within(panel).getByText('21')).toBeInTheDocument();
       expect(screen.queryByTestId('previous-match-1')).not.toBeInTheDocument();
       expect(refresh).not.toHaveBeenCalled();

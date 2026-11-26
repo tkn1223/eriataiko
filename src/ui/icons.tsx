@@ -164,45 +164,100 @@ export function LiveIcon({ className }: IconProps) {
   );
 }
 
-export function CalendarIcon({ className }: IconProps) {
+/*
+ * 下のメニューの印 4 つ（2026-11-26 yosuke さんの見本の絵を写したもの）。
+ * 線の太さ・角の丸めをそろえ、色は文字の色に従う（開いている項目は金、ほかは灰色。色は bottom-nav 側）。
+ */
+const NAV_STROKE = {
+  stroke: 'currentColor',
+  strokeWidth: 1.7,
+  strokeLinecap: 'round',
+  strokeLinejoin: 'round',
+} as const;
+
+/** まっすぐ立てたシャトルの線画（羽根の先 3 つの丸み・羽根の筋 2 本・丸いコルク）。傾けて使う。 */
+function ShuttleOutline() {
   return (
-    <Svg className={className}>
-      <rect x="4" y="5" width="16" height="15" rx="2.5" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M4 10h16M8 3v4M16 3v4"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8 13.5h2M12 13.5h2M16 13.5h0M8 16.5h2M12 16.5h2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </Svg>
+    <>
+      <path d="M9.4 16 L5.6 6.2 A2.135 2.135 0 0 1 9.87 6.2 A2.135 2.135 0 0 1 14.13 6.2 A2.135 2.135 0 0 1 18.4 6.2 L14.6 16 Z" />
+      <path d="M11 16 9.87 6.6M13 16 14.13 6.6" />
+      <path d="M9.4 16v.8a2.6 2.6 0 0 0 5.2 0v-.8" />
+    </>
   );
 }
 
-export function TreeIcon({ className }: IconProps) {
+/** 試合速報: 右上へ飛ぶシャトルと、うしろの速さの線。 */
+export function ShuttleSpeedIcon({ className }: IconProps) {
   return (
     <Svg className={className}>
-      <g stroke="currentColor" strokeWidth="1.6">
-        <rect x="9" y="3" width="6" height="4" rx="1" />
-        <rect x="3" y="16" width="6" height="4" rx="1" />
-        <rect x="15" y="16" width="6" height="4" rx="1" />
-        <path d="M12 7v4M6 16v-5h12v5" />
+      <g {...NAV_STROKE}>
+        <path d="M2 12.4h2.6M1.6 15.7h3" />
+        <g transform="translate(1.4 0.6) rotate(30 12 12)">
+          <ShuttleOutline />
+        </g>
       </g>
     </Svg>
   );
 }
 
-export function UserIcon({ className }: IconProps) {
+/** 進行表: 3 行の一覧の札と、右下の時計。札の線は時計の後ろで途切れさせる。 */
+export function ScheduleIcon({ className }: IconProps) {
+  const cutout = useId();
   return (
     <Svg className={className}>
-      <g stroke="currentColor" strokeWidth="1.7">
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c1-4.5 4.4-6.5 8-6.5s7 2 8 6.5" strokeLinecap="round" />
+      <defs>
+        <mask id={cutout}>
+          <rect width="24" height="24" fill="#fff" />
+          <circle cx="17.6" cy="17.2" r="5.2" fill="#000" />
+        </mask>
+      </defs>
+      <g {...NAV_STROKE}>
+        <g mask={`url(#${cutout})`}>
+          <rect x="2.5" y="4" width="17" height="13.5" rx="2.6" />
+          <path d="M9 8h7.5M9 11h7.5M9 14h4" />
+        </g>
+        <path d="M6 8h.4M6 11h.4M6 14h.4" strokeWidth="2.4" />
+        <circle cx="17.6" cy="17.2" r="3.9" />
+        <path d="M17.6 15.4v1.9l1.3 1" />
+      </g>
+    </Svg>
+  );
+}
+
+/** 対戦表: 左右の組の括弧が、真ん中の箱（決勝）でつながる。 */
+export function BracketIcon({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <g {...NAV_STROKE}>
+        <path d="M2.5 6.5h3v11h-3M21.5 6.5h-3v11h3M5.5 12h3M15.5 12h3" />
+        <rect x="8.5" y="10.4" width="7" height="3.2" rx="0.9" />
+      </g>
+    </Svg>
+  );
+}
+
+/** myページ: 留め具の付いた名札。左に小さなシャトル、右に名前の 2 本線。札の線は留め具の後ろで途切れさせる。 */
+export function BadgeIcon({ className }: IconProps) {
+  const cutout = useId();
+  return (
+    <Svg className={className}>
+      <defs>
+        <mask id={cutout}>
+          <rect width="24" height="24" fill="#fff" />
+          <rect x="9.3" y="2.3" width="5.4" height="6.6" rx="2" fill="#000" />
+        </mask>
+      </defs>
+      <g {...NAV_STROKE}>
+        <rect x="2.5" y="6.5" width="19" height="13" rx="2.6" mask={`url(#${cutout})`} />
+        <rect x="10.2" y="3.2" width="3.6" height="4.8" rx="1.3" />
+        {/* 小さく縮めると線も細くなるので、縮める分だけ太く描く */}
+        <g
+          transform="translate(8.3 13) rotate(30) scale(0.42) translate(-12 -11.5)"
+          strokeWidth="2.6"
+        >
+          <ShuttleOutline />
+        </g>
+        <path d="M14 12h4.5M14 15h4.5" />
       </g>
     </Svg>
   );

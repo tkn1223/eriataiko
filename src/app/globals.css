@@ -190,7 +190,8 @@ body {
   position: absolute;
   left: -10%;
   right: -10%;
-  bottom: -38px;
+  /* 帯を低くしたので弧も下げる。-38px のままだと副題に重なる */
+  bottom: -52px;
   height: 60px;
   border-top: 1.5px solid rgb(232 190 100 / 0.75);
   border-radius: 50%;
@@ -199,6 +200,11 @@ body {
 .app-bar > * {
   position: relative;
   z-index: 1;
+}
+/* 上の帯の大会名・副題と、下のメニューの文字は明朝。Web フォントは読み込まない（体育館の電波が細い）。
+   iPhone はヒラギノ明朝、Android は Noto Serif CJK JP。どちらも無い端末は端末の明朝（serif）になる */
+.font-mincho {
+  font-family: 'Hiragino Mincho ProN', 'Noto Serif CJK JP', 'Noto Serif JP', serif;
 }
 
 /* 下のメニュー */
@@ -213,7 +219,8 @@ body {
 .app-nav-active::after {
   content: '';
   position: absolute;
-  bottom: -6px;
+  /* メニューを低くしたので、光る線は文字のすぐ下に寄せる */
+  bottom: -2px;
   width: 40px;
   height: 3px;
   border-radius: 2px;

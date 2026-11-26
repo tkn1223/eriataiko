@@ -209,10 +209,10 @@ describe('得点板のカード', () => {
     expect(empty.className).toContain('gray');
   });
 
-  test('1 ゲーム制のカードには「第1ゲーム」が出て、終わったゲームの札は出ない', () => {
+  test('1 ゲーム制のカード（予選リーグ）には「第1ゲーム」の見出しも、終わったゲームの札も出ない', () => {
     renderCard({ court: { live } });
 
-    expect(screen.getByText('第1ゲーム')).toBeInTheDocument();
+    expect(screen.queryByText('第1ゲーム')).not.toBeInTheDocument();
     expect(screen.queryByText(/第\dG：/)).not.toBeInTheDocument();
   });
 

@@ -425,10 +425,15 @@ function CourtHeader({
   status: { tone: StatusTone; label: string; testId?: string };
 }) {
   return (
-    <div className="flex items-center gap-2">
+    // 「コートN」をカードの真ん中に置き、右端に部の札と状態の札を縦に積む（部の札は状態の札の真上・中心）。
+    // 左の空き列は、名前を真ん中に保つための重し（2026-11-26 yosuke さん）
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+      <span aria-hidden="true" />
       <span className="text-[26px] font-extrabold tracking-[0.02em]">コート{courtNumber}</span>
-      {classLabel && <ClassChip classLabel={classLabel} large />}
-      <StatusPill {...status} />
+      <div className="flex flex-col items-center gap-1 justify-self-end">
+        {classLabel && <ClassChip classLabel={classLabel} large />}
+        <StatusPill {...status} />
+      </div>
     </div>
   );
 }
@@ -510,7 +515,11 @@ function GameLabelRow({
 }) {
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-ink-2 text-center text-[13px] font-semibold">{`第${shownGame}ゲーム`}</p>
+      {/* 1 ゲームだけの試合（予選リーグ）では「第1ゲーム」は言うまでもないので出さない。
+          決勝トーナメント（上限 2 ゲーム以上）だけ、いまどのゲームかを出す */}
+      {maxGameCount > 1 && (
+        <p className="text-ink-2 text-center text-[13px] font-semibold">{`第${shownGame}ゲーム`}</p>
+      )}
       {onChange && (
         <div
           role="tablist"

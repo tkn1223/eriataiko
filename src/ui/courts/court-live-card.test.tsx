@@ -190,11 +190,12 @@ describe('「次のゲームへ進む」ボタン（docs/specs/2026-11-23-next-g
     expect(screen.getByRole('button', { name: '試合終了' })).toHaveClass('btn-end');
   });
 
-  test('どちらかが 2 ゲーム取ったときは「…へ進む」は出ず、黒い「試合終了」が出る', () => {
-    renderLiveCard({ live: threeGames, scores: [game(1, 21, 15), game(2, 21, 18)] });
+  test('第1ゲームを取った側が第2ゲームでリードしていても、「第3ゲームへ進む」が大きいままで、終了は白い「ここで試合終了」', () => {
+    renderLiveCard({ live: threeGames, scores: [game(1, 21, 6), game(2, 19, 16)] });
 
-    expect(screen.queryByRole('button', { name: /ゲームへ進む/ })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '試合終了' })).toBeInTheDocument();
+    expect(nextButton(3)).toHaveClass('btn-end');
+    expect(screen.getByRole('button', { name: 'ここで試合終了' })).toHaveClass('btn-quit');
+    expect(screen.queryByRole('button', { name: '試合終了' })).not.toBeInTheDocument();
   });
 
   test('「ここで試合終了」を押すと、今の「試合終了」と同じ確認画面が出る', () => {
@@ -653,7 +654,8 @@ describe('CourtLiveCard', () => {
         ],
       });
 
-      fireEvent.click(screen.getByRole('button', { name: '試合終了' }));
+      // 第2ゲームでは最後のゲームまで「第3ゲームへ進む」が大きく出るので、2-0 で終えるのは「ここで試合終了」
+      fireEvent.click(screen.getByRole('button', { name: 'ここで試合終了' }));
 
       expect(screen.getByText(/試合の勝ち/)).toBeInTheDocument();
       expect(screen.getByText(/2-0/)).toBeInTheDocument();

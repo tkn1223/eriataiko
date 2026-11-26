@@ -63,8 +63,10 @@ describe('nextGameToOffer（「第N+1ゲームへ進む」を出すか。docs/sp
     expect(nextGameToOffer([game(1, 21, 15), game(2, 15, 21), game(3, 5, 3)], 3, 3)).toBeNull();
   });
 
-  test('どちらかが 2 ゲーム取って勝負がついたら出さない', () => {
-    expect(nextGameToOffer([game(1, 21, 15), game(2, 21, 18)], 3, 2)).toBeNull();
+  // 第2ゲームの途中でリードしただけでも、今の数え方では「2 ゲーム取った」になる。途中かどうかは点から分からないので、
+  // 最後のゲームまでは「進む」を出し続け、終わらせるのは下の「ここで試合終了」に任せる（11/26 yosuke さん）
+  test('第1ゲームを取った側が第2ゲームでリードしていても（数え方では 2-0）、最後のゲームより前なら第3ゲームを出す', () => {
+    expect(nextGameToOffer([game(1, 21, 6), game(2, 19, 16)], 3, 2)).toBe(3);
   });
 
   test('1 ゲームの試合（予選）は出さない', () => {
@@ -79,10 +81,9 @@ describe('nextGameToOffer（「第N+1ゲームへ進む」を出すか。docs/sp
     expect(nextGameToOffer([game(1, 21, 15), game(2, 15, 21)], 3, 1)).toBe(2);
   });
 
-  // 上限 2 は「半分を切り上げ」で 1 ゲーム先取（match-rules.ts の gamesToWin）。差がつけば勝負がつく
-  test('上限 2 ゲームでは、第1ゲームが同点なら第2ゲームを出し、第1ゲームに差がつけば出さない', () => {
+  test('上限 2 ゲームでは、第1ゲームなら点に関係なく第2ゲームを出し、第2ゲームでは出さない', () => {
     expect(nextGameToOffer([game(1, 10, 10)], 2, 1)).toBe(2);
-    expect(nextGameToOffer([game(1, 21, 15)], 2, 1)).toBeNull();
+    expect(nextGameToOffer([game(1, 21, 15)], 2, 1)).toBe(2);
     expect(nextGameToOffer([game(1, 10, 10)], 2, 2)).toBeNull();
   });
 

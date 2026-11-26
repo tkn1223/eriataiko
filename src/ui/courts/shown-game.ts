@@ -1,4 +1,3 @@
-import { matchOutcome } from '@/domain/match-rules';
 import { playedGameScores, type GameScore } from '@/domain/scoring';
 
 /**
@@ -24,16 +23,19 @@ export function earlierPlayedGames(scores: GameScore[], shownGame: number): Game
 /**
  * 点を入れる人のカードに「第N+1ゲームへ進む」を出すとき、その次のゲーム番号。出さないときは null。
  *
- * 出すのは、勝負がついていない間で、いま出しているゲームが最後のゲームより前のとき。
+ * 出すのは、いま出しているゲームが最後のゲームより前のとき（点数は見ない）。
  * 「ゲームが終わった」かどうかは、点からは分からない（何点で終わるかは部によって違う）ので、
  * 自動では切り替えず、押したときだけ切り替える。上限 1 ゲームの試合は、出すゲームが無いので null。
+ *
+ * 以前は「勝負がついたら出さない」としていたが、今の数え方ではゲームの途中でもリードしている側の勝ちと数えるため、
+ * 第1ゲームを取った側が第2ゲームでリードした瞬間に黒い［試合終了］が大きく戻り、押し間違えを招いた。
+ * そこで最後のゲームまで「進む」を出し続け、終わらせるのは白い「ここで試合終了」に任せる（2026-11-26 yosuke さん）。
  */
 export function nextGameToOffer(
-  scores: GameScore[],
+  _scores: GameScore[],
   maxGameCount: number,
   shownGame: number
 ): number | null {
-  if (matchOutcome(scores, maxGameCount).finished) return null;
   if (shownGame >= maxGameCount) return null;
   return shownGame + 1;
 }
